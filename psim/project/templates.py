@@ -68,8 +68,46 @@ def _mechanical_demo(scene: Scene, editor: SceneEditor) -> None:
                        select=False)
 
 
+def _simulation_demo(scene: Scene, editor: SceneEditor) -> None:
+    from ..processes.process_base import TargetFilter
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 12, "width": 8})
+    ground.color = [0.32, 0.34, 0.38]
+    ball = scene.create_object("basic.sphere", name="Projectile", params={"radius": 0.15}, position=[-5, -2, 0.15])
+    ball.linear_velocity = [4.0, 0.0, 6.5]
+    ball.color = [0.92, 0.45, 0.20]
+    ball.density = 7850.0
+    ball.overlays.update(name=True, velocity=True, acceleration=True)
+    anchor = scene.create_object("body.point_mass", name="Driven Anchor", position=[2.5, 2.0, 3.0])
+    block = scene.create_object("body.rigid_box", name="Hanging Block", params={"length": 0.4, "width": 0.4, "height": 0.4},
+                                position=[2.5, 2.0, 1.6])
+    block.mass_mode, block.mass_input = "mass", 2.0
+    block.overlays.update(name=True, position=True)
+    gear = scene.create_object("mech.gear", name="Spinning Gear", params={"teeth": 18, "outer_radius": 0.6,
+                                                                         "root_radius": 0.52, "thickness": 0.15},
+                               position=[0.0, 2.5, 1.0])
+    gear.set_euler([math.pi / 2, 0, 0])
+    marker = scene.create_object("frame.marker", name="Orbiting Marker", position=[3.0, -2.0, 0.6])
+    puck = scene.create_object("basic.cylinder", name="Pushed Puck", params={"radius": 0.3, "height": 0.15},
+                               position=[-2.0, 2.0, 0.075])
+    puck.force = [6.0, 0.0, 0.0]
+    puck.torque = [0.0, 0.0, 0.6]
+    puck.overlays.update(name=True, velocity=True)
+    editor.add_objects([ground, ball, anchor, block, gear, marker, puck], text="Simulation demo", select=False)
+    editor.assign_process("dyn.gravity", TargetFilter(ids=[ball.id, block.id]), label="Earth gravity")
+    editor.assign_process("kin.oscillation", TargetFilter(ids=[anchor.id]),
+                          {"direction": [0, 0, 1], "amplitude": 0.3, "frequency": 0.6})
+    editor.assign_process("dyn.spring", TargetFilter(ids=[anchor.id, block.id]),
+                          {"stiffness": 60.0, "rest_length": 1.0, "damping": 0.8})
+    editor.assign_process("rot.local_axis", TargetFilter(ids=[gear.id]), {"axis": [0, 0, 1], "angular_speed": 1.5})
+    editor.assign_process("kin.circular_motion", TargetFilter(ids=[marker.id]),
+                          {"center": [3.0, -2.0, 0.6], "radius": 1.0, "angular_speed": 1.2})
+    editor.assign_process("dyn.applied_force", TargetFilter(ids=[puck.id]))
+    editor.assign_process("dyn.damping", TargetFilter(ids=[puck.id]), {"linear": 2.5, "angular": 0.4})
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
     "mechanical": ("Mechanical Demo", _mechanical_demo),
+    "simulation": ("Simulation Demo", _simulation_demo),
 }

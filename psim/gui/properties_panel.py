@@ -19,7 +19,7 @@ from .. import numerics
 from ..properties.property_system import Origin, PropertyError, ValueType
 from ..scene.editing import SceneEditor
 from ..scene.materials import PHYSICAL_MATERIALS
-from ..scene.object_base import OVERLAY_LABELS, SceneObject
+from ..scene.object_base import DYNAMIC_STATE, OVERLAY_LABELS, SceneObject
 from ..scene.scene_manager import Scene, SceneError
 from ..units.unit_registry import UnitRegistry
 from . import icons
@@ -33,6 +33,8 @@ INITIAL_TIP = "Initial value (user-controlled). During a simulation this quantit
 class PropertiesPanel(QWidget):
     errorOccurred = Signal(str)
     statusMessage = Signal(str)
+    assignProcessRequested = Signal(list)   # object ids
+    editAssignmentRequested = Signal(str)   # assignment uid
 
     def __init__(self, scene: Scene, editor: SceneEditor, units: UnitRegistry, parent=None) -> None:
         super().__init__(parent)
@@ -43,6 +45,7 @@ class PropertiesPanel(QWidget):
         self._sections: list[Section] = []
         self._frame: str | None = None  # None = global, "@parent", or object id
         self._custom_sort = "definition"
+        self.simulated_ids: set[str] = set()   # objects whose dynamic state a running simulation owns
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -91,7 +94,12 @@ class PropertiesPanel(QWidget):
         scene.objectsRemoved.connect(lambda _ids: self._schedule())
         scene.hierarchyChanged.connect(self._schedule)
         scene.sceneReset.connect(self._schedule)
+        scene.processesChanged.connect(self._schedule)
         self._sync()
+
+    def set_simulated_ids(self, ids) -> None:
+        self.simulated_ids = set(ids)
+        self._schedule()
 
     # ---- update scheduling -----------------------------------------------------------------------
     def _schedule(self) -> None:
@@ -108,7 +116,9 @@ class PropertiesPanel(QWidget):
         objs = [self.scene.objects[i] for i in ids]
         return (tuple(ids), tuple(o.type_id for o in objs), tuple(tuple(o.custom) for o in objs),
                 tuple(o.mass_mode for o in objs), tuple(o.parent_id for o in objs), self._frame,
-                len(self.scene.objects), self._custom_sort)  # object count: frame/parent choices
+                len(self.scene.objects), self._custom_sort,  # object count: frame/parent choices
+                frozenset(self.simulated_ids & set(ids)),
+                tuple((a.uid, a.enabled, a.process_id) for i in ids[-1:] for a in self.scene.assignments_for(i)))
 
     def _sync(self) -> None:
         ids = [i for i in self.scene.selection if i in self.scene.objects]
@@ -157,6 +167,7 @@ class PropertiesPanel(QWidget):
             self._build_appearance(objs)
             self._build_display(objs)
             self._build_custom(objs)
+            self._build_processes(o)
         else:
             self._build_identity(objs)
             if len({o.type_id for o in objs}) == 1:
@@ -240,6 +251,9 @@ class PropertiesPanel(QWidget):
         ro = read_only or d.read_only
         quantity = quantity or d.quantity
         origin = origin or d.origin
+        if path in DYNAMIC_STATE and primary.id in self.simulated_ids and path not in ("linear_acceleration",
+                                                                                     "angular_acceleration"):
+            origin = Origin.SIMULATED
         unit_widget = None
         t = d.vtype
 
@@ -402,23 +416,24 @@ class PropertiesPanel(QWidget):
                 self._refresh()
 
         locked = self.scene.is_effectively_locked(o.id)
+        pose_origin = Origin.SIMULATED if o.id in self.simulated_ids else Origin.USER
         pos = VectorField(3, self.units, self.units.display_unit("position", "length"), 4, -1e7, 1e7)
         pos.setReadOnly(locked)
         pos.committed.connect(lambda v: set_pose(position=np.asarray(v)))
         self._refreshers.append(lambda: pos.set_si(pose()[0]))
-        sec.add_row("Position", pos, self._unit_combo("position", "length", pos.set_unit), Origin.USER,
+        sec.add_row("Position", pos, self._unit_combo("position", "length", pos.set_unit), pose_origin,
                     "Position of the object's local origin" + ("" if not locked else " (locked)"), search="position")
         eul = VectorField(3, self.units, self.units.display_unit("orientation_euler", "angle"), 4)
         eul.setReadOnly(locked)
         eul.committed.connect(lambda v: set_pose(orientation=numerics.quat_from_euler(np.asarray(v))))
         self._refreshers.append(lambda: eul.set_si(numerics.quat_to_euler(pose()[1])))
-        sec.add_row("Euler angles", eul, self._unit_combo("orientation_euler", "angle", eul.set_unit), Origin.USER,
+        sec.add_row("Euler angles", eul, self._unit_combo("orientation_euler", "angle", eul.set_unit), pose_origin,
                     "Extrinsic rotations about X, then Y, then Z (R = Rz·Ry·Rx)", search="orientation euler rotation")
         quat = VectorField(4, None, None, 6, -1.0, 1.0, labels=("W", "X", "Y", "Z"))
         quat.setReadOnly(locked)
         quat.committed.connect(lambda v: set_pose(orientation=np.asarray(v)) if np.linalg.norm(v) > 1e-9 else None)
         self._refreshers.append(lambda: quat.set_si(pose()[1]))
-        sec.add_row("Quaternion", quat, None, Origin.USER, "Unit quaternion (w, x, y, z); normalised on entry",
+        sec.add_row("Quaternion", quat, None, pose_origin, "Unit quaternion (w, x, y, z); normalised on entry",
                     search="orientation quaternion")
         self._add_prop(sec, "scale", [o])
         pos.set_si(pose()[0])
@@ -498,6 +513,14 @@ class PropertiesPanel(QWidget):
             w = np.asarray(o.angular_velocity)
             return 0.5 * m * float(v @ v) + 0.5 * float(w @ angular_momentum())
 
+        if o.id in self.simulated_ids:
+            def runtime(key):
+                return lambda: self.scene.runtime.get(o.id, {}).get(key, np.zeros(3))
+            self._add_readout(sec, "Acceleration (current)", runtime("acceleration"), "acceleration", 3,
+                              Origin.SIMULATED, "runtime_acceleration", "Total acceleration of the COM computed by "
+                              "the processes in the latest step")
+            self._add_readout(sec, "Angular accel. (current)", runtime("angular_acceleration"),
+                              "angular_acceleration", 3, Origin.SIMULATED, "runtime_angular_acceleration")
         self._add_readout(sec, "Linear momentum", momentum, "momentum", 3, Origin.DERIVED, "momentum", "p = m·v")
         self._add_readout(sec, "Angular momentum", angular_momentum, "angular_momentum", 3, Origin.DERIVED,
                           "angular_momentum", "L = I·ω about the centre of mass (global frame)")
@@ -596,6 +619,39 @@ class PropertiesPanel(QWidget):
             sec.add_widget(note)
         add = QPushButton(icons.icon("plus"), "Add Property…")
         add.clicked.connect(lambda: self.add_custom_property(objs))
+        sec.add_buttons(add)
+
+    def _build_processes(self, o: SceneObject) -> None:
+        from ..processes.process_base import ProcessError
+        from ..processes.process_registry import process_registry
+        sec = self._section("processes", "Assigned Processes")
+        assigned = self.scene.assignments_for(o.id)
+        for a in assigned:
+            try:
+                name = process_registry().get(a.process_id).name
+            except ProcessError:
+                name = f"{a.process_id} (unavailable)"
+            row = QWidget()
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            cb = QCheckBox(f"{a.uid} · {name}" + (f" — {a.label}" if a.label else ""))
+            cb.setChecked(a.enabled)
+            cb.setToolTip(f"Targets: {a.targets.describe()}")
+            cb.toggled.connect(lambda on, uid=a.uid: self.editor.update_assignment(uid, enabled=on))
+            rl.addWidget(cb, 1)
+            edit = QToolButton()
+            edit.setIcon(icons.icon("edit"))
+            edit.setToolTip("Edit assignment")
+            edit.clicked.connect(lambda _=False, uid=a.uid: self.editAssignmentRequested.emit(uid))
+            rl.addWidget(edit)
+            sec.add_widget(row, search=f"process {name} {a.uid}")
+        if not assigned:
+            note = QLabel("No processes. Assign a process to simulate this object.")
+            note.setObjectName("Muted")
+            note.setWordWrap(True)
+            sec.add_widget(note, search="process")
+        add = QPushButton(icons.icon("plus"), "Assign Process…")
+        add.clicked.connect(lambda: self.assignProcessRequested.emit([o.id]))
         sec.add_buttons(add)
 
     # ---- custom property actions ----------------------------------------------------------------------

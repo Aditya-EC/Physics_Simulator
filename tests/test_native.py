@@ -80,3 +80,32 @@ def test_input_validation():
         nat.quat_normalize([1, 2, 3])
     with pytest.raises((ValueError, IndexError)):
         nat.mass_properties_solid(np.zeros((3, 3), np.float32), np.array([[0, 1, 5]], np.uint32), 1.0)
+
+
+@pytest.mark.parametrize("method", ["explicit_euler", "semi_implicit_euler"])
+def test_integration_kernels_agree(method):
+    x0, v0, a = rng.normal(size=(7, 3)), rng.normal(size=(7, 3)), rng.normal(size=(7, 3))
+    x1, v1, x2, v2 = x0.copy(), v0.copy(), x0.copy(), v0.copy()
+    nat.integrate_linear(method, x1, v1, a, 0.013)
+    fb.integrate_linear(method, x2, v2, a, 0.013)
+    np.testing.assert_allclose(x1, x2, atol=1e-14)
+    np.testing.assert_allclose(v1, v2, atol=1e-14)
+    q0 = np.array([fb.quat_normalize(rng.normal(size=4)) for _ in range(7)])
+    w = rng.normal(size=(7, 3))
+    w[0] = 0.0
+    q1, q2 = q0.copy(), q0.copy()
+    nat.quat_integrate(q1, w, 0.05)
+    fb.quat_integrate(q2, w, 0.05)
+    np.testing.assert_allclose(q1, q2, atol=1e-12)
+    with pytest.raises((TypeError, ValueError)):
+        nat.integrate_linear(method, x0.astype(np.float32), v0, a, 0.1)
+
+
+def test_batched_rotation_kernels_agree():
+    q = np.array([fb.quat_normalize(rng.normal(size=4)) for _ in range(9)])
+    v = rng.normal(size=(9, 3))
+    t = rng.normal(size=(9, 3, 3))
+    np.testing.assert_allclose(nat.quat_rotate_batch(q, v), fb.quat_rotate_batch(q, v), atol=1e-12)
+    np.testing.assert_allclose(nat.rotate_tensors(q, t), fb.rotate_tensors(q, t), atol=1e-12)
+    r = fb.quat_to_matrix(q[0])
+    np.testing.assert_allclose(nat.rotate_tensors(q[:1], t[:1])[0], r @ t[0] @ r.T, atol=1e-12)

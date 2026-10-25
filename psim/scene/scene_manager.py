@@ -31,12 +31,18 @@ class Scene(QObject):
     hierarchyChanged = Signal()
     selectionChanged = Signal(list)   # ids (primary selection last)
     sceneReset = Signal()
+    processesChanged = Signal()       # process assignments added / removed / edited
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.objects: dict[str, SceneObject] = {}
         self.ids = IdAllocator()
         self._selection: list[str] = []
+        self.assignments: list = []            # ProcessAssignment, in evaluation order
+        self.next_process_number = 1           # PRC-0001, ... never reused
+        # values produced by a running simulation that are not object properties
+        # (e.g. current total acceleration); cleared when a session ends
+        self.runtime: dict[str, dict] = {}
 
     # ---- basic access --------------------------------------------------------------
     def __len__(self) -> int:
@@ -58,7 +64,34 @@ class Scene(QObject):
         self.objects.clear()
         self.ids.reset()
         self._selection = []
+        self.assignments = []
+        self.next_process_number = 1
+        self.runtime = {}
         self.sceneReset.emit()
+
+    # ---- process assignments ----------------------------------------------------------------
+    def allocate_process_uid(self) -> str:
+        used = {a.uid for a in self.assignments}
+        while True:
+            uid = f"PRC-{self.next_process_number:04d}"
+            self.next_process_number += 1
+            if uid not in used:
+                return uid
+
+    def assignment(self, uid: str):
+        return next((a for a in self.assignments if a.uid == uid), None)
+
+    def assignments_for(self, oid: str) -> list:
+        obj = self.find(oid)
+        return [a for a in self.assignments if obj is not None and a.targets.matches(obj)]
+
+    def process_snapshot(self) -> list[dict]:
+        return [a.to_dict() for a in self.assignments]
+
+    def apply_process_snapshot(self, data: list[dict]) -> None:
+        from ..processes.process_base import ProcessAssignment
+        self.assignments = [ProcessAssignment.from_dict(d) for d in data]
+        self.processesChanged.emit()
 
     # ---- creation --------------------------------------------------------------------
     def create_object(self, type_id: str, *, name: str | None = None, params: dict | None = None,

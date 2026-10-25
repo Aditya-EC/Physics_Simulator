@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "psim/integrators.hpp"
 #include "psim/mesh_ops.hpp"
 #include "psim/transforms.hpp"
 
@@ -86,7 +87,26 @@ static void test_feature_edges() {
     CHECK_NEAR(static_cast<double>(e.size()) / 6.0, 12.0, 0.0);  // 12 cube edges, diagonals excluded
 }
 
+static void test_integrators() {
+    // free fall from rest, semi-implicit Euler: v_n = n g dt, x_n = g dt^2 n(n+1)/2
+    double x[3] = {0, 0, 0}, v[3] = {0, 0, 0};
+    const double a[3] = {0, 0, -9.81};
+    for (int i = 0; i < 100; ++i) integrate_semi_implicit_euler(x, v, a, 1, 0.01);
+    CHECK_NEAR(v[2], -9.81, 1e-12);
+    CHECK_NEAR(x[2], -9.81 * 1e-4 * 100 * 101 / 2.0, 1e-12);
+    double x2[3] = {0, 0, 0}, v2[3] = {0, 0, 0};
+    for (int i = 0; i < 100; ++i) integrate_explicit_euler(x2, v2, a, 1, 0.01);
+    CHECK_NEAR(x2[2], -9.81 * 1e-4 * 100 * 99 / 2.0, 1e-12);
+    // constant spin about Z for a quarter turn
+    double q[4] = {1, 0, 0, 0};
+    const double w[3] = {0, 0, kPi / 2};
+    for (int i = 0; i < 1000; ++i) quat_integrate(q, w, 1, 0.001);
+    CHECK_NEAR(q[0], std::cos(kPi / 4), 1e-12);
+    CHECK_NEAR(q[3], std::sin(kPi / 4), 1e-12);
+}
+
 int main() {
+    test_integrators();
     test_euler_roundtrip();
     test_pose_inverse();
     test_rotation();

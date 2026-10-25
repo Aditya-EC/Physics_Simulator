@@ -44,12 +44,15 @@ def object_label_lines(scene: Scene, obj: SceneObject, units: UnitRegistry) -> l
         lines.append("p = " + fmt_value(p, "length", units, prec))
     if ov.get("orientation") and "orientation" in allowed:
         lines.append("θ = " + fmt_value(numerics.quat_to_euler(q), "angle", units, prec))
+    runtime = scene.runtime.get(obj.id, {})
     for key, sym, attr, qty in (("velocity", "v", "linear_velocity", "velocity"),
                                 ("acceleration", "a", "linear_acceleration", "acceleration"),
                                 ("angular_velocity", "ω", "angular_velocity", "angular_velocity"),
                                 ("force", "F", "force", "force"), ("torque", "τ", "torque", "torque")):
         if ov.get(key) and key in allowed:
-            lines.append(f"{sym} = " + fmt_value(getattr(obj, attr), qty, units, prec))
+            # while simulating, show the current total acceleration rather than the input property
+            value = runtime["acceleration"] if key == "acceleration" and "acceleration" in runtime else getattr(obj, attr)
+            lines.append(f"{sym} = " + fmt_value(value, qty, units, prec))
     if ov.get("mass") and "mass" in allowed and obj.typedef.physical:
         m = obj.mass()
         lines.append("m = " + (fmt_value(m, "mass", units, prec) if m is not None else "—"))

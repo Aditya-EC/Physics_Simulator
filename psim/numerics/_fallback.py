@@ -297,3 +297,64 @@ def mass_properties_shell(v, f, areal_density):
     out.update(mass=area * areal_density, centroid=cm,
                inertia=areal_density * (np.trace(c) * np.eye(3) - c))
     return out
+
+
+def _require_inplace(a, cols: int, name: str) -> None:
+    if not (isinstance(a, np.ndarray) and a.dtype == np.float64 and a.flags.c_contiguous and a.flags.writeable
+            and a.ndim == 2 and a.shape[1] == cols):
+        raise TypeError(f"{name} must be a writable C-contiguous float64 array of shape (N, {cols})")
+
+
+def integrate_linear(method, x, v, a, dt):
+    _require_inplace(x, 3, "x")
+    _require_inplace(v, 3, "v")
+    a = np.asarray(a, dtype=np.float64).reshape(x.shape)
+    if method == "explicit_euler":
+        x += v * dt
+        v += a * dt
+    elif method == "semi_implicit_euler":
+        v += a * dt
+        x += v * dt
+    else:
+        raise ValueError(f"unknown integration method '{method}'")
+
+
+def quat_integrate(q, w, dt):
+    _require_inplace(q, 4, "q")
+    w = np.asarray(w, dtype=np.float64).reshape(len(q), 3)
+    speed = np.linalg.norm(w, axis=1)
+    angle = speed * dt
+    moving = angle > 0
+    axis = np.zeros_like(w)
+    axis[moving] = w[moving] / speed[moving, None]
+    h = 0.5 * angle
+    dq = np.concatenate([np.cos(h)[:, None], axis * np.sin(h)[:, None]], axis=1)
+    aw, ax, ay, az = dq.T
+    bw, bx, by, bz = q.T.copy()
+    out = np.stack([
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    ], axis=1)
+    q[:] = out / np.linalg.norm(out, axis=1, keepdims=True)
+
+
+def _quat_matrices(q):
+    q = np.asarray(q, dtype=np.float64).reshape(-1, 4)
+    q = q / np.linalg.norm(q, axis=1, keepdims=True)
+    w, x, y, z = q.T
+    return np.stack([
+        np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], -1),
+        np.stack([2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], -1),
+        np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], -1),
+    ], -2)
+
+
+def quat_rotate_batch(q, v):
+    return np.einsum("nij,nj->ni", _quat_matrices(q), np.asarray(v, dtype=np.float64).reshape(-1, 3))
+
+
+def rotate_tensors(q, t):
+    r = _quat_matrices(q)
+    return r @ np.asarray(t, dtype=np.float64).reshape(-1, 3, 3) @ np.transpose(r, (0, 2, 1))

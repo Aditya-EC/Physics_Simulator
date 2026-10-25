@@ -74,7 +74,8 @@ class Outliner(QWidget):
         self._rebuild_timer.timeout.connect(self.rebuild)
         for sig in (scene.objectsAdded, scene.objectsRemoved):
             sig.connect(lambda _ids: self._rebuild_timer.start(0))
-        scene.objectsChanged.connect(lambda _ids: self._rebuild_timer.start(120))
+        # property changes (e.g. every simulation frame) update rows in place; only structure triggers a rebuild
+        scene.objectsChanged.connect(self._refresh_items)
         scene.hierarchyChanged.connect(lambda: self._rebuild_timer.start(0))
         scene.sceneReset.connect(lambda: self._rebuild_timer.start(0))
         scene.selectionChanged.connect(self._scene_selection)
@@ -99,8 +100,10 @@ class Outliner(QWidget):
             it.setData(0, ID_ROLE, obj.id)
             it.setIcon(0, icons.icon(_type_icon(obj.type_id)))
             it.setIcon(2, icons.icon("eye" if obj.visible else "eye_off"))
+            it.setData(2, Qt.ItemDataRole.UserRole, "eye" if obj.visible else "eye_off")
             it.setToolTip(2, "Toggle visibility")
             it.setIcon(3, icons.icon("lock" if obj.locked else "unlock"))
+            it.setData(3, Qt.ItemDataRole.UserRole, "lock" if obj.locked else "unlock")
             it.setToolTip(3, "Toggle lock")
             it.setToolTip(0, f"{obj.typedef.name}" + (f"\nTags: {', '.join(obj.tags)}" if obj.tags else ""))
             if not obj.visible:
@@ -123,6 +126,24 @@ class Outliner(QWidget):
         self._syncing = False
         self._scene_selection(self.scene.selection)
         self._apply_filter(self.filter.text())
+
+    def _refresh_items(self, ids) -> None:
+        items = getattr(self, "_items", {})
+        for oid in ids:
+            it, obj = items.get(oid), self.scene.find(oid)
+            if it is None or obj is None:
+                continue
+            if it.text(0) != obj.name:
+                it.setText(0, obj.name)
+            vis = "eye" if obj.visible else "eye_off"
+            lock = "lock" if obj.locked else "unlock"
+            if it.data(2, Qt.ItemDataRole.UserRole) != vis:
+                it.setIcon(2, icons.icon(vis))
+                it.setData(2, Qt.ItemDataRole.UserRole, vis)
+                it.setForeground(0, self.palette().text() if obj.visible else self.palette().placeholderText())
+            if it.data(3, Qt.ItemDataRole.UserRole) != lock:
+                it.setIcon(3, icons.icon(lock))
+                it.setData(3, Qt.ItemDataRole.UserRole, lock)
 
     def _apply_filter(self, text: str) -> None:
         text = text.lower().strip()

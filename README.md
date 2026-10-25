@@ -3,16 +3,22 @@
 PSim Studio is a desktop 3D physics simulation studio. It is written in Python (PySide6 / Qt 6)
 with a C++17 numerical core bound through pybind11.
 
-This repository delivers **Phase 1** of the development plan: a working desktop application with
-- a real OpenGL 3D viewport
-- a searchable object library with real 3D thumbnails
-- drag-and-drop placement
-- an undoable, typed property system with custom properties
-- coordinate axes, configurable grids and transform gizmos
-- project save/load with autosave and recovery
+Implemented so far:
 
-The architecture already contains the interfaces that later phases build on (the simulation
-timing contract, a unit registry, an object type registry and a plugin API).
+- **Phase 1**, a working desktop application:
+  - a real OpenGL 3D viewport
+  - a searchable object library with real 3D thumbnails
+  - drag-and-drop placement
+  - an undoable, typed property system with custom properties
+  - coordinate axes, configurable grids and transform gizmos
+  - project save/load with autosave and recovery
+- **Phase 3**, the simulation engine:
+  - a fixed Δt that is independent of the real-time update rate
+  - a worker thread with a monotonic scheduler, bounded catch-up and overrun reporting
+  - as-fast-as-possible mode
+  - explicit Euler, semi-implicit Euler and RK4 integrators
+  - built-in kinematics and dynamics processes with read/write declarations and conflict detection
+  - Start/Pause/Resume/Stop/Reset/Single-Step, breakpoints and live parameter changes
 
 ![Main window](docs/screenshot_main.png)
 
@@ -25,7 +31,8 @@ pip install -r requirements.txt          # PySide6, PyOpenGL, NumPy, pybind11, p
 python build_native.py                   # builds + tests the C++ core, installs it into psim/numerics/
 python app.py                            # launch
 python app.py examples/mechanical_demo.psim
-python app.py --template primitives      # start from a built-in project template
+python app.py --template simulation      # start from a built-in project template (also: primitives, mechanical)
+python app.py examples/simulation_demo.psim   # then press F5 (Start)
 ```
 
 Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`.
@@ -61,8 +68,12 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_update_rate.py` | Phase 3 timing contract: Δt independent of update rate, exact step counts, duration-boundary policies, no clock drift over 10⁶ steps, bounded catch-up, overrun reporting |
 | `test_interaction_math.py` | camera projection/rays, picking, surface/plane placement, gizmo translate/rotate/scale with snapping |
 | `test_gui.py` | app launch and menus, real 3D rendering (pixel checks, shading, shadows), drag-and-drop, click selection, gizmo drag + undo, inspector editing, display units, save/reopen, themes, camera follow modes |
+| `test_simulation.py` | §9.9: step counts, Δt per step, duration-boundary policies, Δt changes, bitwise determinism, independence from render FPS **and** pacing mode, real-time rate (100 Hz × 0.001 s ⇒ 0.1×), unachievable-rate reporting with Δt unchanged, pause/step/breakpoints, live changes, instability detection, integrator regressions (closed-form Euler errors, RK4 4th-order convergence, symplectic energy behaviour) |
+| `test_processes.py` | every built-in process against analytic solutions (constant velocity/acceleration, F = ma, torque, damping decay, projectile range, circle, oscillation, rotations, spring period and momentum, COM offsets), conflict and eligibility diagnostics, summation, targets by type/tag, undoable assignments |
+| `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **165 Python tests and the C++ test executable pass**. This was measured on
+Current result: **217 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 186 pass and 31 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -161,6 +172,72 @@ Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 - Autosave to a recovery file with a restore offer after a crash, recent files, project
   templates, OBJ import/export and CSV export.
 
+## 3b. What Phase 3 implements (simulation engine)
+
+**Controls.**
+- A **Simulation toolbar** has Start/Resume (F5), Pause (F6), Stop (Shift+F5), Reset
+  (Ctrl+F5), Single Step (F10) and Run as fast as possible.
+- Separate **Δt**, **Update rate (Hz)** and **Duration** fields sit alongside a live read-out of
+  simulated time, completed steps, actual/requested rate, simulation speed (simulated s per
+  real s), state, and a *behind schedule* warning with the dropped-step count.
+- **Simulation ▸ Simulation Settings** adds:
+  - the duration-boundary policy and the integrator
+  - the maximum catch-up steps and the render rate
+  - breakpoints at simulated times
+  - the derived quantities: expected step count and rate × Δt
+- The Performance panel and the viewport HUD show the same timing figures.
+
+**Engine** (`psim/simulation`).
+- A deterministic step loop implements §9.4: shared previous state, plan-ordered evaluation,
+  atomic state replacement, clock advance by Δt, and the step counter.
+- Integrators: explicit Euler, semi-implicit (symplectic) Euler and RK4. Processes are
+  evaluated at each solver stage.
+- Hot kernels run in C++: linear integration, the quaternion exponential map, and batched
+  rotation of vectors and inertia tensors.
+- The translational state is the centre of mass. Prescribed motion is defined for the object origin.
+- Non-finite or exploding values stop the run with a diagnostic.
+
+**Runner.**
+- A worker thread with its own monotonic scheduler, separate from rendering.
+- Commands are queued and applied between steps, so changes to Δt, rate, duration, pacing,
+  object properties or process parameters never affect a half-finished step.
+- Snapshots go to the GUI at the render rate and nothing more often, so rendering FPS never
+  alters Δt or the number of steps.
+- If the engine falls behind, it runs at most N catch-up steps per tick and reports the rest as
+  dropped. Δt is never changed.
+- On Windows the runner requests 1 ms timer resolution during a run.
+
+**Processes** (`psim/processes`).
+- Approved process definitions carry an ID, version, category, description, formula,
+  parameters with units, reads/writes, eligibility, mode (per-object or global), preconditions
+  and error handling.
+- Built-ins:
+  - **Kinematics:** constant velocity, constant acceleration, prescribed circular motion,
+    prescribed harmonic oscillation
+  - **Rotation:** about a fixed global axis, about an object-local axis
+  - **Dynamics:** uniform gravity (projectiles), applied force and torque (Newton's second law
+    with world-frame inertia), viscous damping, and a two-body spring-damper (a global process)
+- Assignments target objects by ID, type or tag. Their parameters are editable, they are
+  undoable, and they are saved in the project (file format v2, which still reads v1).
+- A **Processes** panel (the Process Table) lists assignments in evaluation order with enable
+  toggles. It provides validation, a **dependency and diagnostics viewer** (reads/writes per
+  process and writers per object) and process documentation. The inspector has an **Assigned
+  Processes** section.
+- Conflict rules:
+  - force and torque contributions are summed
+  - two prescribed writers of the same quantity are a conflict
+  - a per-object force on a prescribed body is a conflict
+  - a global (multi-body) force on a prescribed *driven anchor* is ignored with a warning
+- Other diagnostics: missing references, ineligible targets and invalid parameters are
+  reported before the run, and a simulated object inside a simulated assembly is rejected.
+
+**Session semantics.**
+- During a session, edits apply live, undo is disabled, and structural edits are blocked.
+- *Stop* records the whole run as one undoable step.
+- *Reset* restores the exact state captured at Start.
+- Inspector values owned by the running simulation show the **S** badge. The current total
+  acceleration is shown live in the inspector and labels.
+
 ## 4. Architecture
 
 ```
@@ -181,7 +258,8 @@ psim/
                    overlays, thumbnails, viewport widget, serializable view settings
   gui/             main window, actions/shortcuts, library, inspector, outliner, panels, dialogs, theme, icons
   project/         serialization, autosave/recovery, project templates
-  simulation/      Phase 3 timing contract: SimulationSettings, SimulationClock, UpdateRateController
+  processes/       process definitions, registry, built-in processes, scheduler (plan + diagnostics)
+  simulation/      settings, clock / rate controller, state, integrators, engine, threaded runner
   plugins/         trusted application plugins (object types)
 tests/             pytest suites (see §2)
 examples/          sample projects
@@ -205,7 +283,7 @@ Key design decisions:
 - **Euler convention.** Extrinsic X then Y then Z, `R = Rz·Ry·Rx`, Z up, right-handed.
   Quaternions are stored as (w, x, y, z).
 
-### Simulation timing contract (Phase 3 interface, implemented and tested now)
+### Simulation timing contract
 
 `psim/simulation/settings.py` and `clock.py` fix the semantics the engine must follow:
 
@@ -227,17 +305,27 @@ Key design decisions:
 ## 5. Phase 1 limitations (honest status)
 
 - **Not implemented yet** (planned phases):
-  - the running simulation engine and its controls (Phase 3)
-  - the formula/process engine and developer-only process authoring with permissions (Phase 4)
+  - the formula engine, developer-only process authoring and the permission model (Phase 4).
+    Process *selection, configuration and documentation* exist now; the built-in processes
+    are application code.
   - named reference frames as first-class objects, frame-relative velocities/accelerations,
     and dimensional analysis inside formulas (Phase 5)
   - trajectories, plotting workspace and data recorder (Phase 6)
   - rigid-body dynamics, collisions and joints (Phase 7)
   - installer (Phase 8)
 
-  The *Process Table*, *Data Inspector* and *Plot Preview* bottom panels are therefore not
-  present yet. Trajectory settings are not shown in the inspector because there is no motion
-  to record.
+  The *Data Inspector* and *Plot Preview* bottom panels are therefore not present yet, and
+  trajectories are not recorded yet (Phase 6).
+- Simulation physics limits for this phase:
+  - Rotational dynamics uses α = I_w⁻¹·τ without the gyroscopic ω × Iω term, which belongs to
+    the Phase 7 rigid-body solver.
+  - There are no collisions, so objects pass through each other and the ground.
+  - Spring and rope *geometry* does not deform with the spring process.
+  - The engine is vectorised NumPy plus C++ kernels: about 0.5 ms (semi-implicit) or 1.4 ms
+    (RK4) per step for a 7-body scene on this machine. That supports real-time rates of a
+    few hundred Hz for small scenes; a fully native step loop is planned with Phase 7.
+  - Under software OpenGL, rendering competes with the engine thread for the Python GIL. The
+    overrun detection then correctly reports reduced achieved rates.
 - Box (marquee) selection, measurement tools and a numeric "move relative to object" dialog are
   not implemented. Relative placement is done through the inspector's *Relative to* frame
   selector and surface snapping.
@@ -254,7 +342,6 @@ Key design decisions:
 ## 6. Next steps
 
 1. Run the test suite on Windows with a hardware GPU.
-2. Phase 2 remainder: placement-relative dialog, marquee selection, trajectory settings model.
-3. Phase 3: worker-thread engine built on `SimulationClock` / `UpdateRateController`, with
-   state double-buffering and a staged update policy. Add simulation toolbar controls and a
-   live rate/overrun display.
+2. Phase 4: safe formula parser with dimensional analysis, formula-defined processes,
+   developer role and permission enforcement in the process registry, signed process packages.
+3. Phase 6: data recorder (sampling every N steps), trajectories and the plotting workspace.

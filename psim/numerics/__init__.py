@@ -48,6 +48,10 @@ compute_vertex_normals = _impl.compute_vertex_normals
 feature_edges = _impl.feature_edges
 mass_properties_solid = _impl.mass_properties_solid
 mass_properties_shell = _impl.mass_properties_shell
+integrate_linear = _impl.integrate_linear
+quat_integrate = _impl.quat_integrate
+quat_rotate_batch = _impl.quat_rotate_batch
+rotate_tensors = _impl.rotate_tensors
 
 
 def backend_description() -> str:

@@ -73,12 +73,41 @@ def _ordered(scene: Scene, states: dict) -> dict:
     return {i: states[i] for i in sorted(states, key=depth)}
 
 
+class ProcessesCommand(QUndoCommand):
+    """Before/after snapshot of the process assignment list."""
+
+    def __init__(self, scene: Scene, before: list[dict], after: list[dict], text: str) -> None:
+        super().__init__(text)
+        self.scene, self.before, self.after = scene, before, after
+        self._first = True
+
+    def redo(self) -> None:
+        if self._first:
+            self._first = False
+            return
+        self.scene.apply_process_snapshot(self.after)
+
+    def undo(self) -> None:
+        self.scene.apply_process_snapshot(self.before)
+
+
 class SceneEditor:
-    """High-level, undoable operations on a Scene."""
+    """High-level, undoable operations on a Scene.
+
+    While a simulation session is active, ``recording`` is False: edits are
+    applied (and validated) immediately but not pushed to the undo stack, because
+    the simulation owns the dynamic state; the session itself is recorded as one
+    command when it ends.
+    """
 
     def __init__(self, scene: Scene, stack: QUndoStack | None = None) -> None:
         self.scene = scene
         self.stack = stack or QUndoStack()
+        self.recording = True
+
+    def _push(self, cmd: QUndoCommand) -> None:
+        if self.recording:
+            self.stack.push(cmd)
 
     # ---- core primitive ---------------------------------------------------------------------
     def edit(self, ids: Iterable[str], mutate: Callable[[], None], text: str, merge_key: str | None = None,
@@ -103,7 +132,7 @@ class SceneEditor:
         if after == before:
             return False
         self.scene.notify_changed([i for i in after if after[i] is not None and before[i] is not None], hierarchy)
-        self.stack.push(StateCommand(self.scene, before, after, text, sel_before, self.scene.selection, merge_key))
+        self._push(StateCommand(self.scene, before, after, text, sel_before, self.scene.selection, merge_key))
         return True
 
     # ---- object lifecycle ------------------------------------------------------------------------
@@ -117,7 +146,7 @@ class SceneEditor:
             self.scene.set_selection([o.id for o in objs if not o.parent_id or o.parent_id not in before])
         after = self.scene.snapshot(before.keys())
         label = text or (f"Add {objs[0].name}" if len(objs) == 1 else f"Add {len(objs)} objects")
-        self.stack.push(StateCommand(self.scene, before, after, label, sel_before, self.scene.selection))
+        self._push(StateCommand(self.scene, before, after, label, sel_before, self.scene.selection))
 
     def add_new(self, type_id: str, position=None, params: dict | None = None, name: str | None = None,
                 parent_id: str | None = None) -> SceneObject:
@@ -141,7 +170,7 @@ class SceneEditor:
         self.scene.remove_objects(allids)
         after = {i: None for i in allids}
         n = len(allids)
-        self.stack.push(StateCommand(self.scene, before, after, f"Delete {n} object{'s' * (n != 1)}", sel_before,
+        self._push(StateCommand(self.scene, before, after, f"Delete {n} object{'s' * (n != 1)}", sel_before,
                                      self.scene.selection))
         return n
 
@@ -171,6 +200,57 @@ class SceneEditor:
     def set_pose_in_frame(self, oid: str, frame_id: str | None, position=None, orientation=None) -> bool:
         return self.edit([oid], lambda: self.scene.set_pose_in_frame(oid, frame_id, position, orientation),
                          "Set Transform", merge_key=f"pose|{oid}|{frame_id}")
+
+    # ---- process assignments -----------------------------------------------------------------------
+    def edit_processes(self, mutate, text: str) -> bool:
+        before = self.scene.process_snapshot()
+        try:
+            mutate()
+        except Exception:
+            self.scene.apply_process_snapshot(before)
+            raise
+        after = self.scene.process_snapshot()
+        if after == before:
+            return False
+        self.scene.processesChanged.emit()
+        self._push(ProcessesCommand(self.scene, before, after, text))
+        return True
+
+    def assign_process(self, process_id: str, targets, params: dict | None = None, label: str = ""):
+        from ..processes.process_base import ProcessAssignment
+        from ..processes.process_registry import process_registry
+        pdef = process_registry().get(process_id)
+        params = pdef.coerce_params(params or {})
+        a = ProcessAssignment(self.scene.allocate_process_uid(), process_id, targets, params, True, label)
+        self.edit_processes(lambda: self.scene.assignments.append(a), f"Assign {pdef.name}")
+        return a
+
+    def update_assignment(self, uid: str, **changes) -> bool:
+        from ..processes.process_registry import process_registry
+
+        def mutate():
+            a = self.scene.assignment(uid)
+            if a is None:
+                raise SceneError(f"Unknown process assignment '{uid}'")
+            if "params" in changes:
+                changes["params"] = process_registry().get(a.process_id).coerce_params(changes["params"])
+            for k, v in changes.items():
+                setattr(a, k, v)
+        return self.edit_processes(mutate, f"Edit {uid}")
+
+    def remove_assignments(self, uids) -> bool:
+        uids = set(uids)
+        return self.edit_processes(
+            lambda: setattr(self.scene, "assignments", [a for a in self.scene.assignments if a.uid not in uids]),
+            f"Remove {len(uids)} process assignment(s)")
+
+    def move_assignment(self, uid: str, delta: int) -> bool:
+        def mutate():
+            lst = self.scene.assignments
+            i = next(k for k, a in enumerate(lst) if a.uid == uid)
+            j = max(0, min(len(lst) - 1, i + delta))
+            lst.insert(j, lst.pop(i))
+        return self.edit_processes(mutate, "Reorder processes")
 
     # ---- custom properties -------------------------------------------------------------------------
     def add_custom_property(self, ids: Iterable[str], prop_data: dict) -> bool:

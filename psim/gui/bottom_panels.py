@@ -165,8 +165,10 @@ class ObjectTablePanel(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.rebuild)
-        for sig in (scene.objectsAdded, scene.objectsRemoved, scene.objectsChanged):
-            sig.connect(lambda _ids: self._timer.start(60))
+        for sig in (scene.objectsAdded, scene.objectsRemoved):
+            sig.connect(lambda _ids: self._timer.start(0))
+        # throttle (not debounce): continuous changes such as a running simulation must still refresh
+        scene.objectsChanged.connect(lambda _ids: self._timer.isActive() or self._timer.start(250))
         scene.sceneReset.connect(lambda: self._timer.start(0))
         scene.hierarchyChanged.connect(lambda: self._timer.start(0))
         scene.selectionChanged.connect(self._scene_selection)
@@ -295,17 +297,18 @@ class PerformancePanel(QWidget):
         self.labels: dict[str, QLabel] = {}
         entries = (("fps", "Render rate"), ("cpu", "Frame CPU time"), ("draws", "Draw calls"), ("tris", "Triangles"),
                    ("objects", "Objects drawn"), ("shadow", "Shadow pass"), ("backend", "Numerical core"),
-                   ("gl", "OpenGL"))
+                   ("gl", "OpenGL"), ("sim_state", "Simulation"), ("sim_rate", "Update rate (actual / requested)"),
+                   ("sim_speed", "Simulated s per real s"), ("sim_cost", "Step cost / dropped steps"))
         for k, (key, label) in enumerate(entries):
             name = QLabel(label)
             name.setObjectName("Muted")
             lab = QLabel("—")
             lab.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            row, col = (k % 4, (k // 4) * 2)
+            row, col = (k % 4, (k // 4) * 2)  # three label/value column pairs
             grid.addWidget(name, row, col)
             grid.addWidget(lab, row, col + 1)
             self.labels[key] = lab
-        grid.setColumnStretch(3, 1)
+        grid.setColumnStretch(5, 1)
         lay.addLayout(grid, 3)
         self.spark = _Sparkline()
         lay.addWidget(self.spark, 2)
@@ -319,6 +322,16 @@ class PerformancePanel(QWidget):
         self.labels["objects"].setText(str(stats.objects_drawn))
         self.labels["shadow"].setText("on" if stats.shadow else "off")
         self.spark.push(stats.cpu_ms)
+
+    def update_sim_stats(self, st) -> None:
+        self.labels["sim_state"].setText(f"{st.state} · t = {st.time:.6g} s · {st.steps:,} steps · Δt = {st.delta_time:g} s")
+        if st.pacing == "afap":
+            self.labels["sim_rate"].setText(f"{st.achieved_hz:,.0f} steps/s (as fast as possible)")
+        else:
+            warn = "  ⚠ requested rate not achieved" if st.overrun else ""
+            self.labels["sim_rate"].setText(f"{st.achieved_hz:,.2f} / {st.requested_hz:g} Hz{warn}")
+        self.labels["sim_speed"].setText(f"{st.sim_speed:.4g}")
+        self.labels["sim_cost"].setText(f"{st.step_ms:.3f} ms · {st.dropped_steps:,} dropped")
 
     def set_gl_info(self, info: dict) -> None:
         self.labels["gl"].setText(f"{info.get('renderer', '?')} · {info.get('version', '?')}")

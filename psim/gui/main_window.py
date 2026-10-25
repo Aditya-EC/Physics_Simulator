@@ -35,6 +35,11 @@ from .library_items import Library
 from .object_library import ObjectLibraryPanel
 from .outliner import Outliner
 from .properties_panel import PropertiesPanel
+from .simulation_controller import SimulationController
+from .simulation_panels import ProcessesPanel, SimulationFields
+from .dialogs.process_dialogs import AssignProcessDialog, DependencyDialog, ProcessDocumentationDialog
+from .dialogs.simulation_settings_dialog import SimulationSettingsDialog
+from ..simulation.settings import PacingMode
 
 CLIP_MIME = "application/x-psim-objects"
 FILE_FILTER = "PSim projects (*.psim);;JSON files (*.json);;All files (*)"
@@ -60,6 +65,7 @@ class MainWindow(QMainWindow):
         self.bus = LogBus(self)
         install_logging(self.bus)
         self.library = Library()
+        self.sim = SimulationController(self.scene, self.editor, lambda: self.project.simulation, self)
 
         self._build_central()
         self._build_docks()
@@ -135,6 +141,8 @@ class MainWindow(QMainWindow):
         self.bottom_tabs.addTab(self.console, icons.icon("terminal"), "Console")
         self.bottom_tabs.addTab(self.problems, icons.icon("warning"), "Errors && Warnings")
         self.bottom_tabs.addTab(self.object_table, icons.icon("table"), "Object Table")
+        self.processes_panel = ProcessesPanel(self.scene, self.editor)
+        self.bottom_tabs.addTab(self.processes_panel, icons.icon("function"), "Processes")
         self.bottom_tabs.addTab(self.performance, icons.icon("activity"), "Performance")
         self.dock_bottom = self._dock("Panels", "dock_bottom", self.bottom_tabs, B)
         self.resizeDocks([self.dock_library, self.dock_inspector], [300, 340], Qt.Orientation.Horizontal)
@@ -154,8 +162,26 @@ class MainWindow(QMainWindow):
         A("file.recover", "Recover &Autosave…", lambda: self._offer_recovery(explicit=True), icon="history")
         A("file.exit", "E&xit", self.close, shortcut="Ctrl+Q")
         # edit
-        self.act_undo = self.actions_.register("edit.undo", self.undo.createUndoAction(self, "&Undo"), "Ctrl+Z", "undo")
-        self.act_redo = self.actions_.register("edit.redo", self.undo.createRedoAction(self, "&Redo"), "Ctrl+Y", "redo")
+        # own undo/redo actions so they can be disabled while a simulation session owns the scene state
+        self.act_undo = A("edit.undo", "&Undo", self._undo, icon="undo", shortcut="Ctrl+Z")
+        self.act_redo = A("edit.redo", "&Redo", self._redo, icon="redo", shortcut="Ctrl+Y")
+        # simulation
+        A("sim.start", "&Start / Resume", lambda: self._sim_start(), icon="play", shortcut="F5")
+        A("sim.pause", "&Pause", self.sim.pause, icon="pause", shortcut="F6")
+        A("sim.stop", "S&top", lambda: self.sim.stop(), icon="stop", shortcut="Shift+F5")
+        A("sim.reset", "&Reset", self.sim.reset, icon="reset", shortcut="Ctrl+F5")
+        A("sim.step", "Single S&tep", lambda: self._sim_start(step=True), icon="step", shortcut="F10")
+        A("sim.afap", "Run as &Fast as Possible", self._set_afap, icon="fast", checkable=True,
+          tip="Scientific calculation mode: no real-time pacing (Δt and duration still apply)")
+        A("sim.settings", "Simulation &Settings…", self.open_simulation_settings, icon="timer")
+        # processes
+        A("proc.assign", "&Assign Process…", lambda: self.assign_process(self.scene.selection), icon="function",
+          shortcut="Ctrl+Shift+P")
+        A("proc.manager", "Process &Table", self._show_processes, icon="table")
+        A("proc.validate", "&Validate Processes", self.validate_processes, icon="check")
+        A("proc.deps", "&Dependencies && Diagnostics…", self.show_dependencies, icon="tree")
+        A("proc.docs", "Process &Documentation…", lambda: ProcessDocumentationDialog(self.units, self).exec(),
+          icon="help")
         A("edit.cut", "Cu&t", self.cut, icon="cut", shortcut="Ctrl+X")
         A("edit.copy", "&Copy", self.copy, icon="copy", shortcut="Ctrl+C")
         A("edit.paste", "&Paste", self.paste, icon="paste", shortcut="Ctrl+V")
@@ -335,7 +361,9 @@ class MainWindow(QMainWindow):
         self._planned(m, "Rigid-body dynamics, collisions and joints — Phase 7")
 
         m = mb.addMenu("P&rocesses")
-        self._planned(m, "Formula-based process engine and authoring — Phase 4")
+        m.addActions([a["proc.assign"], a["proc.manager"], a["proc.validate"], a["proc.deps"], a["proc.docs"]])
+        m.addSeparator()
+        self._planned(m, "Formula-based process authoring (developer role) — Phase 4")
 
         m = mb.addMenu("&Coordinates")
         m.addAction(a["tool.global"])
@@ -351,7 +379,9 @@ class MainWindow(QMainWindow):
         m.addActions([a["units.dialog"], a["units.si"]])
 
         m = mb.addMenu("Si&mulation")
-        self._planned(m, "Simulation engine (fixed Δt, update-rate scheduler) — Phase 3")
+        m.addActions([a["sim.start"], a["sim.pause"], a["sim.stop"], a["sim.reset"], a["sim.step"]])
+        m.addSeparator()
+        m.addActions([a["sim.afap"], a["sim.settings"]])
 
         m = mb.addMenu("&Tools")
         m.addActions([a["tools.shortcuts"], a["tools.preferences"], a["view.settings"]])
@@ -436,6 +466,21 @@ class MainWindow(QMainWindow):
         tb.addWidget(views_btn)
         tb.addAction(a["view.fullscreen"])
         self.toolbar = tb
+        self.addToolBarBreak()
+        st = self.addToolBar("Simulation")
+        st.setObjectName("toolbar_simulation")
+        st.setIconSize(QSize(18, 18))
+        st.addActions([a["sim.start"], a["sim.pause"], a["sim.stop"], a["sim.reset"], a["sim.step"], a["sim.afap"]])
+        st.addSeparator()
+        self.sim_fields = SimulationFields()
+        self.sim_fields.deltaTimeChanged.connect(lambda v: self._sim_setting(self.sim.set_delta_time, v))
+        self.sim_fields.updateRateChanged.connect(lambda v: self._sim_setting(self.sim.set_update_rate, v))
+        self.sim_fields.durationChanged.connect(lambda v: self._sim_setting(self.sim.set_duration, v))
+        st.addWidget(self.sim_fields)
+        st.addAction(a["sim.settings"])
+        st.addSeparator()
+        st.addActions([a["proc.assign"], a["proc.deps"]])
+        self.sim_toolbar = st
 
     def _build_statusbar(self) -> None:
         sb = self.statusBar()
@@ -473,6 +518,28 @@ class MainWindow(QMainWindow):
         self.inspector.errorOccurred.connect(lambda msg: self.bus.error(msg, "inspector"))
         self.inspector.statusMessage.connect(lambda msg: self.statusBar().showMessage(msg, 3000))
         self.problems.countChanged.connect(self._problem_count)
+        self.undo.canUndoChanged.connect(self._update_undo_actions)
+        self.undo.canRedoChanged.connect(self._update_undo_actions)
+        self.undo.undoTextChanged.connect(self._update_undo_actions)
+        self.undo.redoTextChanged.connect(self._update_undo_actions)
+        self.sim.stateChanged.connect(self._on_sim_state)
+        self.sim.statsUpdated.connect(self._on_sim_stats)
+        self.sim.info.connect(lambda m: self.bus.info(m, "simulation"))
+        self.sim.warning.connect(lambda m: self.bus.warning(m, "simulation"))
+        self.sim.error.connect(self._on_sim_error)
+        self.processes_panel.addRequested.connect(lambda: self.assign_process(self.scene.selection))
+        self.processes_panel.editRequested.connect(self.edit_assignment)
+        self.processes_panel.validateRequested.connect(self.validate_processes)
+        self.processes_panel.dependenciesRequested.connect(self.show_dependencies)
+        self.processes_panel.documentationRequested.connect(
+            lambda: ProcessDocumentationDialog(self.units, self).exec())
+        self.inspector.assignProcessRequested.connect(self.assign_process)
+        self.inspector.editAssignmentRequested.connect(self.edit_assignment)
+        self.scene.processesChanged.connect(self._mark_dirty_processes)
+        self.viewport.status_provider = self._viewport_sim_status
+        self._sync_sim_fields()
+        self._update_undo_actions()
+        self._on_sim_state("idle")
         self._last_undo_index = 0
         QGuiApplication.clipboard().dataChanged.connect(self._update_actions)
         QApplication.instance().aboutToQuit.connect(self._disconnect_for_shutdown)
@@ -569,6 +636,7 @@ class MainWindow(QMainWindow):
         return r == QMessageBox.StandardButton.Discard
 
     def _reset_project(self) -> None:
+        self.sim.abandon()
         self.scene.clear()
         self.undo.clear()
         mesh_assets.clear()
@@ -577,6 +645,7 @@ class MainWindow(QMainWindow):
         self.project = ser.ProjectData()
         self.units.load_dict({})
         self._apply_view_settings(self.project.view)
+        self._sync_sim_fields()
         self.project_path = None
         self._extra_dirty = False
 
@@ -625,11 +694,13 @@ class MainWindow(QMainWindow):
         scratch_scene = Scene()
         # validate fully on a scratch scene first so a bad file never clobbers the open project
         ser.load_project_dict(raw, scratch_scene, type(self.units)())
+        self.sim.abandon()
         self.scene.clear()
         self.undo.clear()
         data = ser.load_project_dict(raw, self.scene, self.units)
         self.project = data
         self._apply_view_settings(data.view)
+        self._sync_sim_fields()
         self.library.reload_meshes()
         self.library_panel.rebuild()
         if data.ui.get("layout"):
@@ -768,7 +839,7 @@ class MainWindow(QMainWindow):
 
     def add_library_item(self, key: str, position=None) -> list:
         item = self.library.get(key)
-        if item is None:
+        if item is None or not self._require_idle("Adding objects"):
             return []
         if position is None:
             position = self._default_placement(key)
@@ -794,6 +865,8 @@ class MainWindow(QMainWindow):
             self.viewport.setFocus()
 
     def import_obj(self) -> None:
+        if not self._require_idle("Import"):
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Import Mesh", str(self.settings.value("last_dir", "")),
                                               "Wavefront OBJ (*.obj);;All files (*)")
         if path:
@@ -861,6 +934,174 @@ class MainWindow(QMainWindow):
             self._fill_add_menu(self.add_menu)
 
     # ======================================================================================
+    # simulation & processes
+    # ======================================================================================
+    def _require_idle(self, what: str) -> bool:
+        """Structural edits are blocked while a simulation session owns the scene state."""
+        if self.sim.session_active:
+            msg = f"{what} is not available during a simulation. Stop or reset the simulation first."
+            self.statusBar().showMessage(msg, 5000)
+            self.bus.warning(msg, "simulation")
+            return False
+        return True
+
+    def _undo(self) -> None:
+        if self._require_idle("Undo"):
+            self.undo.undo()
+
+    def _redo(self) -> None:
+        if self._require_idle("Redo"):
+            self.undo.redo()
+
+    def _update_undo_actions(self, *_args) -> None:
+        idle = not self.sim.session_active
+        self.act_undo.setEnabled(idle and self.undo.canUndo())
+        self.act_redo.setEnabled(idle and self.undo.canRedo())
+        self.act_undo.setText(f"&Undo {self.undo.undoText()}".strip())
+        self.act_redo.setText(f"&Redo {self.undo.redoText()}".strip())
+
+    def _sim_start(self, step: bool = False) -> None:
+        """Start/resume (or single-step); validation errors are collected and shown together."""
+        self._start_errors: list[str] = []
+        self._collecting_start_errors = True
+        try:
+            if step:
+                self.sim.step()
+                ok = self.sim.session_active
+            else:
+                ok = self.sim.start()
+        finally:
+            self._collecting_start_errors = False
+        if not ok and self._start_errors:
+            QMessageBox.warning(self, "Cannot start simulation", "\n\n".join(self._start_errors[-8:]))
+
+    def _on_sim_error(self, msg: str) -> None:
+        self.bus.error(msg, "simulation")
+        if getattr(self, "_collecting_start_errors", False):
+            self._start_errors.append(msg)
+        elif self.sim.state == "error":
+            QMessageBox.critical(self, "Simulation error", msg)
+
+    def _sim_setting(self, setter, value: float) -> None:
+        try:
+            setter(value)
+            errors = self.project.simulation.validate()
+            if errors:
+                raise ValueError("; ".join(errors))
+        except ValueError as exc:
+            self.bus.error(f"Invalid simulation setting: {exc}", "simulation")
+        self._mark_dirty()
+        self._sync_sim_fields()
+
+    def _sync_sim_fields(self) -> None:
+        s = self.project.simulation
+        self.sim_fields.set_values(s.delta_time, s.update_rate_hz, s.duration)
+        _set_checked(self.actions_["sim.afap"], s.pacing == PacingMode.AS_FAST_AS_POSSIBLE)
+
+    def _set_afap(self, on: bool) -> None:
+        self.sim.set_pacing(PacingMode.AS_FAST_AS_POSSIBLE if on else PacingMode.REAL_TIME)
+        self._mark_dirty()
+
+    def open_simulation_settings(self) -> None:
+        dlg = SimulationSettingsDialog(self.project.simulation, self.sim.session_active, self)
+        if dlg.exec() and dlg.result_settings is not None:
+            new = dlg.result_settings
+            old = self.project.simulation
+            self.project.simulation = new
+            if self.sim.session_active:
+                for attr, setter in (("delta_time", self.sim.set_delta_time),
+                                     ("update_rate_hz", self.sim.set_update_rate),
+                                     ("duration", self.sim.set_duration), ("render_fps", self.sim.set_render_fps)):
+                    if getattr(new, attr) != getattr(old, attr):
+                        setter(getattr(new, attr))
+                if new.pacing != old.pacing:
+                    self.sim.set_pacing(new.pacing)
+            self.viewport.set_continuous(self.viewport.continuous, new.render_fps)
+            self._mark_dirty()
+            self._sync_sim_fields()
+
+    def _on_sim_state(self, state: str) -> None:
+        a = self.actions_
+        active = self.sim.session_active
+        running = state == "running"
+        a["sim.start"].setEnabled(not running)
+        a["sim.start"].setText("&Resume" if state in ("paused",) else "&Start")
+        a["sim.pause"].setEnabled(running)
+        a["sim.stop"].setEnabled(active)
+        a["sim.reset"].setEnabled(self.sim.can_reset)
+        a["sim.step"].setEnabled(state in ("idle", "paused"))
+        for k in ("edit.cut", "edit.paste", "edit.duplicate", "edit.delete", "scene.group", "scene.ungroup",
+                  "scene.unparent", "file.import_obj"):
+            if active:
+                a[k].setEnabled(False)
+        if not active:
+            self._update_actions()
+        self._update_undo_actions()
+        self.inspector.set_simulated_ids(self.sim.body_ids)
+        if running:
+            self.viewport.set_continuous(True, self.project.simulation.render_fps)
+        elif not self.actions_["view.continuous"].isChecked():
+            self.viewport.set_continuous(False)
+        if state == "idle":
+            self.sim_fields.show_idle()
+        self.viewport.update()
+
+    def _on_sim_stats(self, st) -> None:
+        self.sim_fields.show_stats(st)
+        if self.bottom_tabs.currentWidget() is self.performance:
+            self.performance.update_sim_stats(st)
+
+    def _viewport_sim_status(self) -> str:
+        st = self.sim.last_stats
+        if not self.sim.session_active or st is None:
+            return ""
+        return f"Simulation {st.state}  ·  t = {st.time:.4f} s  ·  step {st.steps:,}"
+
+    def _mark_dirty_processes(self) -> None:
+        self._update_title()
+
+    def _show_processes(self) -> None:
+        self.dock_bottom.show()
+        self.bottom_tabs.setCurrentWidget(self.processes_panel)
+
+    def assign_process(self, ids) -> None:
+        dlg = AssignProcessDialog(self.scene, self.units, preset_ids=list(ids or []), parent=self)
+        if dlg.exec() and dlg.result:
+            r = dlg.result
+            a = self.editor.assign_process(r["process_id"], r["targets"], r["params"], r["label"])
+            self.bus.info(f"Assigned {a.uid} ({a.process_id}) to {a.targets.describe()}", "processes")
+            self._report_plan(quiet=True)
+
+    def edit_assignment(self, uid: str) -> None:
+        a = self.scene.assignment(uid)
+        if a is None:
+            return
+        dlg = AssignProcessDialog(self.scene, self.units, assignment=a, parent=self)
+        if dlg.exec() and dlg.result:
+            r = dlg.result
+            self.editor.update_assignment(uid, targets=r["targets"], params=r["params"], label=r["label"])
+            self._report_plan(quiet=True)
+
+    def _report_plan(self, quiet: bool = False):
+        plan = self.sim.validate()
+        for d in plan.diagnostics:
+            (self.bus.error if d.level == "error" else self.bus.warning)(d.message, "processes")
+        if not quiet and not plan.diagnostics:
+            self.bus.info(f"Process plan valid: {len(plan.body_ids)} bodies, "
+                          f"{len(plan.contributions) + len(plan.prescribed)} active assignments", "processes")
+        return plan
+
+    def validate_processes(self) -> None:
+        plan = self._report_plan()
+        if plan.errors:
+            QMessageBox.warning(self, "Process validation", "\n\n".join(d.message for d in plan.errors))
+        else:
+            self.statusBar().showMessage("Process plan is valid", 3000)
+
+    def show_dependencies(self) -> None:
+        DependencyDialog(self.sim.validate(), self.scene, self).exec()
+
+    # ======================================================================================
     # editing commands
     # ======================================================================================
     def copy(self) -> None:
@@ -874,10 +1115,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Copied {len(states)} object(s)", 2500)
 
     def cut(self) -> None:
+        if not self._require_idle("Cut"):
+            return
         self.copy()
         self.delete_selection()
 
     def paste(self) -> None:
+        if not self._require_idle("Paste"):
+            return
         mime = QGuiApplication.clipboard().mimeData()
         if mime is None or not mime.hasFormat(CLIP_MIME):
             return
@@ -890,9 +1135,13 @@ class MainWindow(QMainWindow):
             self.bus.error(f"Paste failed: {exc}", "edit")
 
     def duplicate(self) -> None:
+        if not self._require_idle("Duplicate"):
+            return
         self.editor.duplicate(self.scene.selection)
 
     def delete_selection(self) -> None:
+        if not self._require_idle("Delete"):
+            return
         sel = self.scene.selection
         locked = [i for i in sel if self.scene.is_effectively_locked(i)]
         if locked:
@@ -912,14 +1161,20 @@ class MainWindow(QMainWindow):
         self.scene.set_selection([i for i in self.scene.objects if i not in sel])
 
     def group(self) -> None:
+        if not self._require_idle("Group"):
+            return
         g = self.editor.group(self.scene.selection)
         if g is not None:
             self.bus.info(f"Grouped into {g.name} ({g.id})", "edit")
 
     def ungroup(self) -> None:
+        if not self._require_idle("Ungroup"):
+            return
         self.editor.ungroup(self.scene.selection)
 
     def _reparent(self, ids, parent_id) -> None:
+        if not self._require_idle("Reparenting"):
+            return
         try:
             self.editor.reparent(ids, parent_id)
         except SceneError as exc:
@@ -1206,6 +1461,8 @@ class MainWindow(QMainWindow):
                          Qt.Orientation.Vertical)
 
     def closeEvent(self, e: QCloseEvent) -> None:  # noqa: N802
+        if self.sim.session_active:
+            self.sim.stop()
         if not self._confirm_discard():
             e.ignore()
             return

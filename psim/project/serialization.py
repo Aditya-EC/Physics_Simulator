@@ -1,6 +1,7 @@
 """Versioned project file format (.psim, JSON).
 
-Top-level layout (format version 1):
+Top-level layout (format version 2; version 1 files — without process
+assignments — are still read):
 
     {
       "format": "psim-project",
@@ -9,6 +10,8 @@ Top-level layout (format version 1):
       "metadata":   {"name", "description", "author", "created", "modified"},
       "id_counter": <next numeric object id>,
       "objects":    [<SceneObject.to_dict()>...],   # scene order
+      "processes":  [<ProcessAssignment.to_dict()>...],  # evaluation order (v2)
+      "process_counter": <next numeric process assignment id> (v2)
       "assets":     {"meshes": {<asset id>: {"name", "vertices", "indices"}}},
       "units":      {"preferred": {...}, "custom_units": [...]},
       "view":       <ViewSettings.to_dict()>,
@@ -40,7 +43,7 @@ from ..simulation.settings import SimulationSettings
 from ..units.unit_registry import UnitRegistry
 
 FORMAT = "psim-project"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 MAX_FILE_BYTES = 512 * 1024 * 1024
 
 
@@ -74,6 +77,8 @@ def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dic
         "metadata": meta,
         "id_counter": scene.ids.next_value,
         "objects": [o.to_dict() for o in ordered],
+        "processes": scene.process_snapshot(),
+        "process_counter": scene.next_process_number,
         "assets": {"meshes": mesh_assets.to_dict({a for a in used_assets if a})},
         "units": units.to_dict(),
         "view": data.view.to_dict(),
@@ -160,6 +165,23 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
         if obj.type_id == "user.mesh" and mesh_assets.get(obj.params.get("asset", "")) is None:
             data.warnings.append(f"{obj.id}: missing mesh asset '{obj.params.get('asset')}' (shown as a placeholder box)")
         objects.append(obj)
+    from ..processes.process_base import ProcessAssignment, ProcessError
+    from ..processes.process_registry import process_registry
+    assignments = []
+    for i, ad in enumerate(raw.get("processes", []) if version >= 2 else []):
+        try:
+            if not isinstance(ad, dict):
+                raise ProcessError("malformed entry")
+            a = ProcessAssignment.from_dict(ad)
+            if any(a.uid == b.uid for b in assignments):
+                raise ProcessError(f"duplicate assignment id '{a.uid}'")
+        except ProcessError as exc:
+            raise ProjectError(f"Process assignment #{i}: {exc}") from None
+        if not process_registry().has(a.process_id):
+            data.warnings.append(f"{a.uid}: process '{a.process_id}' is not available in this installation "
+                                 "(kept but disabled)")
+            a.enabled = False
+        assignments.append(a)
     for obj in objects:
         if obj.parent_id and obj.parent_id not in seen:
             data.warnings.append(f"{obj.id}: parent '{obj.parent_id}' not found; object moved to the scene root")
@@ -167,6 +189,12 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
 
     scene.blockSignals(True)
     try:
+        scene.assignments = assignments
+        try:
+            scene.next_process_number = max(int(raw.get("process_counter", 1)), 1)
+        except (TypeError, ValueError):
+            scene.next_process_number = 1
+        scene.runtime = {}
         scene.objects.clear()
         scene.set_selection([])
         try:
@@ -187,6 +215,7 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
                 obj.parent_id = None
         data.warnings += cycles
     scene.sceneReset.emit()
+    scene.processesChanged.emit()
 
     if isinstance(raw.get("units"), dict):
         data.warnings += units.load_dict(raw["units"])
@@ -204,3 +233,4 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
 
 def load_project(path: str, scene: Scene, units: UnitRegistry) -> ProjectData:
     return load_project_dict(read_project_file(path), scene, units)
+

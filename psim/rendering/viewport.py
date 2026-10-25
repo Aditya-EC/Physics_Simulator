@@ -63,6 +63,7 @@ class Viewport(QOpenGLWidget):
         self._follow_offset: np.ndarray | None = None
         self._follow_eye: np.ndarray | None = None
         self.ghost_provider = None  # callable(payload: dict) -> Mesh | None
+        self.status_provider = None  # callable() -> str shown in the HUD (e.g. simulation time)
         self._ghost: GhostDraw | None = None
         self._drag_payload: dict | None = None
         self._press_pos: QPoint | None = None
@@ -223,6 +224,10 @@ class Viewport(QOpenGLWidget):
         space = "Global" if self.gizmo_global else "Local"
         sel = len(self.scene.selection)
         lines = [f"{proj}  ·  {tool} ({space})  ·  {len(self.scene)} objects  ·  {sel} selected"]
+        if self.status_provider is not None:
+            extra = self.status_provider()
+            if extra:
+                lines.append(extra)
         if self.follow_mode != "none" and self.follow_id:
             label = {"look_at": "Looking at", "follow": "Following", "track_frame": "Tracking frame of"}[self.follow_mode]
             lines.append(f"Camera: {label} {self.follow_id}")

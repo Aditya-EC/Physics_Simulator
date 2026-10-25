@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "psim/integrators.hpp"
 #include "psim/mesh_ops.hpp"
 #include "psim/transforms.hpp"
 
@@ -93,6 +94,16 @@ py::dict mass_dict(const MassProperties& mp) {
     d["centroid"] = from_vec3(mp.centroid);
     d["inertia"] = from_mat3(mp.inertia);
     return d;
+}
+
+// In-place kernels: require writable float64 C-contiguous arrays (no silent copies).
+using InPlace = py::array_t<double, py::array::c_style>;
+
+double* writable(InPlace& a, py::ssize_t cols, const char* name) {
+    if (a.ndim() != 2 || a.shape(1) != cols)
+        throw std::invalid_argument(std::string(name) + " must have shape (N, " + std::to_string(cols) + ")");
+    if (!a.writeable()) throw std::invalid_argument(std::string(name) + " must be writable");
+    return a.mutable_data();
 }
 
 }  // namespace
@@ -185,6 +196,42 @@ PYBIND11_MODULE(_psim_native, m) {
         check_mesh(v, f);
         return mass_dict(mass_properties_solid(v.data(), f.data(), f.shape(0), density));
     });
+    // ---- time integration (in place) -----------------------------------------------
+    m.def("integrate_linear", [](const std::string& method, InPlace x, InPlace v, const DArr& a, double dt) {
+        double* xp = writable(x, 3, "x");
+        double* vp = writable(v, 3, "v");
+        if (a.ndim() != 2 || a.shape(0) != x.shape(0) || a.shape(1) != 3 || v.shape(0) != x.shape(0))
+            throw std::invalid_argument("x, v and a must all have shape (N, 3)");
+        if (method == "explicit_euler")
+            integrate_explicit_euler(xp, vp, a.data(), x.shape(0), dt);
+        else if (method == "semi_implicit_euler")
+            integrate_semi_implicit_euler(xp, vp, a.data(), x.shape(0), dt);
+        else
+            throw std::invalid_argument("unknown integration method '" + method + "'");
+    }, py::arg("method"), py::arg("x").noconvert(), py::arg("v").noconvert(), py::arg("a"), py::arg("dt"));
+    m.def("quat_integrate", [](InPlace q, const DArr& w, double dt) {
+        double* qp = writable(q, 4, "q");
+        if (w.ndim() != 2 || w.shape(0) != q.shape(0) || w.shape(1) != 3)
+            throw std::invalid_argument("w must have shape (N, 3)");
+        quat_integrate(qp, w.data(), q.shape(0), dt);
+    }, py::arg("q").noconvert(), py::arg("w"), py::arg("dt"));
+
+    m.def("quat_rotate_batch", [](const DArr& q, const DArr& v) {
+        if (q.ndim() != 2 || q.shape(1) != 4 || v.ndim() != 2 || v.shape(1) != 3 || v.shape(0) != q.shape(0))
+            throw std::invalid_argument("expected q (N, 4) and v (N, 3)");
+        py::array_t<double> out({v.shape(0), static_cast<py::ssize_t>(3)});
+        quat_rotate_batch(q.data(), v.data(), q.shape(0), out.mutable_data());
+        return out;
+    });
+    m.def("rotate_tensors", [](const DArr& q, const DArr& t) {
+        if (q.ndim() != 2 || q.shape(1) != 4 || t.ndim() != 3 || t.shape(0) != q.shape(0) || t.shape(1) != 3 ||
+            t.shape(2) != 3)
+            throw std::invalid_argument("expected q (N, 4) and tensors (N, 3, 3)");
+        py::array_t<double> out({t.shape(0), static_cast<py::ssize_t>(3), static_cast<py::ssize_t>(3)});
+        rotate_tensors(q.data(), t.data(), q.shape(0), out.mutable_data());
+        return out;
+    });
+
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);
         return mass_dict(mass_properties_shell(v.data(), f.data(), f.shape(0), areal_density));

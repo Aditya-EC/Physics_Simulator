@@ -1,12 +1,12 @@
 {
  "format": "psim-project",
- "format_version": 1,
+ "format_version": 2,
  "app_version": "0.1.0",
  "metadata": {
   "name": "Primitive Gallery",
   "description": "Example project shipped with PSim Studio",
-  "created": "2026-10-25T21:02:36+00:00",
-  "modified": "2026-10-25T21:02:36+00:00"
+  "created": "2026-10-25T21:32:56+00:00",
+  "modified": "2026-10-25T21:32:56+00:00"
  },
  "id_counter": 15,
  "objects": [
@@ -1253,6 +1253,8 @@
    "label_background": true
   }
  ],
+ "processes": [],
+ "process_counter": 1,
  "assets": {
   "meshes": {}
  },
@@ -1396,6 +1398,8 @@
   "duration_policy": "final_partial_step",
   "max_catch_up_steps": 10,
   "record_every_n_steps": 1,
+  "integrator": "semi_implicit_euler",
+  "breakpoints": [],
   "min_delta_time": 1e-09,
   "max_delta_time": 10.0,
   "min_update_rate_hz": 0.1,

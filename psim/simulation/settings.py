@@ -15,7 +15,7 @@ simulated seconds per wall-clock second (when the hardware keeps up).
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 
 
@@ -46,6 +46,8 @@ class SimulationSettings:
     duration_policy: DurationPolicy = DurationPolicy.FINAL_PARTIAL_STEP
     max_catch_up_steps: int = 10      # per scheduler tick when behind schedule
     record_every_n_steps: int = 1
+    integrator: str = "semi_implicit_euler"
+    breakpoints: list = field(default_factory=list)  # simulated times at which the run pauses
     min_delta_time: float = 1e-9
     max_delta_time: float = 10.0
     min_update_rate_hz: float = 0.1
@@ -66,6 +68,11 @@ class SimulationSettings:
             errors.append("Maximum catch-up steps must be at least 1")
         if self.record_every_n_steps < 1:
             errors.append("Recording interval must be at least 1 step")
+        from .integrators import INTEGRATORS
+        if self.integrator not in INTEGRATORS:
+            errors.append(f"Unknown integrator '{self.integrator}'")
+        if any(not (isinstance(b, (int, float)) and math.isfinite(b) and b > 0) for b in self.breakpoints):
+            errors.append("Breakpoints must be positive simulated times")
         return errors
 
     def check(self) -> None:
@@ -106,6 +113,10 @@ class SimulationSettings:
                     v = PacingMode(v)
                 elif k == "duration_policy":
                     v = DurationPolicy(v)
+                elif k == "integrator":
+                    v = str(v)
+                elif k == "breakpoints":
+                    v = sorted(float(b) for b in v)
                 elif isinstance(getattr(s, k), int):
                     v = int(v)
                 else:
