@@ -1,0 +1,1405 @@
+{
+ "format": "psim-project",
+ "format_version": 1,
+ "app_version": "0.1.0",
+ "metadata": {
+  "name": "Primitive Gallery",
+  "description": "Example project shipped with PSim Studio",
+  "created": "2026-10-25T21:02:36+00:00",
+  "modified": "2026-10-25T21:02:36+00:00"
+ },
+ "id_counter": 15,
+ "objects": [
+  {
+   "id": "OBJ-000001",
+   "type": "basic.cube",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "size": 1.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Cube 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -4.0,
+    -2.2,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.36,
+    0.58,
+    0.86
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000002",
+   "type": "basic.cuboid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 1.6,
+    "width": 1.0,
+    "height": 0.6
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Rectangular Cuboid 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -2.0,
+    -2.2,
+    0.30000001192092896
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.89,
+    0.53,
+    0.29
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000003",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.5,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Sphere 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.0,
+    -2.2,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.47,
+    0.72,
+    0.45
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000004",
+   "type": "basic.ellipsoid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "rx": 0.8,
+    "ry": 0.5,
+    "rz": 0.35,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Ellipsoid 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    2.0,
+    -2.2,
+    0.3499999940395355
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.84,
+    0.38,
+    0.42
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000005",
+   "type": "basic.cylinder",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.4,
+    "height": 1.0,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Cylinder 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    4.0,
+    -2.2,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.62,
+    0.5,
+    0.82
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000006",
+   "type": "basic.cone",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.5,
+    "height": 1.0,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Cone 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -4.0,
+    0.0,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.86,
+    0.75,
+    0.36
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000007",
+   "type": "basic.frustum",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "bottom_radius": 0.5,
+    "top_radius": 0.25,
+    "height": 0.8,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Frustum 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -2.0,
+    0.0,
+    0.4000000059604645
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.36,
+    0.74,
+    0.76
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000008",
+   "type": "basic.torus",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "major_radius": 0.5,
+    "minor_radius": 0.15,
+    "segments": 64
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Torus 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.0,
+    0.0,
+    0.15000000596046448
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.72,
+    0.72,
+    0.74
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000009",
+   "type": "basic.capsule",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.3,
+    "length": 0.8,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Capsule 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    2.0,
+    0.0,
+    0.699999988079071
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.36,
+    0.58,
+    0.86
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000010",
+   "type": "basic.pyramid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "base_length": 1.0,
+    "base_width": 1.0,
+    "height": 1.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Pyramid 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    4.0,
+    0.0,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.89,
+    0.53,
+    0.29
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000011",
+   "type": "basic.prism",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "sides": 6,
+    "circumradius": 0.5,
+    "height": 1.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Prism 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -4.0,
+    2.2,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.47,
+    0.72,
+    0.45
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000012",
+   "type": "basic.hemisphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.5,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Hemisphere 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -2.0,
+    2.2,
+    0.25
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.84,
+    0.38,
+    0.42
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000013",
+   "type": "basic.disk",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.6,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Disk 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.0,
+    2.2,
+    0.001
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.62,
+    0.5,
+    0.82
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 5.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000014",
+   "type": "basic.plane",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 2.0,
+    "width": 2.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Plane 1",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    2.0,
+    2.2,
+    0.001
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.86,
+    0.75,
+    0.36
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 5.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  }
+ ],
+ "assets": {
+  "meshes": {}
+ },
+ "units": {
+  "preferred": {},
+  "property_units": {},
+  "custom_units": []
+ },
+ "view": {
+  "grids": {
+   "XY": {
+    "plane": "XY",
+    "visible": true,
+    "color": [
+     0.55,
+     0.58,
+     0.64
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "YZ": {
+    "plane": "YZ",
+    "visible": false,
+    "color": [
+     0.62,
+     0.55,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "XZ": {
+    "plane": "XZ",
+    "visible": false,
+    "color": [
+     0.55,
+     0.62,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   }
+  },
+  "axes": {
+   "visible": true,
+   "length": 1.5,
+   "line_width": 3.0,
+   "x_color": [
+    0.91,
+    0.3,
+    0.28
+   ],
+   "y_color": [
+    0.42,
+    0.8,
+    0.32
+   ],
+   "z_color": [
+    0.32,
+    0.55,
+    0.97
+   ],
+   "show_labels": true,
+   "show_origin_marker": true,
+   "show_view_triad": true
+  },
+  "snap": {
+   "grid_snap": true,
+   "translate_increment": 0.25,
+   "rotate_snap": false,
+   "rotate_increment_deg": 15.0,
+   "scale_snap": false,
+   "scale_increment": 0.1,
+   "surface_snap": true,
+   "work_plane": "XY",
+   "work_plane_offset": 0.0
+  },
+  "environment": {
+   "background_top": [
+    0.17,
+    0.18,
+    0.2
+   ],
+   "background_bottom": [
+    0.1,
+    0.105,
+    0.115
+   ],
+   "shadows": true,
+   "ground_shadow": true,
+   "ambient": 0.35,
+   "light_azimuth_deg": 35.0,
+   "light_elevation_deg": 55.0,
+   "light_intensity": 2.6,
+   "show_labels": true,
+   "show_local_axes": false,
+   "highlight_color": [
+    0.98,
+    0.62,
+    0.18
+   ],
+   "show_stats": true,
+   "msaa_samples": 4
+  },
+  "camera": {
+   "target": [
+    0.0,
+    0.0,
+    0.4
+   ],
+   "distance": 8.0,
+   "azimuth_deg": -55.0,
+   "elevation_deg": 28.0,
+   "fov_deg": 45.0,
+   "orthographic": false
+  },
+  "bookmarks": {}
+ },
+ "simulation": {
+  "delta_time": 0.01,
+  "update_rate_hz": 100.0,
+  "duration": 10.0,
+  "render_fps": 60.0,
+  "pacing": "real_time",
+  "duration_policy": "final_partial_step",
+  "max_catch_up_steps": 10,
+  "record_every_n_steps": 1,
+  "min_delta_time": 1e-09,
+  "max_delta_time": 10.0,
+  "min_update_rate_hz": 0.1,
+  "max_update_rate_hz": 100000.0
+ },
+ "ui": {}
+}

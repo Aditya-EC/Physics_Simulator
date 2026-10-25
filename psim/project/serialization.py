@@ -1,0 +1,206 @@
+"""Versioned project file format (.psim, JSON).
+
+Top-level layout (format version 1):
+
+    {
+      "format": "psim-project",
+      "format_version": 1,
+      "app_version": "0.1.0",
+      "metadata":   {"name", "description", "author", "created", "modified"},
+      "id_counter": <next numeric object id>,
+      "objects":    [<SceneObject.to_dict()>...],   # scene order
+      "assets":     {"meshes": {<asset id>: {"name", "vertices", "indices"}}},
+      "units":      {"preferred": {...}, "custom_units": [...]},
+      "view":       <ViewSettings.to_dict()>,
+      "simulation": <SimulationSettings.to_dict()>,
+      "ui":         {"layout": <base64 Qt window state>}   (optional)
+    }
+
+Project files are pure data. Loading never evaluates code: every field is
+type-checked, unknown object types are rejected, and values are validated
+through the property system.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import json
+import os
+import tempfile
+from dataclasses import dataclass, field
+
+from .. import __version__
+from ..core.ids import DuplicateIdError
+from ..properties.property_system import PropertyError
+from ..rendering.view_settings import ViewSettings
+from ..scene.builtin_types import mesh_assets
+from ..scene.object_base import SceneObject
+from ..scene.object_registry import RegistryError
+from ..scene.scene_manager import Scene
+from ..simulation.settings import SimulationSettings
+from ..units.unit_registry import UnitRegistry
+
+FORMAT = "psim-project"
+FORMAT_VERSION = 1
+MAX_FILE_BYTES = 512 * 1024 * 1024
+
+
+class ProjectError(Exception):
+    pass
+
+
+@dataclass
+class ProjectData:
+    metadata: dict = field(default_factory=dict)
+    view: ViewSettings = field(default_factory=ViewSettings)
+    simulation: SimulationSettings = field(default_factory=SimulationSettings)
+    ui: dict = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+
+def now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dict:
+    ordered = list(scene.objects.values())  # parent links are resolved after loading, so order is preserved
+    used_assets = {o.params.get("asset") for o in ordered if o.type_id == "user.mesh"}
+    meta = dict(data.metadata)
+    meta.setdefault("created", now_iso())
+    meta["modified"] = now_iso()
+    return {
+        "format": FORMAT,
+        "format_version": FORMAT_VERSION,
+        "app_version": __version__,
+        "metadata": meta,
+        "id_counter": scene.ids.next_value,
+        "objects": [o.to_dict() for o in ordered],
+        "assets": {"meshes": mesh_assets.to_dict({a for a in used_assets if a})},
+        "units": units.to_dict(),
+        "view": data.view.to_dict(),
+        "simulation": data.simulation.to_dict(),
+        "ui": dict(data.ui),
+    }
+
+
+def save_project(path: str, scene: Scene, units: UnitRegistry, data: ProjectData) -> None:
+    payload = project_to_dict(scene, units, data)
+    data.metadata = payload["metadata"]
+    write_json_atomic(path, payload)
+
+
+def write_json_atomic(path: str, payload: dict) -> None:
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".psim-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=1, ensure_ascii=False, allow_nan=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        # mkstemp creates 0600 files; keep the existing file's mode, else use the default (umask) mode
+        try:
+            mode = os.stat(path).st_mode & 0o777
+        except FileNotFoundError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_project_file(path: str) -> dict:
+    try:
+        if os.path.getsize(path) > MAX_FILE_BYTES:
+            raise ProjectError("Project file is too large")
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        raise ProjectError(f"File not found: {path}") from None
+    except json.JSONDecodeError as exc:
+        raise ProjectError(f"Not a valid project file (JSON error at line {exc.lineno}: {exc.msg})") from None
+    except UnicodeDecodeError:
+        raise ProjectError("Not a valid project file (not UTF-8 text)") from None
+    return raw
+
+
+def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectData:
+    """Validate `raw` and load it into `scene` / `units`. The scene is only modified on success."""
+    if not isinstance(raw, dict) or raw.get("format") != FORMAT:
+        raise ProjectError("Not a PSim project file")
+    version = raw.get("format_version")
+    if not isinstance(version, int):
+        raise ProjectError("Project file has no format version")
+    if version > FORMAT_VERSION:
+        raise ProjectError(f"Unsupported project version {version} (this application reads up to {FORMAT_VERSION}). "
+                           "Please update the application.")
+    data = ProjectData()
+    # assets first so user meshes resolve
+    assets = raw.get("assets", {})
+    if isinstance(assets, dict) and isinstance(assets.get("meshes"), dict):
+        data.warnings += mesh_assets.load_dict(assets["meshes"])
+
+    objects: list[SceneObject] = []
+    seen: set[str] = set()
+    for i, od in enumerate(raw.get("objects", [])):
+        if not isinstance(od, dict):
+            raise ProjectError(f"Object #{i} is malformed")
+        try:
+            obj = SceneObject.from_dict(od)
+        except (PropertyError, RegistryError) as exc:
+            raise ProjectError(str(exc)) from None
+        if obj.id in seen:
+            raise ProjectError(f"Duplicate object ID '{obj.id}'")
+        seen.add(obj.id)
+        if obj.type_id == "user.mesh" and mesh_assets.get(obj.params.get("asset", "")) is None:
+            data.warnings.append(f"{obj.id}: missing mesh asset '{obj.params.get('asset')}' (shown as a placeholder box)")
+        objects.append(obj)
+    for obj in objects:
+        if obj.parent_id and obj.parent_id not in seen:
+            data.warnings.append(f"{obj.id}: parent '{obj.parent_id}' not found; object moved to the scene root")
+            obj.parent_id = None
+
+    scene.blockSignals(True)
+    try:
+        scene.objects.clear()
+        scene.set_selection([])
+        try:
+            scene.ids.reset(int(raw.get("id_counter", 1)))
+        except (TypeError, ValueError):
+            scene.ids.reset(1)
+        for obj in objects:
+            scene.ids.reserve(obj.id)
+            scene.objects[obj.id] = obj
+    except DuplicateIdError as exc:
+        raise ProjectError(str(exc)) from None
+    finally:
+        scene.blockSignals(False)
+    cycles = [p for p in scene.validate() if "cycle" in p]
+    if cycles:
+        for obj in objects:
+            if obj.id in scene.ancestors(obj.id):
+                obj.parent_id = None
+        data.warnings += cycles
+    scene.sceneReset.emit()
+
+    if isinstance(raw.get("units"), dict):
+        data.warnings += units.load_dict(raw["units"])
+    if isinstance(raw.get("view"), dict):
+        data.view = ViewSettings.from_dict(raw["view"])
+    if isinstance(raw.get("simulation"), dict):
+        data.simulation = SimulationSettings.from_dict(raw["simulation"])
+        data.warnings += [f"Simulation settings: {e}" for e in data.simulation.validate()]
+    if isinstance(raw.get("metadata"), dict):
+        data.metadata = {str(k): str(v) for k, v in raw["metadata"].items()}
+    if isinstance(raw.get("ui"), dict):
+        data.ui = {k: v for k, v in raw["ui"].items() if isinstance(v, str)}
+    return data
+
+
+def load_project(path: str, scene: Scene, units: UnitRegistry) -> ProjectData:
+    return load_project_dict(read_project_file(path), scene, units)

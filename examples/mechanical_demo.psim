@@ -1,0 +1,1042 @@
+{
+ "format": "psim-project",
+ "format_version": 1,
+ "app_version": "0.1.0",
+ "metadata": {
+  "name": "Mechanical Demo",
+  "description": "Example project shipped with PSim Studio",
+  "created": "2026-10-25T21:02:36+00:00",
+  "modified": "2026-10-25T21:02:36+00:00"
+ },
+ "id_counter": 11,
+ "objects": [
+  {
+   "id": "OBJ-000001",
+   "type": "basic.cuboid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 4.0,
+    "width": 2.5,
+    "height": 0.1
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Base Plate",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.0,
+    0.0,
+    0.05
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.42,
+    0.44,
+    0.48
+   ],
+   "opacity": 1.0,
+   "material": "Brushed Metal",
+   "metallic": 1.0,
+   "roughness": 0.45,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000002",
+   "type": "frame.reference",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "axis_length": 0.6
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Machine Frame",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -1.6,
+    -0.9,
+    0.1
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.89,
+    0.53,
+    0.29
+   ],
+   "opacity": 1.0,
+   "material": "Glossy Plastic",
+   "metallic": 0.0,
+   "roughness": 0.25,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000003",
+   "type": "mech.gear",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "teeth": 24,
+    "outer_radius": 0.6,
+    "root_radius": 0.52,
+    "thickness": 0.15
+   },
+   "orientation": [
+    0.7071067811865476,
+    0.7071067811865475,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true,
+    "com": true
+   },
+   "custom": [],
+   "name": "Input Gear",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -0.6,
+    0.0,
+    0.9
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.68,
+    0.7,
+    0.74
+   ],
+   "opacity": 1.0,
+   "material": "Brushed Metal",
+   "metallic": 1.0,
+   "roughness": 0.45,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000004",
+   "type": "mech.gear",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "teeth": 12,
+    "outer_radius": 0.32,
+    "root_radius": 0.26,
+    "thickness": 0.15
+   },
+   "orientation": [
+    0.7010573846499779,
+    0.7010573846499778,
+    0.09229595564125724,
+    0.09229595564125725
+   ],
+   "overlays": {
+    "name": true
+   },
+   "custom": [],
+   "name": "Output Gear",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.33,
+    0.0,
+    0.9
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.82,
+    0.62,
+    0.28
+   ],
+   "opacity": 1.0,
+   "material": "Brushed Metal",
+   "metallic": 1.0,
+   "roughness": 0.45,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000005",
+   "type": "basic.cylinder",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.05,
+    "height": 1.0,
+    "segments": 48
+   },
+   "orientation": [
+    0.7071067811865476,
+    0.7071067811865475,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Input Shaft",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -0.6,
+    0.0,
+    0.9
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.75,
+    0.76,
+    0.79
+   ],
+   "opacity": 1.0,
+   "material": "Polished Metal",
+   "metallic": 1.0,
+   "roughness": 0.15,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000006",
+   "type": "basic.cylinder",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.04,
+    "height": 1.0,
+    "segments": 48
+   },
+   "orientation": [
+    0.7071067811865476,
+    0.7071067811865475,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Output Shaft",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.33,
+    0.0,
+    0.9
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.75,
+    0.76,
+    0.79
+   ],
+   "opacity": 1.0,
+   "material": "Polished Metal",
+   "metallic": 1.0,
+   "roughness": 0.15,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000007",
+   "type": "mech.i_beam",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "width": 0.2,
+    "height": 0.25,
+    "web": 0.02,
+    "flange": 0.03,
+    "length": 0.8
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Support Beam",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.5,
+    0.6,
+    0.5
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.8,
+    0.45,
+    0.25
+   ],
+   "opacity": 1.0,
+   "material": "Painted Metal",
+   "metallic": 0.3,
+   "roughness": 0.4,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000008",
+   "type": "mech.spring",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "coil_radius": 0.12,
+    "wire_radius": 0.015,
+    "length": 0.6,
+    "turns": 9.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Return Spring",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.5,
+    -0.6,
+    0.4
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.75,
+    0.76,
+    0.8
+   ],
+   "opacity": 1.0,
+   "material": "Polished Metal",
+   "metallic": 1.0,
+   "roughness": 0.15,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 7850.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000009",
+   "type": "body.point_mass",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "display_radius": 0.12
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true,
+    "id": true,
+    "mass": true
+   },
+   "custom": [],
+   "name": "Probe Mass",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.5,
+    -0.6,
+    0.85
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.72,
+    0.25
+   ],
+   "opacity": 1.0,
+   "material": "Glossy Plastic",
+   "metallic": 0.0,
+   "roughness": 0.25,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "mass",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  },
+  {
+   "id": "OBJ-000010",
+   "type": "measure.vector_arrow",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 0.8,
+    "shaft_radius": 0.025
+   },
+   "orientation": [
+    0.7071067811865476,
+    0.0,
+    -0.7071067811865475,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Load Direction",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.5,
+    -0.6,
+    1.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.6,
+    0.2
+   ],
+   "opacity": 1.0,
+   "material": "Glossy Plastic",
+   "metallic": 0.0,
+   "roughness": 0.25,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true
+  }
+ ],
+ "assets": {
+  "meshes": {}
+ },
+ "units": {
+  "preferred": {},
+  "property_units": {},
+  "custom_units": []
+ },
+ "view": {
+  "grids": {
+   "XY": {
+    "plane": "XY",
+    "visible": true,
+    "color": [
+     0.55,
+     0.58,
+     0.64
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "YZ": {
+    "plane": "YZ",
+    "visible": false,
+    "color": [
+     0.62,
+     0.55,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "XZ": {
+    "plane": "XZ",
+    "visible": false,
+    "color": [
+     0.55,
+     0.62,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   }
+  },
+  "axes": {
+   "visible": true,
+   "length": 1.5,
+   "line_width": 3.0,
+   "x_color": [
+    0.91,
+    0.3,
+    0.28
+   ],
+   "y_color": [
+    0.42,
+    0.8,
+    0.32
+   ],
+   "z_color": [
+    0.32,
+    0.55,
+    0.97
+   ],
+   "show_labels": true,
+   "show_origin_marker": true,
+   "show_view_triad": true
+  },
+  "snap": {
+   "grid_snap": true,
+   "translate_increment": 0.25,
+   "rotate_snap": false,
+   "rotate_increment_deg": 15.0,
+   "scale_snap": false,
+   "scale_increment": 0.1,
+   "surface_snap": true,
+   "work_plane": "XY",
+   "work_plane_offset": 0.0
+  },
+  "environment": {
+   "background_top": [
+    0.17,
+    0.18,
+    0.2
+   ],
+   "background_bottom": [
+    0.1,
+    0.105,
+    0.115
+   ],
+   "shadows": true,
+   "ground_shadow": true,
+   "ambient": 0.35,
+   "light_azimuth_deg": 35.0,
+   "light_elevation_deg": 55.0,
+   "light_intensity": 2.6,
+   "show_labels": true,
+   "show_local_axes": false,
+   "highlight_color": [
+    0.98,
+    0.62,
+    0.18
+   ],
+   "show_stats": true,
+   "msaa_samples": 4
+  },
+  "camera": {
+   "target": [
+    0.0,
+    0.0,
+    0.4
+   ],
+   "distance": 8.0,
+   "azimuth_deg": -55.0,
+   "elevation_deg": 28.0,
+   "fov_deg": 45.0,
+   "orthographic": false
+  },
+  "bookmarks": {}
+ },
+ "simulation": {
+  "delta_time": 0.01,
+  "update_rate_hz": 100.0,
+  "duration": 10.0,
+  "render_fps": 60.0,
+  "pacing": "real_time",
+  "duration_policy": "final_partial_step",
+  "max_catch_up_steps": 10,
+  "record_every_n_steps": 1,
+  "min_delta_time": 1e-09,
+  "max_delta_time": 10.0,
+  "min_update_rate_hz": 0.1,
+  "max_update_rate_hz": 100000.0
+ },
+ "ui": {}
+}

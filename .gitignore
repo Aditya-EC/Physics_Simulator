@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+native/build/
+build/
+dist/
+# compiled native module (platform specific; produced by build_native.py)
+psim/numerics/_psim_native*.so
+psim/numerics/_psim_native*.pyd
+*.psim.tmp
+.psim-*.tmp
