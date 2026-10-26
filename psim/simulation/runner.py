@@ -138,8 +138,8 @@ class SimulationRunner(QObject):
     def set_render_fps(self, fps: float) -> None:
         self._commands.put(("fps", float(fps)))
 
-    def replace_plan(self, plan, bodies, state, keep: set[str]) -> None:
-        self._commands.put(("plan", plan, bodies, state, keep))
+    def replace_plan(self, plan, bodies, state, keep: set[str], statics=None, globals_=None) -> None:
+        self._commands.put(("plan", plan, bodies, state, keep, statics, globals_))
 
     def wait_until(self, predicate, timeout: float = 10.0) -> bool:
         """Test helper: poll `predicate()` (no Qt event processing)."""
@@ -265,7 +265,7 @@ class SimulationRunner(QObject):
                 elif kind == "fps":
                     self.render_fps = cmd[1]
                 elif kind == "plan":
-                    eng.replace_plan(cmd[1], cmd[2], cmd[3], cmd[4])
+                    eng.replace_plan(cmd[1], cmd[2], cmd[3], cmd[4], cmd[5], cmd[6])
                     publish(force=True)
             except Exception as exc:  # invalid live change: report and keep the previous configuration
                 self.errorOccurred.emit(f"Change not applied: {exc}")

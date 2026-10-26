@@ -10,6 +10,11 @@ simulation step. Two kinds exist:
 * ``prescribed`` processes set a state quantity (position or orientation, with
   the matching velocity) as an analytic function of time. Their writes are
   exclusive: two writers of the same quantity on the same object are a conflict.
+* ``update`` processes (formula-defined) are discrete per-step update rules
+  (e.g. v_{n+1} = v_n + a_n Δt). They run once per step, read the state at the
+  start of the step, may read values written earlier in the same step through
+  ``updated(...)``, and are ordered by their dependencies. Their writes are
+  exclusive and replace integration for the quantities they write.
 
 Every process evaluates against the *previous* (shared) state of a step or of
 an integrator stage, never against values other processes wrote earlier in the
@@ -39,8 +44,11 @@ W_FORCE = "force"                    # translational acceleration contribution
 W_TORQUE = "torque"                  # angular acceleration contribution
 W_POSITION = "position"              # prescribed position (+ linear velocity)
 W_ORIENTATION = "orientation"        # prescribed orientation (+ angular velocity)
+W_VELOCITY = "velocity"              # update processes only
+W_ANGULAR_VELOCITY = "angular_velocity"
 SUMMED = {W_FORCE, W_TORQUE}
 EXCLUSIVE = {W_POSITION, W_ORIENTATION}
+UPDATE_WRITES = {W_POSITION, W_ORIENTATION, W_VELOCITY, W_ANGULAR_VELOCITY}  # plus "custom.<key>"
 
 
 class ProcessError(Exception):
@@ -54,7 +62,7 @@ class ProcessDef:
     version: str
     category: str
     description: str
-    kind: str                                  # "contribution" | "prescribed"
+    kind: str                                  # "contribution" | "prescribed" | "update"
     mode: str                                  # "per_object" | "global"
     parameters: list[PropertyDef]
     reads: tuple[str, ...]                     # object properties / state read
@@ -68,6 +76,12 @@ class ProcessDef:
     eligible: Callable[["SceneObject"], bool] | None = None
     preconditions: str = ""
     error_handling: str = "The simulation stops and reports the error if a result is not finite."
+    formula_spec: Any = None                   # FormulaProcessSpec for formula-defined processes
+    compiled: Any = None                       # CompiledProcess for formula-defined processes
+
+    @property
+    def is_formula(self) -> bool:
+        return self.formula_spec is not None
 
     def is_eligible(self, obj: "SceneObject") -> tuple[bool, str]:
         if self.requires_mass and not obj.typedef.physical:
@@ -126,6 +140,7 @@ class TargetFilter:
 
 
 ASSIGNMENT_ID = re.compile(r"^PRC-(\d{4,})$")
+ASSIGNMENT_KEYS = {"uid", "process", "targets", "params", "enabled", "label"}
 
 
 @dataclass
@@ -143,6 +158,10 @@ class ProcessAssignment:
 
     @staticmethod
     def from_dict(d: dict) -> "ProcessAssignment":
+        unknown = set(d) - ASSIGNMENT_KEYS
+        if unknown:
+            # Projects only reference processes; definitions come from the registry (developer-signed).
+            raise ProcessError(f"unknown field(s) {', '.join(sorted(unknown))}")
         try:
             uid = str(d["uid"])
             if not ASSIGNMENT_ID.match(uid):

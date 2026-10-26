@@ -1,0 +1,68 @@
+{
+ "process_id": "lib.lissajous",
+ "name": "Lissajous Path (prescribed)",
+ "version": "1.0.0",
+ "category": "Kinematics",
+ "kind": "prescribed",
+ "mode": "per_object",
+ "description": "Moves the object origin along a Lissajous curve in the XY plane around a centre point. Velocity is obtained by numerical differentiation.",
+ "parameters": [
+  {
+   "key": "center",
+   "label": "Centre",
+   "type": "vec3",
+   "quantity": "length",
+   "default": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "key": "ax",
+   "label": "Amplitude X",
+   "type": "float",
+   "quantity": "length",
+   "default": 1.0
+  },
+  {
+   "key": "ay",
+   "label": "Amplitude Y",
+   "type": "float",
+   "quantity": "length",
+   "default": 0.5
+  },
+  {
+   "key": "wx",
+   "label": "Angular frequency X",
+   "type": "float",
+   "quantity": "angular_velocity",
+   "default": 1.0
+  },
+  {
+   "key": "wy",
+   "label": "Angular frequency Y",
+   "type": "float",
+   "quantity": "angular_velocity",
+   "default": 2.0
+  }
+ ],
+ "script": "position = param.center + vec3(param.ax * sin(param.wx * t), param.ay * sin(param.wy * t), 0[m])\n",
+ "tests": [
+  {
+   "name": "at t = π/2",
+   "objects": {
+    "self": {}
+   },
+   "t": 1.5707963267948966,
+   "expect": {
+    "position": [
+     1.0,
+     0.0,
+     1.0
+    ]
+   },
+   "tolerance": 1e-12
+  }
+ ]
+}

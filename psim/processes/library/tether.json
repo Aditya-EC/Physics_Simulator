@@ -1,0 +1,103 @@
+{
+ "process_id": "lib.tether",
+ "name": "Tether (One-Sided Distance Constraint)",
+ "version": "1.0.0",
+ "category": "Constraints",
+ "kind": "contribution",
+ "mode": "global",
+ "requires_mass": true,
+ "min_targets": 2,
+ "max_targets": 2,
+ "description": "Soft distance constraint: a stiff spring that only pulls when the distance between the two bodies exceeds the tether length.",
+ "parameters": [
+  {
+   "key": "length",
+   "label": "Tether length",
+   "type": "float",
+   "quantity": "length",
+   "default": 1.0,
+   "minimum": 0
+  },
+  {
+   "key": "stiffness",
+   "label": "Stiffness",
+   "type": "float",
+   "default": 1000.0,
+   "minimum": 0,
+   "quantity": "stiffness"
+  },
+  {
+   "key": "damping",
+   "label": "Damping",
+   "type": "float",
+   "default": 5.0,
+   "minimum": 0,
+   "quantity": "damping"
+  }
+ ],
+ "script": "let d = targets[1].com - targets[0].com\nlet dist = norm(d)\nlet n = dist > 0[m] ? d / dist : vec3(0, 0, 0)\nlet stretch = ramp(dist - param.length)\nlet rate = dot(targets[1].velocity - targets[0].velocity, n)\nlet f = (param.stiffness * stretch + (stretch > 0[m] ? param.damping * rate : 0)) * n\ntargets[0].force = f\ntargets[1].force = -f\n",
+ "tests": [
+  {
+   "name": "slack tether exerts no force",
+   "objects": {
+    "A": {},
+    "B": {
+     "position": [
+      0.5,
+      0,
+      0
+     ]
+    }
+   },
+   "targets": [
+    "A",
+    "B"
+   ],
+   "expect": {
+    "A.force": [
+     0,
+     0,
+     0
+    ],
+    "B.force": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "name": "taut tether pulls together",
+   "objects": {
+    "A": {},
+    "B": {
+     "position": [
+      1.1,
+      0,
+      0
+     ]
+    }
+   },
+   "targets": [
+    "A",
+    "B"
+   ],
+   "params": {
+    "damping": 0
+   },
+   "expect": {
+    "A.force": [
+     100,
+     0,
+     0
+    ],
+    "B.force": [
+     -100,
+     0,
+     0
+    ]
+   },
+   "tolerance": 1e-09
+  }
+ ]
+}

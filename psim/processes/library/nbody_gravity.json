@@ -1,0 +1,52 @@
+{
+ "process_id": "lib.nbody_gravity",
+ "name": "Newtonian Gravity Between Bodies",
+ "version": "1.0.0",
+ "category": "Dynamics",
+ "kind": "contribution",
+ "mode": "per_object",
+ "requires_mass": true,
+ "min_targets": 2,
+ "description": "Mutual gravitational attraction between all target bodies (N-body), with optional softening.",
+ "parameters": [
+  {
+   "key": "softening",
+   "label": "Softening length ε",
+   "type": "float",
+   "quantity": "length",
+   "default": 0.0,
+   "minimum": 0
+  }
+ ],
+ "script": "# F_i = Σ_j G m_i m_j (r_j − r_i) / (|r_j − r_i|² + ε²)^(3/2)\nforce = sum_of(others, G * self.mass * it.mass * (it.com - self.com) / (dot(it.com - self.com, it.com - self.com) + param.softening^2)^1.5)\n",
+ "tests": [
+  {
+   "name": "two 1e6 kg masses 1 m apart",
+   "objects": {
+    "A": {
+     "mass": 1000000.0
+    },
+    "B": {
+     "mass": 1000000.0,
+     "position": [
+      1,
+      0,
+      0
+     ]
+    }
+   },
+   "targets": [
+    "A",
+    "B"
+   ],
+   "expect": {
+    "A.force": [
+     66.743,
+     0,
+     0
+    ]
+   },
+   "tolerance": 1e-09
+  }
+ ]
+}

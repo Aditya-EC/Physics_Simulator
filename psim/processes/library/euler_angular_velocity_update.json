@@ -1,0 +1,32 @@
+{
+ "process_id": "lib.euler_angular_velocity_update",
+ "name": "Discrete Angular Velocity Update (Euler)",
+ "version": "1.0.0",
+ "category": "Discrete Updates",
+ "kind": "update",
+ "mode": "per_object",
+ "description": "Discrete rule ω(n+1) = ω(n) + α(n)·Δt using the object's Angular acceleration property.",
+ "script": "angular_velocity = self.angular_velocity + self.angular_acceleration * dt\n",
+ "tests": [
+  {
+   "name": "one step",
+   "objects": {
+    "self": {
+     "angular_acceleration": [
+      0,
+      0,
+      2
+     ]
+    }
+   },
+   "dt": 0.5,
+   "expect": {
+    "angular_velocity": [
+     0,
+     0,
+     1
+    ]
+   }
+  }
+ ]
+}

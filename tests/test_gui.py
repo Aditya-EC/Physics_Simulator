@@ -50,7 +50,7 @@ def _move(vp, pt, buttons=Qt.MouseButton.LeftButton):
 
 
 def test_application_launches_with_all_menus(window):
-    titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
+    titles = [a.text().replace("&", "") for a in window.menuBar().actions() if a.isVisible()]
     assert titles == ["File", "Edit", "View", "Scene", "Objects", "Physics", "Processes", "Coordinates", "Plots",
                       "Units", "Simulation", "Tools", "Window", "Help"]
     assert window.viewport.renderer.ready, window.viewport.renderer.error
@@ -259,3 +259,11 @@ def test_camera_follow_modes_do_not_modify_objects(window):
     vp.set_follow("none", None)
     assert w.scene.get(o.id).position == [0.0, 3.0, 0.5]
     assert state_before[o.id]["name"] == w.scene.get(o.id).name
+
+
+def test_developer_menu_hidden_and_globals_menu_present(window):
+    assert window.developer_token is None
+    assert not window.developer_menu.menuAction().isVisible()
+    procs = [m for m in window.menuBar().actions() if m.text().replace("&", "") == "Processes"][0].menu()
+    assert "Global Parameters…" in [a.text().replace("&", "") for a in procs.actions()]
+    assert not any("planned" in a.text().lower() for a in procs.actions())

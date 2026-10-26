@@ -8,6 +8,7 @@ object IDs exactly.
 """
 from __future__ import annotations
 
+import copy
 import time
 from typing import Callable, Iterable
 
@@ -89,6 +90,22 @@ class ProcessesCommand(QUndoCommand):
 
     def undo(self) -> None:
         self.scene.apply_process_snapshot(self.before)
+
+
+class GlobalsCommand(QUndoCommand):
+    def __init__(self, scene: Scene, before: list[dict], after: list[dict], text: str) -> None:
+        super().__init__(text)
+        self.scene, self.before, self.after = scene, before, after
+        self._first = True
+
+    def redo(self) -> None:
+        if self._first:
+            self._first = False
+            return
+        self.scene.apply_globals(self.after)
+
+    def undo(self) -> None:
+        self.scene.apply_globals(self.before)
 
 
 class SceneEditor:
@@ -251,6 +268,17 @@ class SceneEditor:
             j = max(0, min(len(lst) - 1, i + delta))
             lst.insert(j, lst.pop(i))
         return self.edit_processes(mutate, "Reorder processes")
+
+    # ---- global parameters ------------------------------------------------------------------------------
+    def set_global_parameters(self, params: list[dict], text: str = "Edit Global Parameters") -> bool:
+        from ..processes.global_parameters import validate_globals
+        params = validate_globals(params)
+        before = copy.deepcopy(self.scene.global_parameters)
+        if params == before:
+            return False
+        self.scene.apply_globals(params)
+        self._push(GlobalsCommand(self.scene, before, copy.deepcopy(params), text))
+        return True
 
     # ---- custom properties -------------------------------------------------------------------------
     def add_custom_property(self, ids: Iterable[str], prop_data: dict) -> bool:

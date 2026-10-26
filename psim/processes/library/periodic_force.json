@@ -1,0 +1,115 @@
+{
+ "process_id": "lib.periodic_force",
+ "name": "Periodic Force Signal",
+ "version": "1.0.0",
+ "category": "Signals",
+ "kind": "contribution",
+ "mode": "per_object",
+ "requires_mass": true,
+ "description": "Sinusoidal force F(t) = F₀ sin(2πft + φ) d̂, active between a start and an end time.",
+ "parameters": [
+  {
+   "key": "amplitude",
+   "label": "Amplitude F₀",
+   "type": "float",
+   "quantity": "force",
+   "default": 1.0
+  },
+  {
+   "key": "frequency",
+   "label": "Frequency f",
+   "type": "float",
+   "quantity": "frequency",
+   "default": 1.0,
+   "minimum": 0
+  },
+  {
+   "key": "phase",
+   "label": "Phase φ",
+   "type": "float",
+   "quantity": "angle",
+   "default": 0.0
+  },
+  {
+   "key": "direction",
+   "label": "Direction",
+   "type": "vec3",
+   "default": [
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "key": "t_start",
+   "label": "Start time",
+   "type": "float",
+   "quantity": "time",
+   "default": 0.0
+  },
+  {
+   "key": "t_end",
+   "label": "End time",
+   "type": "float",
+   "quantity": "time",
+   "default": 1000000000.0
+  }
+ ],
+ "script": "require norm(param.direction) > 0 : \"direction must not be zero\"\nlet window = step(t - param.t_start) * step(param.t_end - t)\nforce = window * param.amplitude * sin(2 * pi * param.frequency * t + param.phase) * normalize(param.direction)\n",
+ "tests": [
+  {
+   "name": "quarter period",
+   "objects": {
+    "self": {}
+   },
+   "t": 0.25,
+   "params": {
+    "amplitude": 2.0,
+    "frequency": 1.0,
+    "direction": [
+     1,
+     0,
+     0
+    ]
+   },
+   "expect": {
+    "force": [
+     2,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "name": "inactive before start",
+   "objects": {
+    "self": {}
+   },
+   "t": 0.25,
+   "params": {
+    "t_start": 1.0
+   },
+   "expect": {
+    "force": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "name": "zero direction rejected",
+   "objects": {
+    "self": {}
+   },
+   "params": {
+    "direction": [
+     0,
+     0,
+     0
+    ]
+   },
+   "expect_error": "direction must not be zero"
+  }
+ ]
+}

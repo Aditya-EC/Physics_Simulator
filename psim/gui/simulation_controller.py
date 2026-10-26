@@ -18,12 +18,14 @@ import copy
 from PySide6.QtCore import QObject, Signal
 
 from ..processes.process_scheduler import ExecutionPlan, build_plan
+from ..properties.property_system import PropertyError
 from ..scene.editing import SceneEditor, StateCommand
 from ..scene.scene_manager import Scene
 from ..simulation.runner import RunState, RunStats, SimulationRunner
 from ..simulation.settings import PacingMode, SimulationSettings
 from ..simulation.simulation_engine import SimulationEngine, SimulationError, Snapshot
 from ..simulation.state import capture_bodies
+from ..simulation.world import EngineWorld, capture_static, global_values
 
 
 class SimulationController(QObject):
@@ -49,10 +51,12 @@ class SimulationController(QObject):
         self._last_initial: dict | None = None   # kept after Stop for Reset
         self._body_ids: list[str] = []
         self._applying = False
+        self._reported: set[str] = set()
         self._state = "idle"
         self.last_stats: RunStats | None = None
         scene.objectsChanged.connect(self._on_objects_changed)
         scene.processesChanged.connect(self._on_processes_changed)
+        scene.globalsChanged.connect(self._on_processes_changed)
 
     # ---- state -------------------------------------------------------------------------------------
     @property
@@ -109,12 +113,15 @@ class SimulationController(QObject):
                             "(Processes ▸ Assign Process).")
             return False
         bodies, state = capture_bodies(self.scene, plan.body_ids)
+        world = EngineWorld(capture_static(self.scene), plan.body_ids, global_values(self.scene),
+                            self.settings.delta_time)
         try:
-            engine = SimulationEngine(SimulationSettings.from_dict(self.settings.to_dict()), plan, bodies, state)
+            engine = SimulationEngine(SimulationSettings.from_dict(self.settings.to_dict()), plan, bodies, state, world)
         except SimulationError as exc:
             self.error.emit(str(exc))
             return False
         self._initial = self.scene.snapshot(plan.body_ids)
+        self._reported = set()
         self._body_ids = list(plan.body_ids)
         self.editor.recording = False
         self.scene.runtime = {}
@@ -227,6 +234,27 @@ class SimulationController(QObject):
                 self.scene.runtime[oid] = {"acceleration": snap.acc[i].copy(), "angular_acceleration": snap.alpha[i].copy(),
                                            "time": snap.time}
                 changed.append(oid)
+            for oid, values in (snap.custom or {}).items():
+                obj = self.scene.find(oid)
+                if obj is None:
+                    continue
+                for key, value in values.items():
+                    prop = obj.custom.get(key)
+                    if prop is None:
+                        continue
+                    try:
+                        prop.set_value(value.tolist() if hasattr(value, "tolist") else value)
+                    except PropertyError as exc:
+                        msg = f"{oid}.custom.{key}: simulated value rejected ({exc})"
+                        if msg not in self._reported:
+                            self._reported.add(msg)
+                            self.warning.emit(msg)
+                if oid not in changed:
+                    changed.append(oid)
+            for msg in snap.warnings or []:
+                if msg not in self._reported and len(self._reported) < 200:
+                    self._reported.add(msg)
+                    self.warning.emit(msg)
             self.scene.notify_changed(changed)
         finally:
             self._applying = False
@@ -267,7 +295,7 @@ class SimulationController(QObject):
         bodies, state = capture_bodies(self.scene, plan.body_ids)
         keep = set(plan.body_ids) - edited - set(new_ids)
         self._body_ids = list(plan.body_ids)
-        self.runner.replace_plan(plan, bodies, state, keep)
+        self.runner.replace_plan(plan, bodies, state, keep, capture_static(self.scene), global_values(self.scene))
         if edited:
             self.info.emit(f"Applied edits of {', '.join(sorted(edited))} to the running simulation")
 

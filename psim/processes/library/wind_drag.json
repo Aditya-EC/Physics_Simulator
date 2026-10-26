@@ -1,0 +1,27 @@
+{
+ "process_id": "lib.wind_drag",
+ "name": "Wind Drag",
+ "version": "1.0.0",
+ "category": "Dynamics",
+ "kind": "contribution",
+ "mode": "per_object",
+ "requires_mass": true,
+ "description": "Quadratic drag relative to a project-wide wind velocity in air of project-wide density.",
+ "parameters": [
+  {"key": "cd", "label": "Drag coefficient C_d", "type": "float", "default": 0.47, "minimum": 0},
+  {"key": "area", "label": "Reference area A", "type": "float", "quantity": "area", "default": 0.0314, "minimum": 0}
+ ],
+ "globals": [
+  {"name": "air_density", "type": "float", "quantity": "density"},
+  {"name": "wind", "type": "vec3", "quantity": "velocity"}
+ ],
+ "script": "# F = -½ ρ C_d A |v - w| (v - w), with ρ = global.air_density and w = global.wind\nlet rel = self.velocity - global.wind\nforce = -0.5 * global.air_density * param.cd * param.area * norm(rel) * rel\n",
+ "documentation": "Uses the global parameters air_density (density) and wind (velocity), defined under Processes ▸ Global Parameters. Every object with this process feels the same wind; changing the globals during a run takes effect at the next step.",
+ "tests": [
+  {"name": "still object is pushed by the wind", "objects": {"self": {}},
+   "globals": {"air_density": 1.2, "wind": [10, 0, 0]}, "params": {"cd": 0.5, "area": 0.1},
+   "expect": {"force": [3.0, 0, 0]}},
+  {"name": "no force when moving with the wind", "objects": {"self": {"velocity": [4, 1, 0]}},
+   "globals": {"air_density": 1.2, "wind": [4, 1, 0]}, "expect": {"force": [0, 0, 0]}}
+ ]
+}

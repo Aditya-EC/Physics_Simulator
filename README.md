@@ -19,6 +19,13 @@ Implemented so far:
   - explicit Euler, semi-implicit Euler and RK4 integrators
   - built-in kinematics and dynamics processes with read/write declarations and conflict detection
   - Start/Pause/Resume/Stop/Reset/Single-Step, breakpoints and live parameter changes
+- **Phase 4**, the formula and process engine:
+  - a safe formula language (own parser and compiler, no `eval`) with static type and
+    dimensional analysis and unit literals such as `9.81[m/s^2]`
+  - formula-defined contribution, prescribed and discrete *update* processes, with
+    dependency ordering, project-wide global parameters and custom-property outputs
+  - developer-only authoring: a passphrase-protected developer role, a sealed process registry
+    that enforces it, and Ed25519-signed process packages
 
 ![Main window](docs/screenshot_main.png)
 
@@ -33,6 +40,7 @@ python app.py                            # launch
 python app.py examples/mechanical_demo.psim
 python app.py --template simulation      # start from a built-in project template (also: primitives, mechanical)
 python app.py examples/simulation_demo.psim   # then press F5 (Start)
+python app.py examples/formula_demo.psim      # formula processes, global parameters, custom outputs
 ```
 
 Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`.
@@ -70,10 +78,13 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_gui.py` | app launch and menus, real 3D rendering (pixel checks, shading, shadows), drag-and-drop, click selection, gizmo drag + undo, inspector editing, display units, save/reopen, themes, camera follow modes |
 | `test_simulation.py` | §9.9: step counts, Δt per step, duration-boundary policies, Δt changes, bitwise determinism, independence from render FPS **and** pacing mode, real-time rate (100 Hz × 0.001 s ⇒ 0.1×), unachievable-rate reporting with Δt unchanged, pause/step/breakpoints, live changes, instability detection, integrator regressions (closed-form Euler errors, RK4 4th-order convergence, symplectic energy behaviour) |
 | `test_processes.py` | every built-in process against analytic solutions (constant velocity/acceleration, F = ma, torque, damping decay, projectile range, circle, oscillation, rotations, spring period and momentum, COM offsets), conflict and eligibility diagnostics, summation, targets by type/tag, undoable assignments |
+| `test_formulas.py` | formula parser (precedence, unit literals, error positions), type and dimension checking, runtime semantics and domain errors, aggregates, scripts (`let`/`require`/targets), test-case runner |
+| `test_formula_processes.py` | library processes in the engine against analytic results (discrete update rules ≡ semi-implicit Euler bit-for-bit, N-body circular orbit, drag terminal velocity, prescribed Lissajous with numerical rates, kinetic-energy output), required globals, update dependency cycles, missing writers and references, error policies; permissions (sealed registry, wrong passphrase, forged token), signing, tamper and untrusted-key rejection, version rules, withdrawal, developer CLI, projects that try to embed formulas |
+| `test_developer_gui.py` | developer-mode unlock, process editor (refuses without token, validate with line highlighting, tests, sign & publish), global-parameters dialog with unit conversion |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **217 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 186 pass and 31 native-comparison tests are skipped. This was measured on
+Current result: **322 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 291 pass and 31 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -238,6 +249,86 @@ Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 - Inspector values owned by the running simulation show the **S** badge. The current total
   acceleration is shown live in the inspector and labels.
 
+## 3c. What Phase 4 implements (formulas, processes, permissions)
+
+**Formula language** (`psim/processes/formula_*.py`, `dimensional_analysis.py`).
+- Hand-written lexer and Pratt parser to an AST, a static checker, and a compiler to Python
+  closures. Nothing is ever passed to `eval`/`exec`; only whitelisted functions, attributes and
+  constants exist. Sources are limited to 10 000 characters and nesting depth is bounded.
+- Types: number, vec2, vec3, mat3, quaternion, bool, object, object set, string. Every number
+  carries an SI dimension. `+`, `-`, comparisons and function arguments must agree
+  dimensionally, so `self.position + self.velocity` is rejected *before* the run, with line,
+  column and a caret. Literal `0` is compatible with any dimension.
+- Unit literals (`2.5[km/h]`, `9.81[m/s^2]`, `30[deg]`) are converted to SI at compile time.
+  Angles are dimensionless inside formulas (radians).
+- Built-ins: vector/matrix/quaternion algebra, `norm`, `normalize`, `dot`, `cross`,
+  trigonometry, `clamp`, `lerp`, `if(c, a, b)`, frame transforms (`to_local`, `to_global`, `point_to_local`, `point_to_global`, `rotate`),
+  aggregates `sum_of / mean_of / min_of / max_of / count` over `others`, `targets`,
+  `tagged("…")` or `of_type("…")`, and `object("OBJ-…")` references.
+- Domain errors (division by zero, `sqrt` of a negative, normalising a zero vector, non-finite
+  results) raise a diagnostic naming the process, the object and the expression.
+
+**Scripts and processes** (`formula_process.py`).
+- A script is a list of `let name = expr`, `require cond : "message"` and `target = expr`
+  lines. The allowed targets depend on the kind:
+  - *contribution*: `force`, `torque`, `acceleration`, `angular_acceleration` (summed with
+    other contributions)
+  - *prescribed*: `position` (+ optional `velocity`), `orientation` (+ optional
+    `angular_velocity`). If the rate is omitted it is computed by a central difference.
+  - *update*: discrete-time assignments to `position`, `velocity`, `orientation`,
+    `angular_velocity` or `custom.<key>`, applied after integration. They read the state at
+    the start of the step, or the value already updated this step with `updated(self.velocity)`.
+- Per-object processes see `self`; global processes see `targets[i]` and write
+  `targets[i].force`, etc.
+- Specs declare parameters with quantities and ranges, required **global parameters** (name,
+  type, quantity), required custom properties, `after` dependencies, an error policy (`stop`
+  the run, or `skip` this object this step and report it) and embedded **test cases**.
+- **Process library** (`psim/processes/library/*.json`, loaded at start-up and only if every
+  test passes): quadratic drag, wind drag (global `air_density` and `wind`), N-body gravity,
+  periodic force, tether (global spring-damper), Lissajous path (prescribed), discrete Euler
+  velocity/position/angular-velocity/orientation updates and a kinetic-energy monitor that
+  writes `custom.kinetic_energy`.
+
+**Scheduler additions.**
+- Update processes are topologically ordered from `after` and `updated()` references.
+  Cycles, `updated()` of a quantity no process updates, missing object references and missing
+  or wrongly-typed globals are errors before the run.
+- An update process that writes velocity or position cannot be combined with forces on the
+  same object (the integrator would also move it). Velocity updated without position is
+  reported as a warning.
+
+**Global parameters.** *Processes ▸ Global Parameters…* edits project-wide named values
+(float or vec3, with a quantity, shown in display units). They are undoable, saved in the
+project and applied live during a run.
+
+**Permissions and signing** (`permissions.py`, `packages.py`, `process_registry.py`, `devtools.py`).
+- The default role is *user*: users select, configure and run approved processes only.
+  Project files contain only process IDs and parameter values. An assignment with any extra
+  field (e.g. an embedded script) is rejected on load.
+- Developer credentials are created **outside the GUI**:
+  `python -m psim.devtools init-developer --author "Name"`. This stores a PBKDF2-SHA256
+  passphrase verifier and an Ed25519 signing key encrypted with the passphrase in the user's
+  data directory. Other commands: `show-public-key`, `trust-key`, `list-trusted`, `verify`.
+- *Tools ▸ Developer Mode…* unlocks a session token. Only then does the **Developer** menu
+  appear (New Formula Process, Edit Formula Process (new version), Withdraw Published Process).
+- The process registry is **sealed** after start-up. `register`, `publish` and `withdraw`
+  verify the token themselves, so the GUI is not the enforcement point. Publishing requires
+  validation, passing tests and a higher version, cannot replace built-in or library
+  processes, and writes a signed `.psimproc` package.
+- At start-up only packages signed by a trusted key with a valid signature are loaded. Edited
+  or foreign packages are reported and ignored.
+- The **Process Editor** has metadata, a parameter table, globals/custom/test JSON, a script
+  editor with a language reference, *Validate* (highlights failing lines), *Run Tests*, drafts
+  and *Sign & Publish*.
+
+**Limits of this protection (honest status).** This model stops users of the application
+from defining or altering processes through the application and detects tampered packages.
+It does **not** protect against someone who can modify the Python source of the installation
+or run arbitrary code as the same OS user. Python code can be read and patched, and no
+client-side scheme prevents reverse engineering. A stronger guarantee would need
+an OS-level install location writable only by administrators, which is a Phase 8
+packaging concern.
+
 ## 4. Architecture
 
 ```
@@ -258,8 +349,11 @@ psim/
                    overlays, thumbnails, viewport widget, serializable view settings
   gui/             main window, actions/shortcuts, library, inspector, outliner, panels, dialogs, theme, icons
   project/         serialization, autosave/recovery, project templates
-  processes/       process definitions, registry, built-in processes, scheduler (plan + diagnostics)
-  simulation/      settings, clock / rate controller, state, integrators, engine, threaded runner
+  processes/       process definitions, sealed registry, built-in processes, scheduler (plan + diagnostics),
+                   formula parser / dimensional checker / compiler, formula process specs + test runner,
+                   permissions (developer role, Ed25519), signed packages, global parameters, library/*.json
+  simulation/      settings, clock / rate controller, state, integrators, engine, threaded runner,
+                   world (scene view for formulas, custom outputs)
   plugins/         trusted application plugins (object types)
 tests/             pytest suites (see §2)
 examples/          sample projects
@@ -302,14 +396,11 @@ Key design decisions:
 - **Rendering FPS is a separate setting.** The viewport renders on demand or at a configurable
   continuous rate, and never touches model state (this is tested).
 
-## 5. Phase 1 limitations (honest status)
+## 5. Limitations (honest status)
 
 - **Not implemented yet** (planned phases):
-  - the formula engine, developer-only process authoring and the permission model (Phase 4).
-    Process *selection, configuration and documentation* exist now; the built-in processes
-    are application code.
-  - named reference frames as first-class objects, frame-relative velocities/accelerations,
-    and dimensional analysis inside formulas (Phase 5)
+  - named reference frames as first-class objects and frame-relative
+    velocities/accelerations (Phase 5)
   - trajectories, plotting workspace and data recorder (Phase 6)
   - rigid-body dynamics, collisions and joints (Phase 7)
   - installer (Phase 8)
@@ -326,6 +417,14 @@ Key design decisions:
     few hundred Hz for small scenes; a fully native step loop is planned with Phase 7.
   - Under software OpenGL, rendering competes with the engine thread for the Python GIL. The
     overrun detection then correctly reports reduced achieved rates.
+- Formula processes limits:
+  - They are evaluated as compiled Python closures per object and per solver stage, not in
+    C++. They are therefore slower than the vectorised built-ins: the 4-body formula demo
+    takes about 1.4 ms per RK4 step. Aggregates over many objects scale as O(n²).
+  - Formulas cannot create objects, loop, or define functions. Conditionals are expressions
+    (`if(c, a, b)`).
+  - Dimensions are checked; units of *custom properties* are taken from their declared quantity.
+  - The process editor uses JSON text fields for globals, custom properties and test cases.
 - Box (marquee) selection, measurement tools and a numeric "move relative to object" dialog are
   not implemented. Relative placement is done through the inspector's *Relative to* frame
   selector and surface snapping.
@@ -342,6 +441,5 @@ Key design decisions:
 ## 6. Next steps
 
 1. Run the test suite on Windows with a hardware GPU.
-2. Phase 4: safe formula parser with dimensional analysis, formula-defined processes,
-   developer role and permission enforcement in the process registry, signed process packages.
+2. Phase 5: named reference frames and frame-relative kinematics.
 3. Phase 6: data recorder (sampling every N steps), trajectories and the plotting workspace.

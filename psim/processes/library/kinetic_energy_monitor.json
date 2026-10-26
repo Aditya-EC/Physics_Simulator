@@ -1,0 +1,39 @@
+{
+ "process_id": "lib.kinetic_energy_monitor",
+ "name": "Kinetic Energy Monitor",
+ "version": "1.0.0",
+ "category": "Monitors",
+ "kind": "update",
+ "mode": "per_object",
+ "requires_mass": true,
+ "custom": [
+  {
+   "key": "kinetic_energy",
+   "type": "float",
+   "quantity": "energy"
+  }
+ ],
+ "description": "Writes the translational plus rotational kinetic energy into the custom property 'kinetic_energy' every step (add that property, type float, quantity Energy, to the object first).",
+ "script": "custom.kinetic_energy = 0.5 * self.mass * dot(self.velocity, self.velocity) + 0.5 * dot(self.angular_velocity, self.inertia * self.angular_velocity)\n",
+ "tests": [
+  {
+   "name": "translation only",
+   "objects": {
+    "self": {
+     "mass": 2,
+     "velocity": [
+      3,
+      0,
+      4
+     ],
+     "custom": {
+      "kinetic_energy": 0
+     }
+    }
+   },
+   "expect": {
+    "custom.kinetic_energy": 25
+   }
+  }
+ ]
+}

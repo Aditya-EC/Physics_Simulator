@@ -15,6 +15,7 @@ from .. import APP_NAME, __version__, numerics
 from ..project import serialization as ser
 from ..project.autosave import Autosaver
 from ..project.templates import PROJECT_TEMPLATES
+from ..processes.process_base import ProcessError
 from ..properties.property_system import PropertyError
 from ..rendering import picking
 from ..rendering.view_settings import CameraState, ViewSettings
@@ -66,6 +67,7 @@ class MainWindow(QMainWindow):
         install_logging(self.bus)
         self.library = Library()
         self.sim = SimulationController(self.scene, self.editor, lambda: self.project.simulation, self)
+        self.developer_token = None
 
         self._build_central()
         self._build_docks()
@@ -180,6 +182,12 @@ class MainWindow(QMainWindow):
         A("proc.manager", "Process &Table", self._show_processes, icon="table")
         A("proc.validate", "&Validate Processes", self.validate_processes, icon="check")
         A("proc.deps", "&Dependencies && Diagnostics…", self.show_dependencies, icon="tree")
+        A("proc.globals", "&Global Parameters…", self.edit_global_parameters, icon="properties")
+        A("tools.developer", "&Developer Mode…", self.toggle_developer_mode, icon="lock",
+          tip="Unlock process authoring (requires developer credentials)")
+        A("dev.new", "&New Formula Process…", lambda: self.open_process_editor(None), icon="function")
+        A("dev.edit", "&Edit Formula Process (new version)…", self.edit_formula_process, icon="edit")
+        A("dev.withdraw", "&Withdraw Published Process…", self.withdraw_process, icon="trash")
         A("proc.docs", "Process &Documentation…", lambda: ProcessDocumentationDialog(self.units, self).exec(),
           icon="help")
         A("edit.cut", "Cu&t", self.cut, icon="cut", shortcut="Ctrl+X")
@@ -361,9 +369,8 @@ class MainWindow(QMainWindow):
         self._planned(m, "Rigid-body dynamics, collisions and joints — Phase 7")
 
         m = mb.addMenu("P&rocesses")
-        m.addActions([a["proc.assign"], a["proc.manager"], a["proc.validate"], a["proc.deps"], a["proc.docs"]])
-        m.addSeparator()
-        self._planned(m, "Formula-based process authoring (developer role) — Phase 4")
+        m.addActions([a["proc.assign"], a["proc.manager"], a["proc.globals"], a["proc.validate"], a["proc.deps"],
+                      a["proc.docs"]])
 
         m = mb.addMenu("&Coordinates")
         m.addAction(a["tool.global"])
@@ -385,6 +392,11 @@ class MainWindow(QMainWindow):
 
         m = mb.addMenu("&Tools")
         m.addActions([a["tools.shortcuts"], a["tools.preferences"], a["view.settings"]])
+        m.addSeparator()
+        m.addAction(a["tools.developer"])
+        self.developer_menu = mb.addMenu("&Developer")
+        self.developer_menu.addActions([a["dev.new"], a["dev.edit"], a["dev.withdraw"]])
+        self.developer_menu.menuAction().setVisible(False)  # shown only while developer mode is unlocked
 
         m = mb.addMenu("&Window")
         for d in (self.dock_library, self.dock_outliner, self.dock_history, self.dock_inspector, self.dock_bottom):
@@ -1380,6 +1392,86 @@ class MainWindow(QMainWindow):
         self.object_table.rebuild()
         self.viewport.update()
 
+    # ---- developer mode & formula processes ----------------------------------------------------------------
+    def toggle_developer_mode(self) -> None:
+        from ..processes.permissions import access_controller
+        from .dialogs.developer_dialogs import DeveloperModeDialog
+        access = access_controller()
+        if self.developer_token is not None:
+            access.lock()
+            self.developer_token = None
+            self.bus.info("Developer mode locked", "permissions")
+        else:
+            dlg = DeveloperModeDialog(access, self)
+            if dlg.exec() and dlg.token is not None:
+                self.developer_token = dlg.token
+                self.bus.info(f"Developer mode unlocked (signing key {dlg.token.key_id})", "permissions")
+        on = self.developer_token is not None
+        self.developer_menu.menuAction().setVisible(on)
+        self.actions_["tools.developer"].setText("Lock &Developer Mode" if on else "&Developer Mode…")
+        self.actions_["tools.developer"].setIcon(icons.icon("unlock" if on else "lock"))
+
+    def open_process_editor(self, spec) -> None:
+        from ..processes.permissions import access_controller
+        from ..processes.process_registry import process_registry
+        from .dialogs.developer_dialogs import ProcessEditorDialog
+        try:
+            dlg = ProcessEditorDialog(process_registry(), access_controller(), self.developer_token, self.units, spec,
+                                      self)
+        except PermissionError as exc:
+            QMessageBox.warning(self, "Developer mode", str(exc))
+            return
+        if dlg.exec() and dlg.published is not None:
+            p = dlg.published
+            self.bus.info(f"Published {p.name} {p.version} ({p.process_id})", "processes")
+            self.processes_panel.rebuild()
+            self.scene.processesChanged.emit()
+
+    def edit_formula_process(self) -> None:
+        from ..processes.formula_process import FormulaProcessSpec
+        from ..processes.process_registry import process_registry
+        formulas = [d for d in process_registry().definitions() if d.is_formula]
+        if not formulas:
+            return
+        labels = [f"{d.name} ({d.process_id} {d.version})" for d in formulas]
+        choice, ok = QInputDialog.getItem(self, "Edit Formula Process", "Start a new version from:", labels, 0, False)
+        if not ok:
+            return
+        d = formulas[labels.index(choice)]
+        spec = FormulaProcessSpec.from_dict(d.formula_spec.to_dict())
+        parts = [int(x) for x in spec.version.split(".")] + [0] * (3 - len(spec.version.split(".")))
+        parts[-1] += 1
+        spec.version = ".".join(str(x) for x in parts)
+        if process_registry().sources.get(d.process_id) == "library":
+            spec.process_id = "user." + spec.process_id.split(".", 1)[1]  # library ids are reserved
+        self.open_process_editor(spec)
+
+    def withdraw_process(self) -> None:
+        from ..processes.process_registry import process_registry
+        reg = process_registry()
+        pkgs = [d for d in reg.definitions() if reg.sources.get(d.process_id) not in ("built-in", "library")]
+        if not pkgs:
+            QMessageBox.information(self, "Withdraw", "No published packages are installed.")
+            return
+        labels = [f"{d.name} ({d.process_id} {d.version})" for d in pkgs]
+        choice, ok = QInputDialog.getItem(self, "Withdraw Process", "Process:", labels, 0, False)
+        if not ok:
+            return
+        d = pkgs[labels.index(choice)]
+        try:
+            reg.withdraw(d.process_id, self.developer_token)
+        except (PermissionError, ProcessError) as exc:
+            QMessageBox.warning(self, "Withdraw", str(exc))
+            return
+        self.bus.info(f"Withdrew {d.process_id}; assignments that use it are reported as errors", "processes")
+        self.processes_panel.rebuild()
+
+    def edit_global_parameters(self) -> None:
+        from .dialogs.process_dialogs import GlobalParametersDialog
+        dlg = GlobalParametersDialog(self.scene, self.units, self)
+        if dlg.exec() and dlg.result_params is not None:
+            self.editor.set_global_parameters(dlg.result_params)
+
     def open_shortcuts(self) -> None:
         if ShortcutsDialog(self.actions_, self).exec():
             self.actions_.save_overrides(self.settings)
@@ -1463,6 +1555,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e: QCloseEvent) -> None:  # noqa: N802
         if self.sim.session_active:
             self.sim.stop()
+        if self.developer_token is not None:
+            from ..processes.permissions import access_controller
+            access_controller().lock()
+            self.developer_token = None
         if not self._confirm_discard():
             e.ignore()
             return

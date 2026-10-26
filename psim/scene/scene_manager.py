@@ -32,6 +32,7 @@ class Scene(QObject):
     selectionChanged = Signal(list)   # ids (primary selection last)
     sceneReset = Signal()
     processesChanged = Signal()       # process assignments added / removed / edited
+    globalsChanged = Signal()         # global parameters edited
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -40,6 +41,9 @@ class Scene(QObject):
         self._selection: list[str] = []
         self.assignments: list = []            # ProcessAssignment, in evaluation order
         self.next_process_number = 1           # PRC-0001, ... never reused
+        # project-wide named parameters readable by formulas as global.<name>:
+        # {"name", "type": "float"|"vec3", "quantity": str|None, "value": SI value, "description"}
+        self.global_parameters: list[dict] = []
         # values produced by a running simulation that are not object properties
         # (e.g. current total acceleration); cleared when a session ends
         self.runtime: dict[str, dict] = {}
@@ -66,6 +70,7 @@ class Scene(QObject):
         self._selection = []
         self.assignments = []
         self.next_process_number = 1
+        self.global_parameters = []
         self.runtime = {}
         self.sceneReset.emit()
 
@@ -87,6 +92,14 @@ class Scene(QObject):
 
     def process_snapshot(self) -> list[dict]:
         return [a.to_dict() for a in self.assignments]
+
+    def global_parameter(self, name: str) -> dict | None:
+        return next((g for g in self.global_parameters if g["name"] == name), None)
+
+    def apply_globals(self, data: list[dict]) -> None:
+        import copy as _copy
+        self.global_parameters = _copy.deepcopy(data)
+        self.globalsChanged.emit()
 
     def apply_process_snapshot(self, data: list[dict]) -> None:
         from ..processes.process_base import ProcessAssignment

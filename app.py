@@ -1,6 +1,6 @@
 """PSim Studio launcher.
 
-    python app.py [project.psim] [--theme dark|light] [--template primitives|mechanical]
+    python app.py [project.psim] [--theme dark|light] [--template primitives|mechanical|simulation|formulas]
                   [--no-recovery] [--reset-settings]
 
 Developer option (used by automated GUI checks):
@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="psim-studio", description=f"{APP_NAME} {__version__}")
     parser.add_argument("project", nargs="?", help="project file to open")
     parser.add_argument("--theme", choices=("dark", "light"))
-    parser.add_argument("--template", choices=("empty", "primitives", "mechanical", "simulation"))
+    parser.add_argument("--template", choices=("empty", "primitives", "mechanical", "simulation", "formulas"))
     parser.add_argument("--no-recovery", action="store_true", help="do not offer autosave recovery")
     parser.add_argument("--reset-settings", action="store_true", help="forget window layout and preferences")
     parser.add_argument("--screenshot", help=argparse.SUPPRESS)

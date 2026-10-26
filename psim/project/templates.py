@@ -105,9 +105,54 @@ def _simulation_demo(scene: Scene, editor: SceneEditor) -> None:
     editor.assign_process("dyn.damping", TargetFilter(ids=[puck.id]), {"linear": 2.5, "angular": 0.4})
 
 
+def _formula_demo(scene: Scene, editor: SceneEditor) -> None:
+    """Formula-defined library processes: a driven tether in the wind, discrete update rules, a custom output."""
+    from ..processes.process_base import TargetFilter
+    from ..properties.custom_properties import CustomProperty
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 12, "width": 8})
+    ground.color = [0.32, 0.34, 0.38]
+    anchor = scene.create_object("body.point_mass", name="Lissajous Anchor", position=[0.0, 0.0, 2.6])
+    anchor.overlays.update(name=True)
+    bob = scene.create_object("basic.sphere", name="Tethered Bob", params={"radius": 0.12}, position=[0.0, 0.0, 1.4])
+    bob.mass_mode, bob.mass_input = "mass", 0.5
+    bob.color = [0.30, 0.62, 0.95]
+    bob.overlays.update(name=True, velocity=True)
+    ball = scene.create_object("basic.sphere", name="Monitored Ball", params={"radius": 0.1}, position=[-4.5, -2.0, 0.1])
+    ball.mass_mode, ball.mass_input = "mass", 0.2
+    ball.linear_velocity = [3.0, 0.0, 7.0]
+    ball.color = [0.92, 0.45, 0.20]
+    ball.overlays.update(name=True, velocity=True)
+    discrete = scene.create_object("basic.cube", name="Discrete-Time Body", params={"size": 0.25},
+                                   position=[-4.5, 2.0, 0.125])
+    discrete.linear_velocity = [2.5, 0.0, 6.0]
+    discrete.linear_acceleration = [0.0, 0.0, -9.80665]
+    discrete.angular_acceleration = [0.0, 0.0, 2.0]
+    discrete.color = [0.55, 0.80, 0.35]
+    discrete.overlays.update(name=True)
+    editor.add_objects([ground, anchor, bob, ball, discrete], text="Formula demo", select=False)
+    editor.add_custom_property([ball.id], CustomProperty.create(key="kinetic_energy", name="Kinetic energy",
+                                                                vtype="float", quantity="energy").to_dict())
+    editor.set_global_parameters([
+        {"name": "air_density", "type": "float", "quantity": "density", "value": 1.225,
+         "description": "Air density used by Wind Drag"},
+        {"name": "wind", "type": "vec3", "quantity": "velocity", "value": [3.0, 1.0, 0.0],
+         "description": "Uniform wind velocity"}])
+    editor.assign_process("lib.lissajous", TargetFilter(ids=[anchor.id]),
+                          {"center": [0.0, 0.0, 2.6], "ax": 1.2, "ay": 0.6, "wx": 0.8, "wy": 1.6})
+    editor.assign_process("dyn.gravity", TargetFilter(ids=[bob.id, ball.id]), label="Earth gravity")
+    editor.assign_process("lib.tether", TargetFilter(ids=[anchor.id, bob.id]),
+                          {"length": 1.2, "stiffness": 400.0, "damping": 1.5})
+    editor.assign_process("lib.wind_drag", TargetFilter(ids=[bob.id, ball.id]), {"cd": 0.47, "area": 0.045})
+    editor.assign_process("lib.kinetic_energy_monitor", TargetFilter(ids=[ball.id]))
+    for pid in ("lib.euler_velocity_update", "lib.euler_position_update", "lib.euler_angular_velocity_update",
+                "lib.euler_orientation_update"):
+        editor.assign_process(pid, TargetFilter(ids=[discrete.id]))
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
     "mechanical": ("Mechanical Demo", _mechanical_demo),
     "simulation": ("Simulation Demo", _simulation_demo),
+    "formulas": ("Formula Processes Demo", _formula_demo),
 }

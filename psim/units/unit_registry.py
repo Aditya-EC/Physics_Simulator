@@ -109,6 +109,9 @@ _BUILTIN_UNITS: list[tuple[str, str, Dimension, float]] = [
     ("lb/in³", "pound per cubic inch", D.DENSITY, 27679.904710203125),
     ("kg/m²", "kilogram per square metre", D.AREAL_DENSITY, 1.0), ("g/cm²", "gram per square centimetre", D.AREAL_DENSITY, 10.0),
     # inertia
+    ("N/m", "newton per metre", D.STIFFNESS, 1.0), ("kN/m", "kilonewton per metre", D.STIFFNESS, 1e3),
+    ("N/mm", "newton per millimetre", D.STIFFNESS, 1e3), ("lbf/in", "pound-force per inch", D.STIFFNESS, 175.12683524647636),
+    ("N·s/m", "newton second per metre", D.LINEAR_DAMPING, 1.0), ("kg/s", "kilogram per second", D.LINEAR_DAMPING, 1.0),
     ("kg·m²", "kilogram square metre", D.INERTIA, 1.0), ("g·cm²", "gram square centimetre", D.INERTIA, 1e-7),
     ("lb·ft²", "pound square foot", D.INERTIA, 0.0421401100938048), ("lb·in²", "pound square inch", D.INERTIA, 0.00029263965343),
 ]
@@ -136,6 +139,8 @@ _QUANTITIES: list[tuple[str, str, Dimension, str]] = [
     ("density", "Density", D.DENSITY, "kg/m³"),
     ("areal_density", "Areal density", D.AREAL_DENSITY, "kg/m²"),
     ("inertia", "Moment of inertia", D.INERTIA, "kg·m²"),
+    ("stiffness", "Stiffness", D.STIFFNESS, "N/m"),
+    ("damping", "Damping coefficient", D.LINEAR_DAMPING, "N·s/m"),
 ]
 
 # Torque and energy share an SI dimension; keep their unit lists separate for display.

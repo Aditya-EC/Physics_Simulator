@@ -28,6 +28,7 @@ class BodySet:
     torque: np.ndarray
     origin0: np.ndarray               # (N, 3) object origin at the start of the run
     q0: np.ndarray                    # (N, 4)
+    world: object = None              # EngineWorld for formula processes (set by the engine)
 
     @property
     def index(self) -> dict[str, int]:

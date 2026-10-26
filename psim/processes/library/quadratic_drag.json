@@ -1,0 +1,76 @@
+{
+ "process_id": "lib.quadratic_drag",
+ "name": "Quadratic Air Drag",
+ "version": "1.0.0",
+ "category": "Dynamics",
+ "kind": "contribution",
+ "mode": "per_object",
+ "requires_mass": true,
+ "description": "Aerodynamic drag proportional to the square of the speed, opposing the motion of the centre of mass.",
+ "parameters": [
+  {
+   "key": "rho",
+   "label": "Fluid density ρ",
+   "type": "float",
+   "quantity": "density",
+   "default": 1.225,
+   "minimum": 0
+  },
+  {
+   "key": "cd",
+   "label": "Drag coefficient C_d",
+   "type": "float",
+   "default": 0.47,
+   "minimum": 0
+  },
+  {
+   "key": "area",
+   "label": "Reference area A",
+   "type": "float",
+   "quantity": "area",
+   "default": 0.0314,
+   "minimum": 0
+  }
+ ],
+ "script": "# F = -½ ρ C_d A |v| v\nlet speed = norm(self.velocity)\nforce = -0.5 * param.rho * param.cd * param.area * speed * self.velocity\n",
+ "documentation": "Standard quadratic drag law F = −½ρC_dA|v|v. Valid for high Reynolds numbers.",
+ "tests": [
+  {
+   "name": "drag opposes velocity",
+   "objects": {
+    "self": {
+     "velocity": [
+      10,
+      0,
+      0
+     ]
+    }
+   },
+   "params": {
+    "rho": 1.2,
+    "cd": 0.5,
+    "area": 0.1
+   },
+   "expect": {
+    "force": [
+     -3.0,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "name": "no drag at rest",
+   "objects": {
+    "self": {}
+   },
+   "expect": {
+    "force": [
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ ]
+}

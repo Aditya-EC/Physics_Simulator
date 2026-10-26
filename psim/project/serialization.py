@@ -12,6 +12,7 @@ assignments — are still read):
       "objects":    [<SceneObject.to_dict()>...],   # scene order
       "processes":  [<ProcessAssignment.to_dict()>...],  # evaluation order (v2)
       "process_counter": <next numeric process assignment id> (v2)
+      "global_parameters": [{"name", "type", "quantity", "value", "description"}...] (v2, optional)
       "assets":     {"meshes": {<asset id>: {"name", "vertices", "indices"}}},
       "units":      {"preferred": {...}, "custom_units": [...]},
       "view":       <ViewSettings.to_dict()>,
@@ -79,6 +80,7 @@ def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dic
         "objects": [o.to_dict() for o in ordered],
         "processes": scene.process_snapshot(),
         "process_counter": scene.next_process_number,
+        "global_parameters": [dict(g) for g in scene.global_parameters],
         "assets": {"meshes": mesh_assets.to_dict({a for a in used_assets if a})},
         "units": units.to_dict(),
         "view": data.view.to_dict(),
@@ -182,6 +184,12 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
                                  "(kept but disabled)")
             a.enabled = False
         assignments.append(a)
+    from ..processes.global_parameters import validate_globals
+    try:
+        globals_ = validate_globals(raw.get("global_parameters", []) if isinstance(raw.get("global_parameters", []), list)
+                                    else [])
+    except ProcessError as exc:
+        raise ProjectError(str(exc)) from None
     for obj in objects:
         if obj.parent_id and obj.parent_id not in seen:
             data.warnings.append(f"{obj.id}: parent '{obj.parent_id}' not found; object moved to the scene root")
@@ -190,6 +198,7 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
     scene.blockSignals(True)
     try:
         scene.assignments = assignments
+        scene.global_parameters = globals_
         try:
             scene.next_process_number = max(int(raw.get("process_counter", 1)), 1)
         except (TypeError, ValueError):

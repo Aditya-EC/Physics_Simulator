@@ -32,11 +32,37 @@ def process_doc_html(p: ProcessDef, units: UnitRegistry | None = None) -> str:
               "<th align='left'>Type</th><th align='left'>Unit / note</th></tr>" + "".join(rows) + "</table>"
               if rows else "<i>none</i>")
     targets = (f"exactly {p.min_targets}" if p.max_targets == p.min_targets else f"{p.min_targets} or more")
+    source = process_registry().sources.get(p.process_id, "built-in")
+    if source == "built-in":
+        origin = "Built-in process (application code)"
+    elif source == "library":
+        origin = "Formula process from the application library"
+    else:
+        origin = f"Signed formula package ({html.escape(source.replace(chr(92), '/').split('/')[-1])})"
+    if p.is_formula:
+        definition = f"<pre style='font-family: monospace'>{html.escape(p.formula)}</pre>"
+        spec = p.formula_spec
+        extra = ""
+        if spec.globals:
+            extra += "<p><b>Required global parameters:</b> " + ", ".join(
+                f"{html.escape(g['name'])} ({g.get('quantity') or 'dimensionless'})" for g in spec.globals) + "</p>"
+        if spec.custom:
+            extra += "<p><b>Required custom properties:</b> " + ", ".join(
+                f"{html.escape(c['key'])} ({c.get('type', 'float')}, {c.get('quantity') or 'dimensionless'})"
+                for c in spec.custom) + "</p>"
+        if spec.after:
+            extra += f"<p><b>Runs after:</b> {html.escape(', '.join(spec.after))}</p>"
+        if spec.documentation:
+            extra += f"<p>{html.escape(spec.documentation)}</p>"
+        definition += extra
+    else:
+        definition = f"<code>{html.escape(p.formula)}</code>"
     return (f"<h3>{html.escape(p.name)}</h3>"
             f"<p style='color:gray'>{p.process_id} · version {p.version} · {p.category} · "
             f"{'per-object' if p.mode == 'per_object' else 'global'} {p.kind}</p>"
             f"<p>{html.escape(p.description)}</p>"
-            f"<p><b>Mathematical definition</b><br><code>{html.escape(p.formula)}</code></p>"
+            f"<p style='color:gray'>{origin}</p>"
+            f"<p><b>Mathematical definition</b><br>{definition}</p>"
             f"<p><b>Reads:</b> {html.escape(', '.join(p.reads) or '—')}<br>"
             f"<b>Writes:</b> {html.escape(', '.join(p.writes) or 'integration only')}"
             f" {'(summed with other contributions)' if p.kind == 'contribution' and p.writes else ''}"
@@ -273,3 +299,92 @@ class DependencyDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.accept)
         lay.addWidget(buttons)
+
+
+class GlobalParametersDialog(QDialog):
+    """Project-wide named parameters read by formulas as global.<name> (values shown in project units)."""
+
+    def __init__(self, scene: Scene, units: UnitRegistry, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Global Parameters")
+        self.resize(760, 420)
+        self.units = units
+        self.result_params: list[dict] | None = None
+        lay = QVBoxLayout(self)
+        note = QLabel("Named values shared by all formula processes (read as <code>global.&lt;name&gt;</code>). "
+                      "Vectors are entered as x, y, z. Values are shown in the project display units.")
+        note.setWordWrap(True)
+        note.setObjectName("Muted")
+        lay.addWidget(note)
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Name", "Type", "Quantity", "Value", "Description"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        lay.addWidget(self.table)
+        row = QHBoxLayout()
+        from PySide6.QtWidgets import QPushButton
+        add = QPushButton("Add")
+        add.setAutoDefault(False)
+        add.clicked.connect(lambda: self._add_row({"name": "", "type": "float", "quantity": None, "value": 0.0}))
+        rem = QPushButton("Remove Selected")
+        rem.setAutoDefault(False)
+        rem.clicked.connect(lambda: [self.table.removeRow(r) for r in sorted({i.row() for i in
+                                                                            self.table.selectedIndexes()}, reverse=True)])
+        row.addWidget(add)
+        row.addWidget(rem)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.error = QLabel()
+        self.error.setStyleSheet("color: #e5534b;")
+        self.error.setWordWrap(True)
+        lay.addWidget(self.error)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+        for g in scene.global_parameters:
+            self._add_row(g)
+
+    def _add_row(self, g: dict) -> None:
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        self.table.setItem(r, 0, QTableWidgetItem(g.get("name", "")))
+        kind = QComboBox()
+        kind.addItems(["float", "vec3"])
+        kind.setCurrentText(g.get("type", "float"))
+        self.table.setCellWidget(r, 1, kind)
+        q = QComboBox()
+        q.addItem("— dimensionless —", None)
+        for qk in self.units.quantities():
+            if qk.key != "dimensionless":
+                q.addItem(qk.label, qk.key)
+        q.setCurrentIndex(max(q.findData(g.get("quantity")), 0))
+        self.table.setCellWidget(r, 2, q)
+        unit = self.units.preferred_unit(g["quantity"]) if g.get("quantity") else None
+        value = g.get("value", 0.0)
+        disp = self.units.from_si(value, unit) if unit else value
+        text = ", ".join(f"{v:g}" for v in disp) if isinstance(value, list) else f"{float(disp):g}"
+        self.table.setItem(r, 3, QTableWidgetItem(text))
+        self.table.setItem(r, 4, QTableWidgetItem(g.get("description", "")))
+
+    def _accept(self) -> None:
+        from ...processes.global_parameters import validate_globals
+        from ...processes.process_base import ProcessError
+        out = []
+        try:
+            for r in range(self.table.rowCount()):
+                kind = self.table.cellWidget(r, 1).currentText()
+                quantity = self.table.cellWidget(r, 2).currentData()
+                unit = self.units.preferred_unit(quantity) if quantity else None
+                parts = [float(x) for x in self.table.item(r, 3).text().replace(";", ",").split(",") if x.strip()]
+                value = parts if kind == "vec3" else (parts[0] if len(parts) == 1 else float("nan"))
+                if unit:
+                    value = self.units.to_si(value, unit)
+                    value = [float(v) for v in value] if kind == "vec3" else float(value)
+                out.append({"name": self.table.item(r, 0).text().strip(), "type": kind, "quantity": quantity,
+                            "value": value, "description": (self.table.item(r, 4) or QTableWidgetItem()).text()})
+            self.result_params = validate_globals(out)
+        except (ProcessError, ValueError) as exc:
+            self.error.setText(str(exc))
+            return
+        self.accept()

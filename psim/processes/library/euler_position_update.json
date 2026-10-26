@@ -1,0 +1,42 @@
+{
+ "process_id": "lib.euler_position_update",
+ "name": "Discrete Position Update (Euler)",
+ "version": "1.0.0",
+ "category": "Discrete Updates",
+ "kind": "update",
+ "mode": "per_object",
+ "after": [
+  "lib.euler_velocity_update"
+ ],
+ "description": "Discrete rule x(n+1) = x(n) + v(n+1)·Δt using the velocity already updated in this step (semi-implicit when combined with the velocity update).",
+ "script": "position = self.position + updated(self.velocity) * dt\n",
+ "tests": [
+  {
+   "name": "uses the updated velocity",
+   "objects": {
+    "self": {
+     "position": [
+      0,
+      0,
+      1
+     ]
+    }
+   },
+   "updated": {
+    "self.velocity": [
+     2,
+     0,
+     0
+    ]
+   },
+   "dt": 0.5,
+   "expect": {
+    "position": [
+     1,
+     0,
+     1
+    ]
+   }
+  }
+ ]
+}
