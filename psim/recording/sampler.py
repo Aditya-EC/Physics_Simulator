@@ -93,12 +93,16 @@ class EngineSampler:
             return
         acc, alpha = acc.copy(), alpha.copy()
         eng = self.engine
-        discrete_t = ~eng.plan.integrate_translation & ~self._prescribed_trans
+        pinned = np.zeros(len(acc), bool)
+        if getattr(eng, "_pinned", None) is not None:
+            pinned[eng._pinned] = True
+        discrete_t = ~eng.plan.integrate_translation & ~self._prescribed_trans & ~pinned
         discrete_r = ~eng.plan.integrate_rotation & ~self._prescribed_rot
         if dt > 0:
             acc[discrete_t] = (new.v[discrete_t] - old.v[discrete_t]) / dt
             alpha[discrete_r] = (new.w[discrete_r] - old.w[discrete_r]) / dt
         self._fix_prescribed(t, old, acc, alpha, max(dt, 1e-6))
+        self._fix_pinned(old, acc, alpha)
         self._append(t, step, old, acc, alpha)
 
     def final(self) -> None:
@@ -109,8 +113,21 @@ class EngineSampler:
             return
         s = eng.state.copy()
         acc, alpha = eng._deriv(t, s, quiet=True)
+        if getattr(eng, "constraint_acc", None) is not None:
+            # contact / joint forces at the end: those of the last step (the best available estimate)
+            acc, alpha = acc + eng.constraint_acc[0], alpha + eng.constraint_acc[1]
         self._fix_prescribed(t, eng.state, acc, alpha, max(eng.clock.delta_time, 1e-6))
+        self._fix_pinned(eng.state, acc, alpha)
         self._append(t, step, eng.state, acc, alpha)
+
+    def _fix_pinned(self, s: SimState, acc: np.ndarray, alpha: np.ndarray) -> None:
+        """Bodies turning about their fixed origin: the COM moves on a rigid circle, a = α×c + ω×(ω×c)."""
+        rows = getattr(self.engine, "_pinned", None)
+        if rows is None:
+            return
+        c = self.engine.bodies.com_offset_world(s.q)[rows]
+        w = s.w[rows]
+        acc[rows] = np.cross(alpha[rows], c) + np.cross(w, np.cross(w, c))
 
     def _fix_prescribed(self, t: float, s: SimState, acc: np.ndarray, alpha: np.ndarray, dt: float) -> None:
         eng = self.engine

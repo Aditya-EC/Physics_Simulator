@@ -10,6 +10,7 @@ multi-object editing and (later) the process engine use a single access API:
     "trajectory.<key>"                              trajectory marker settings (TRAJECTORY_PROPERTIES)
     "label_unit.<quantity>"                         display unit of that quantity in this object's label
     "arrow_scale.<quantity>"                        length of vector arrows per SI unit (ARROW_QUANTITIES)
+    "physics.<key>"                                 collision geometry and contact material (PHYSICS_PROPERTIES)
 
 Transform convention: `position` / `orientation` are expressed in the parent's
 frame (the global frame for root objects). Scale is a per-object geometry
@@ -102,6 +103,26 @@ TRAJECTORY_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
       description="Keep showing the path of the last run after the simulation stops"),
 ]}
 
+PHYSICS_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
+    P("collider", "Collision shape", ValueType.ENUM, "none",
+      choices=("none", "auto", "sphere", "box", "capsule", "plane"),
+      description="Collision geometry (separate from the visual mesh). 'auto' uses the exact shape where the "
+                  "type has one, else the mesh bounding box. Rigid-body types default to 'auto'"),
+    P("radius", "Collider radius", ValueType.FLOAT, 0.0, quantity="length", minimum=0.0, maximum=1e6,
+      description="0 = fitted to the mesh"),
+    P("length", "Capsule core length", ValueType.FLOAT, 0.0, quantity="length", minimum=0.0, maximum=1e6,
+      description="0 = fitted to the mesh"),
+    P("half_extents", "Box half extents", V3, [0.0, 0.0, 0.0], quantity="length", minimum=0.0, maximum=1e6,
+      description="0 = fitted to the mesh (per axis)"),
+    P("offset", "Collider offset", V3, [0.0, 0.0, 0.0], quantity="length", minimum=-1e6, maximum=1e6,
+      description="Shift of the collider centre in the object's local frame"),
+    P("restitution", "Restitution", ValueType.FLOAT, 0.3, minimum=0.0, maximum=1.0, step=0.05, precision=3,
+      description="Bounciness of contacts (the larger of the two bodies' values is used)"),
+    P("friction", "Friction coefficient", ValueType.FLOAT, 0.5, minimum=0.0, maximum=10.0, step=0.05, precision=3,
+      description="Coulomb friction coefficient (geometric mean of the two bodies' values)"),
+    P("show_collider", "Show collider", ValueType.BOOL, False, description="Draw the collision shape in the viewport"),
+]}
+
 # vector arrows: quantity -> (label, length per SI unit, quantity of the scale)
 ARROW_QUANTITIES = {"velocity": ("Velocity arrow scale", 0.25), "acceleration": ("Acceleration arrow scale", 0.05),
                     "force": ("Force arrow scale", 0.02), "angular_velocity": ("Angular velocity arrow scale", 0.25)}
@@ -164,6 +185,7 @@ class SceneObject:
     trajectory: dict[str, Any] = field(default_factory=dict)     # only non-default settings are stored
     label_units: dict[str, str] = field(default_factory=dict)    # quantity -> unit symbol
     arrow_scales: dict[str, float] = field(default_factory=dict)  # quantity -> length per SI unit
+    physics: dict[str, Any] = field(default_factory=dict)        # only non-default settings are stored
     custom: dict[str, CustomProperty] = field(default_factory=dict)
 
     _mesh_cache: tuple[tuple, Mesh] | None = field(default=None, repr=False, compare=False)
@@ -298,6 +320,11 @@ class SceneObject:
             return d
         if path.startswith("label_unit."):
             return PropertyDef(path, f"Label unit ({path[11:]})", ValueType.STRING, "")
+        if path.startswith("physics."):
+            d = PHYSICS_PROPERTIES.get(path[8:])
+            if d is None:
+                raise PropertyError(f"Unknown physics setting '{path[8:]}'")
+            return d
         if path.startswith("arrow_scale."):
             q = path[12:]
             if q not in ARROW_QUANTITIES:
@@ -322,6 +349,8 @@ class SceneObject:
             return copy.deepcopy(self.trajectory_setting(path[11:]))
         if path.startswith("label_unit."):
             return self.label_units.get(path[11:], "")
+        if path.startswith("physics."):
+            return copy.deepcopy(self.physics_setting(path[8:]))
         if path.startswith("arrow_scale."):
             return self.arrow_scale(path[12:])
         if path == "orientation_euler":
@@ -371,6 +400,14 @@ class SceneObject:
         if path.startswith("arrow_scale."):
             self.arrow_scales[path[12:]] = self.property_def(path).coerce(value)
             return
+        if path.startswith("physics."):
+            d = self.property_def(path)
+            v = d.coerce(value)
+            if v == self._physics_default(d.key):
+                self.physics.pop(d.key, None)
+            else:
+                self.physics[d.key] = v
+            return
         if path == "orientation":
             self.set_orientation(value)
             return
@@ -401,6 +438,14 @@ class SceneObject:
         d = TRAJECTORY_PROPERTIES[key]
         return self.trajectory.get(key, d.default)
 
+    def _physics_default(self, key: str):
+        if key == "collider" and self.typedef.rigid_body:
+            return "auto"
+        return PHYSICS_PROPERTIES[key].default
+
+    def physics_setting(self, key: str):
+        return self.physics.get(key, self._physics_default(key))
+
     def arrow_scale(self, quantity: str) -> float:
         return float(self.arrow_scales.get(quantity, ARROW_QUANTITIES[quantity][1]))
 
@@ -425,6 +470,8 @@ class SceneObject:
             d["label_units"] = dict(self.label_units)
         if self.arrow_scales:
             d["arrow_scales"] = dict(self.arrow_scales)
+        if self.physics:
+            d["physics"] = copy.deepcopy(self.physics)
         for k in _SIMPLE_ATTRS:
             d[k] = copy.deepcopy(getattr(self, k))
         return d
@@ -453,6 +500,9 @@ class SceneObject:
             for k, v in dict(data.get("arrow_scales", {})).items():
                 if k in ARROW_QUANTITIES:
                     obj.set(f"arrow_scale.{k}", v)
+            for k, v in dict(data.get("physics", {})).items():
+                if k in PHYSICS_PROPERTIES:
+                    obj.set(f"physics.{k}", v)
             obj.custom = {}
             for cd in data.get("custom", []):
                 obj.add_custom(CustomProperty.from_dict(cd))

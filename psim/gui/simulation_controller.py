@@ -56,6 +56,7 @@ class SimulationController(QObject):
         self._reported: set[str] = set()
         self._state = "idle"
         self.last_stats: RunStats | None = None
+        self.contacts: list = []                  # contact points of the latest snapshot (drawn by the viewport)
         self.recording: Recording | None = None   # data of the current or last run (kept after Stop)
         self.warning.connect(self._log_warning)
         self.error.connect(self._log_error)
@@ -64,6 +65,7 @@ class SimulationController(QObject):
         scene.processesChanged.connect(self._on_processes_changed)
         scene.globalsChanged.connect(self._on_processes_changed)
         scene.framesChanged.connect(self._on_processes_changed)
+        scene.jointsChanged.connect(self._on_processes_changed)
 
     # ---- state -------------------------------------------------------------------------------------
     @property
@@ -150,7 +152,7 @@ class SimulationController(QObject):
             return False
         plan = self.validate()
         for d in plan.diagnostics:
-            (self.error if d.level == "error" else self.warning).emit(d.message)
+            {"error": self.error, "warning": self.warning}.get(d.level, self.info).emit(d.message)
         if not plan.ok:
             return False
         if not plan.body_ids:
@@ -246,6 +248,7 @@ class SimulationController(QObject):
     def _end_session(self) -> None:
         self._initial = None
         self._body_ids = []
+        self.contacts = []
         self.scene.runtime = {}
         self.scene.simulating = False
         self.editor.recording = True
@@ -312,6 +315,7 @@ class SimulationController(QObject):
                             self.warning.emit(msg)
                 if oid not in changed:
                     changed.append(oid)
+            self.contacts = list(snap.contacts or [])
             for msg in snap.warnings or []:
                 if msg not in self._reported and len(self._reported) < 200:
                     self._reported.add(msg)
@@ -339,6 +343,14 @@ class SimulationController(QObject):
         edited = set(ids) & set(self._body_ids)
         if edited:
             self._rebuild(edited)
+        elif self._affects_physics(set(ids)):   # a static collider or joint anchor was edited
+            self._rebuild(set())
+
+    def _affects_physics(self, ids: set[str]) -> bool:
+        if any(j.body_a in ids or j.body_b in ids for j in self.scene.joints):
+            return True
+        return any(oid in self.scene.objects and self.scene.objects[oid].physics_setting("collider") != "none"
+                   for oid in ids)
 
     def _on_processes_changed(self) -> None:
         if self.session_active:

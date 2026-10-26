@@ -72,6 +72,47 @@ def _spring(ctx, idx, params) -> None:
     ctx.add_force(np.array([b]), -f[None, :])
 
 
+def _central_gravity(ctx, idx, params) -> None:
+    """Point-mass (inverse-square) attraction towards a fixed centre, with Plummer softening."""
+    r = ctx.x[idx] - np.asarray(params["center"], float)
+    d2 = np.einsum("ij,ij->i", r, r) + params["softening"] ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        k = np.where(d2 > 0, params["mu"] / np.maximum(d2, 1e-300) ** 1.5, 0.0)
+    ctx.add_acceleration(idx, -k[:, None] * r)
+
+
+def _inside(x: np.ndarray, params) -> np.ndarray:
+    if not params["use_region"]:
+        return np.ones(len(x), bool)
+    lo = np.minimum(params["region_min"], params["region_max"])
+    hi = np.maximum(params["region_min"], params["region_max"])
+    return np.all((x >= lo) & (x <= hi), axis=1)
+
+
+def _force_field(ctx, idx, params) -> None:
+    """Uniform force and acceleration field, optionally limited to an axis-aligned box (tested at the COM)."""
+    inside = idx[_inside(ctx.x[idx], params)]
+    if not len(inside):
+        return
+    ctx.add_force(inside, np.tile(np.asarray(params["force"], float), (len(inside), 1)))
+    ctx.add_acceleration(inside, np.asarray(params["acceleration"], float))
+
+
+def _anchor_spring(ctx, idx, params) -> None:
+    """Spring-damper from a point fixed on the body to a fixed world anchor; off-COM points also give a torque."""
+    r = numerics.quat_rotate_batch(ctx.q[idx], np.tile(np.asarray(params["attachment"], float), (len(idx), 1))
+                                   - ctx.bodies.com_local[idx])
+    p = ctx.x[idx] + r                                   # attachment point (world)
+    vp = ctx.v[idx] + np.cross(ctx.w[idx], r)
+    d = np.asarray(params["anchor"], float) - p
+    length = np.linalg.norm(d, axis=1)
+    n = np.where(length[:, None] > 1e-12, d / np.maximum(length, 1e-12)[:, None], 0.0)
+    stretch = length - params["rest_length"]
+    f = (params["stiffness"] * stretch - params["damping"] * np.einsum("ij,ij->i", vp, n))[:, None] * n
+    ctx.add_force(idx, f)
+    ctx.add_torque(idx, np.cross(r, f))
+
+
 # ---- prescribed processes ------------------------------------------------------------------
 
 @functools.lru_cache(maxsize=256)
@@ -168,6 +209,42 @@ def register_all(reg: ProcessRegistry) -> None:
             ("position", "linear_velocity", "mass"), (W_FORCE,),
             "F_a = [k(|d| − L₀) + c (v_b − v_a)·d̂] d̂ ,  F_b = −F_a ,  d = x_b − x_a", _spring,
             requires_mass=True, min_targets=2, max_targets=2, priority=5),
+        ProcessDef(
+            "dyn.central_gravity", "Central Gravity (point source)", "1.0", "Dynamics",
+            "Inverse-square attraction towards a fixed point, e.g. a planet or star that is not itself simulated. "
+            "The softening length keeps the acceleration finite at the centre.",
+            "contribution", "per_object",
+            [P("center", "Centre of attraction", V3, [0.0, 0.0, 0.0], quantity="length"),
+             P("mu", "Gravitational parameter μ = GM", F, 1.0, minimum=0.0, description="μ in m³/s²"),
+             P("softening", "Softening length ε", F, 0.0, quantity="length", minimum=0.0)],
+            ("position",), (W_FORCE,), "a += −μ r / (|r|² + ε²)^{3/2} ,  r = x − c", _central_gravity, priority=6),
+        ProcessDef(
+            "dyn.force_field", "Uniform Force Field (region)", "1.0", "Dynamics",
+            "Constant force (N, through the centre of mass) and acceleration applied to bodies whose centre of mass "
+            "lies inside an axis-aligned box, or everywhere when the region is disabled — e.g. wind, a conveyor "
+            "push or a local lift zone.",
+            "contribution", "per_object",
+            [P("force", "Force F", V3, [0.0, 0.0, 0.0], quantity="force"),
+             P("acceleration", "Acceleration a", V3, [0.0, 0.0, 0.0], quantity="acceleration"),
+             P("use_region", "Limit to region", ValueType.BOOL, True),
+             P("region_min", "Region minimum corner", V3, [-1.0, -1.0, 0.0], quantity="length"),
+             P("region_max", "Region maximum corner", V3, [1.0, 1.0, 2.0], quantity="length")],
+            ("position", "mass"), (W_FORCE,), "inside the region:  a += F / m + a_field", _force_field,
+            requires_mass=True, priority=7),
+        ProcessDef(
+            "dyn.anchor_spring", "Anchored Spring-Damper", "1.0", "Dynamics",
+            "Linear spring and damper between a point fixed on the body (local coordinates of its origin frame) "
+            "and a fixed anchor in the world. When the attachment is away from the centre of mass it also "
+            "applies a torque.",
+            "contribution", "per_object",
+            [P("anchor", "World anchor", V3, [0.0, 0.0, 2.0], quantity="length"),
+             P("attachment", "Attachment point (local)", V3, [0.0, 0.0, 0.0], quantity="length"),
+             P("stiffness", "Stiffness k", F, 50.0, quantity="stiffness", minimum=0.0),
+             P("rest_length", "Rest length L₀", F, 1.0, quantity="length", minimum=0.0),
+             P("damping", "Damping c", F, 0.0, quantity="damping", minimum=0.0)],
+            ("position", "orientation", "linear_velocity", "angular_velocity", "mass", "inertia"), (W_FORCE, W_TORQUE),
+            "F = [k(|d| − L₀) − c v_p·d̂] d̂ ,  τ = r × F ,  d = anchor − p", _anchor_spring, requires_mass=True,
+            priority=8),
         ProcessDef(
             "kin.circular_motion", "Circular Motion (prescribed)", "1.0", "Kinematics",
             "Moves the object origin on a circle at constant angular speed. Orientation is unaffected.",

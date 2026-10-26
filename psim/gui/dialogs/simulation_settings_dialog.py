@@ -1,8 +1,9 @@
-"""Simulation settings: fixed Δt, update rate, duration, pacing, integrator, render rate, breakpoints."""
+"""Simulation settings: fixed Δt, update rate, duration, pacing, integrator, render rate, breakpoints, and the
+rigid-body (collision and joint) solver."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit,
-                               QSpinBox, QVBoxLayout)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QLabel,
+                               QLineEdit, QSpinBox, QVBoxLayout)
 
 from ...simulation.integrators import INTEGRATORS
 from ...simulation.settings import DurationPolicy, PacingMode, SimulationSettings
@@ -50,6 +51,14 @@ class SimulationSettingsDialog(QDialog):
         for key, text in INTEGRATORS.items():
             self.integrator.addItem(text, key)
         self.integrator.setCurrentIndex(self.integrator.findData(settings.integrator))
+        self.tolerance = NumberField(precision=14, minimum=1e-14, maximum=1e-2)
+        self.tolerance.set_si(settings.adaptive_tolerance)
+        self.tolerance.setToolTip("Adaptive Dormand–Prince only: local error allowed per sub-step, relative to "
+                                  "(1 + |state|). Each fixed Δt step is split into sub-steps until it is met.")
+        self.gyroscopic = QCheckBox("Gyroscopic term −I⁻¹(ω × Iω) (Euler's rotation equations)")
+        self.gyroscopic.setChecked(settings.gyroscopic)
+        self.gyroscopic.setToolTip("Needed for correct free rotation of asymmetric bodies (precession, the "
+                                   "intermediate-axis instability). Disable only to reproduce simplified models.")
         self.fps = NumberField(precision=1, minimum=1, maximum=480)
         self.fps.set_si(settings.render_fps)
         self.breakpoints = QLineEdit(", ".join(f"{b:g}" for b in settings.breakpoints))
@@ -62,15 +71,48 @@ class SimulationSettingsDialog(QDialog):
         form.addRow("", self.afap)
         form.addRow("Max catch-up steps per tick", self.catch_up)
         form.addRow("Integrator", self.integrator)
+        form.addRow("Adaptive tolerance", self.tolerance)
+        form.addRow("", self.gyroscopic)
         form.addRow("Render rate [FPS]", self.fps)
         form.addRow("Breakpoints [s]", self.breakpoints)
         lay.addLayout(form)
+
+        box = QGroupBox("Collisions and joints")
+        pf = QFormLayout(box)
+        self.physics = QCheckBox("Enable the rigid-body solver (objects with colliders or joints)")
+        self.physics.setChecked(settings.physics_enabled)
+        self.iterations = QSpinBox()
+        self.iterations.setRange(1, 1000)
+        self.iterations.setValue(settings.solver_iterations)
+        self.iterations.setToolTip("Velocity iterations of the projected Gauss–Seidel solver per step")
+        self.pos_iterations = QSpinBox()
+        self.pos_iterations.setRange(0, 1000)
+        self.pos_iterations.setValue(settings.position_iterations)
+        self.pos_iterations.setToolTip("Iterations of the split-impulse pass that removes penetration and joint drift "
+                                       "without adding energy (0 disables position correction)")
+        self.baumgarte = NumberField(precision=3, minimum=0.0, maximum=1.0)
+        self.baumgarte.set_si(settings.baumgarte)
+        self.baumgarte.setToolTip("Fraction of the remaining penetration / joint error corrected per step")
+        self.slop = NumberField(precision=5, minimum=0.0, maximum=1.0)
+        self.slop.set_si(settings.contact_slop)
+        self.slop.setToolTip("Penetration allowed before position correction acts; keeps resting contacts stable")
+        self.rest_threshold = NumberField(precision=4, minimum=0.0, maximum=100.0)
+        self.rest_threshold.set_si(settings.restitution_threshold)
+        self.rest_threshold.setToolTip("Impacts slower than this do not bounce, so objects come to rest")
+        pf.addRow("", self.physics)
+        pf.addRow("Velocity iterations", self.iterations)
+        pf.addRow("Position iterations", self.pos_iterations)
+        pf.addRow("Position correction factor", self.baumgarte)
+        pf.addRow("Contact slop [m]", self.slop)
+        pf.addRow("Restitution threshold [m/s]", self.rest_threshold)
+        lay.addWidget(box)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         lay.addWidget(self.summary)
         if running:
             note = QLabel("A simulation is active: Δt, update rate, duration, pacing and render rate apply at the next "
-                          "step; the integrator, catch-up limit and breakpoints apply to the next run.")
+                          "step; the integrator, catch-up limit, breakpoints and solver settings apply to the next "
+                          "run.")
             note.setWordWrap(True)
             note.setObjectName("Muted")
             lay.addWidget(note)
@@ -97,6 +139,14 @@ class SimulationSettingsDialog(QDialog):
         s.max_catch_up_steps = self.catch_up.value()
         s.integrator = self.integrator.currentData()
         s.render_fps = self.fps.si()
+        s.adaptive_tolerance = self.tolerance.si()
+        s.gyroscopic = self.gyroscopic.isChecked()
+        s.physics_enabled = self.physics.isChecked()
+        s.solver_iterations = self.iterations.value()
+        s.position_iterations = self.pos_iterations.value()
+        s.baumgarte = self.baumgarte.si()
+        s.contact_slop = self.slop.si()
+        s.restitution_threshold = self.rest_threshold.si()
         text = self.breakpoints.text().replace(";", ",")
         s.breakpoints = sorted(float(t) for t in text.split(",") if t.strip())
         return s

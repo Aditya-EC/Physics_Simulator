@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .. import numerics
+from ..scene.analysis import body_mass_properties
 from ..scene.scene_manager import Scene
 
 
@@ -28,6 +29,7 @@ class BodySet:
     torque: np.ndarray
     origin0: np.ndarray               # (N, 3) object origin at the start of the run
     q0: np.ndarray                    # (N, 4)
+    inertia_local: np.ndarray | None = None   # (N, 3, 3) about the COM (zeros for point masses)
     world: object = None              # EngineWorld for formula processes (set by the engine)
 
     @property
@@ -64,6 +66,7 @@ def capture_bodies(scene: Scene, ids: list[str]) -> tuple[BodySet, SimState]:
     mass = np.zeros(n)
     com = np.zeros((n, 3))
     inv_i = np.zeros((n, 3, 3))
+    inertia = np.zeros((n, 3, 3))
     la, aa, fo, to = (np.zeros((n, 3)) for _ in range(4))
     origin = np.zeros((n, 3))
     q = np.zeros((n, 4))
@@ -73,18 +76,17 @@ def capture_bodies(scene: Scene, ids: list[str]) -> tuple[BodySet, SimState]:
         o = scene.get(oid)
         p, qq = scene.world_pose(oid)
         origin[k], q[k] = p, qq
-        if o.typedef.physical:
-            mp = o.mass_properties()
-            mass[k] = mp["mass"] or 0.0
-            com[k] = mp["com"]
-            inertia = np.asarray(mp["inertia"], float)
-            if np.any(inertia):
-                inv_i[k] = np.linalg.pinv(inertia)
+        mp = body_mass_properties(scene, oid)   # the object and the parts that move with it
+        mass[k] = mp["mass"]
+        com[k] = mp["com"]
+        inertia[k] = mp["inertia"]
+        if np.any(inertia[k]):
+            inv_i[k] = np.linalg.pinv(inertia[k])
         la[k], aa[k] = o.linear_acceleration, o.angular_acceleration
         fo[k], to[k] = o.force, o.torque
         v[k], w[k] = o.linear_velocity, o.angular_velocity
     inv_m = np.divide(1.0, mass, out=np.zeros(n), where=mass > 0)
-    bodies = BodySet(list(ids), mass, inv_m, com, inv_i, la, aa, fo, to, origin.copy(), q.copy())
+    bodies = BodySet(list(ids), mass, inv_m, com, inv_i, la, aa, fo, to, origin.copy(), q.copy(), inertia)
     x = origin + bodies.com_offset_world(q)
     return bodies, SimState(np.ascontiguousarray(x), np.ascontiguousarray(q), np.ascontiguousarray(v),
                             np.ascontiguousarray(w))

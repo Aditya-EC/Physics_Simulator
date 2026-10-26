@@ -34,6 +34,7 @@ class Scene(QObject):
     processesChanged = Signal()       # process assignments added / removed / edited
     globalsChanged = Signal()         # global parameters edited
     framesChanged = Signal()          # named reference frames added / removed / edited
+    jointsChanged = Signal()          # joints added / removed / edited
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -47,6 +48,8 @@ class Scene(QObject):
         self.global_parameters: list[dict] = []
         self.frames: list = []                 # ReferenceFrame, named user-defined frames
         self.next_frame_number = 1             # FRM-0001, ... never reused
+        self.joints: list = []                 # psim.physics.joints.Joint
+        self.next_joint_number = 1             # JNT-0001, ... never reused
         self.simulating = False                # a simulation session is active (set by the controller)
         # values produced by a running simulation that are not object properties
         # (e.g. current total acceleration); cleared when a session ends
@@ -77,6 +80,8 @@ class Scene(QObject):
         self.global_parameters = []
         self.frames = []
         self.next_frame_number = 1
+        self.joints = []
+        self.next_joint_number = 1
         self.simulating = False
         self.runtime = {}
         self.sceneReset.emit()
@@ -129,6 +134,28 @@ class Scene(QObject):
         for f in self.frames:
             self.next_frame_number = max(self.next_frame_number, int(FRAME_ID.match(f.id).group(1)) + 1)
         self.framesChanged.emit()
+
+    # ---- joints -------------------------------------------------------------------------------------------
+    def allocate_joint_id(self) -> str:
+        used = {j.id for j in self.joints}
+        while True:
+            jid = f"JNT-{self.next_joint_number:04d}"
+            self.next_joint_number += 1
+            if jid not in used:
+                return jid
+
+    def joint(self, jid: str | None):
+        return next((j for j in self.joints if j.id == jid), None)
+
+    def joints_snapshot(self) -> list[dict]:
+        return [j.to_dict() for j in self.joints]
+
+    def apply_joints(self, data: list[dict]) -> None:
+        from ..physics.joints import JOINT_ID, validate_joints
+        self.joints = validate_joints(data)
+        for j in self.joints:
+            self.next_joint_number = max(self.next_joint_number, int(JOINT_ID.match(j.id).group(1)) + 1)
+        self.jointsChanged.emit()
 
     def frame_world_pose(self, fid: str) -> tuple[np.ndarray, np.ndarray]:
         f = self.frame(fid)
@@ -427,4 +454,8 @@ class Scene(QObject):
         for f in self.frames:
             if f.parent and f.parent not in self.objects:
                 problems.append(f"{f.id} ({f.name}): attached to the missing object '{f.parent}'")
+        for j in self.joints:
+            for b in (j.body_a, j.body_b):
+                if b and b not in self.objects:
+                    problems.append(f"{j.id} ({j.name}): connects the missing object '{b}'")
         return problems

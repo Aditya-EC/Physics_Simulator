@@ -124,6 +124,22 @@ class FramesCommand(QUndoCommand):
         self.scene.apply_frames(self.before)
 
 
+class JointsCommand(QUndoCommand):
+    def __init__(self, scene: Scene, before: list[dict], after: list[dict], text: str) -> None:
+        super().__init__(text)
+        self.scene, self.before, self.after = scene, before, after
+        self._first = True
+
+    def redo(self) -> None:
+        if self._first:
+            self._first = False
+            return
+        self.scene.apply_joints(self.after)
+
+    def undo(self) -> None:
+        self.scene.apply_joints(self.before)
+
+
 class SceneEditor:
     """High-level, undoable operations on a Scene.
 
@@ -320,6 +336,48 @@ class SceneEditor:
         ids = set(ids)
         return self.set_frames([f for f in self.scene.frames_snapshot() if f["id"] not in ids],
                                "Remove Reference Frame" + ("s" if len(ids) > 1 else ""))
+
+    # ---- joints ---------------------------------------------------------------------------------------------
+    def set_joints(self, joints: list[dict], text: str = "Edit Joints") -> bool:
+        from ..physics.joints import validate_joints
+        after = [j.to_dict() for j in validate_joints(copy.deepcopy(joints))]
+        for j in after:
+            for b in (j["body_a"], j["body_b"]):
+                if b is not None and b not in self.scene.objects:
+                    raise SceneError(f"{j['name']}: missing object reference '{b}'")
+        before = self.scene.joints_snapshot()
+        if after == before:
+            return False
+        self.scene.apply_joints(after)
+        self._push(JointsCommand(self.scene, before, copy.deepcopy(after), text))
+        return True
+
+    def add_joint(self, jtype: str, body_a: str, body_b: str | None, anchor_world, axis_world=(0.0, 0.0, 1.0),
+                  name: str | None = None, **options) -> str:
+        from ..physics.joints import make_joint
+        jid = self.scene.allocate_joint_id()
+        if name is None:
+            names = {j.name.lower() for j in self.scene.joints}
+            k = 1
+            while f"{jtype.capitalize()} {k}".lower() in names:
+                k += 1
+            name = f"{jtype.capitalize()} {k}"
+        data = make_joint(self.scene, jid, name, jtype, body_a, body_b, anchor_world, axis_world, **options)
+        self.set_joints(self.scene.joints_snapshot() + [data], f"Add Joint '{name}'")
+        return jid
+
+    def update_joint(self, jid: str, **changes) -> bool:
+        joints = self.scene.joints_snapshot()
+        for j in joints:
+            if j["id"] == jid:
+                j.update(changes)
+                return self.set_joints(joints, f"Edit Joint '{j['name']}'")
+        raise SceneError(f"Missing joint '{jid}'")
+
+    def remove_joints(self, ids) -> bool:
+        ids = set(ids)
+        return self.set_joints([j for j in self.scene.joints_snapshot() if j["id"] not in ids],
+                               "Remove Joint" + ("s" if len(ids) > 1 else ""))
 
     def set_global_parameters(self, params: list[dict], text: str = "Edit Global Parameters") -> bool:
         from ..processes.global_parameters import validate_globals

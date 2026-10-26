@@ -65,6 +65,9 @@ class EnvironmentSettings:
     show_local_axes: bool = False     # show local axes on every object
     highlight_color: list[float] = field(default_factory=lambda: [0.98, 0.62, 0.18])
     show_stats: bool = True
+    show_colliders: bool = False      # draw every collision shape (else only objects with "Show collider")
+    show_joints: bool = True
+    show_contacts: bool = True        # contact points and normals while a simulation runs
     msaa_samples: int = 4
 
 

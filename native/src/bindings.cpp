@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "psim/constraints.hpp"
 #include "psim/integrators.hpp"
 #include "psim/mesh_ops.hpp"
 #include "psim/transforms.hpp"
@@ -231,6 +232,51 @@ PYBIND11_MODULE(_psim_native, m) {
         rotate_tensors(q.data(), t.data(), q.shape(0), out.mutable_data());
         return out;
     });
+
+    m.def("pgs_solve", [](const py::array_t<int64_t, py::array::c_style | py::array::forcecast>& ia,
+                          const py::array_t<int64_t, py::array::c_style | py::array::forcecast>& ib, const DArr& J,
+                          const DArr& rhs, const DArr& lo, const DArr& hi,
+                          const py::array_t<int64_t, py::array::c_style | py::array::forcecast>& parent,
+                          const DArr& mu, const py::array_t<int64_t, py::array::c_style | py::array::forcecast>& block,
+                          const DArr& inv_m, const DArr& inv_i, InPlace v, InPlace w, int iterations,
+                          const py::object& B) {
+        const int64_t m = ia.size();
+        DArr b_arr;
+        const double* b_ptr = nullptr;
+        if (!B.is_none()) {
+            b_arr = DArr::ensure(B);
+            if (!b_arr || b_arr.size() != 12 * m)
+                throw std::invalid_argument("B must have the same shape as J");
+            b_ptr = b_arr.data();
+        }
+        const int64_t n = inv_m.size();
+        if (ib.size() != m || J.size() != 12 * m || rhs.size() != m || lo.size() != m || hi.size() != m ||
+            parent.size() != m || mu.size() != m || block.size() != m)
+            throw std::invalid_argument("constraint arrays must all describe the same number of rows");
+        if (inv_i.size() != 9 * n || v.ndim() != 2 || v.shape(0) != n || w.ndim() != 2 || w.shape(0) != n)
+            throw std::invalid_argument("body arrays must describe the same number of bodies");
+        double* vp = writable(v, 3, "v");
+        double* wp = writable(w, 3, "w");
+        for (int64_t r = 0; r < m; ++r) {
+            if (ia.data()[r] >= n || ib.data()[r] >= n || parent.data()[r] >= m)
+                throw std::invalid_argument("constraint row refers to a missing body or parent row");
+        }
+        py::array_t<double> lambda(m);
+        for (int64_t r = 0; r < m; ++r) {
+            const int64_t bs = block.data()[r];
+            if (bs < 0 || bs > 6 || r + bs > m)
+                throw std::invalid_argument("block sizes must be 0..6 and fit in the row list");
+            for (int64_t i = 1; i < bs; ++i)
+                if (ia.data()[r + i] != ia.data()[r] || ib.data()[r + i] != ib.data()[r])
+                    throw std::invalid_argument("rows of a block must connect the same bodies");
+        }
+        pgs_solve(m, ia.data(), ib.data(), J.data(), rhs.data(), lo.data(), hi.data(), parent.data(), mu.data(),
+                  block.data(), n, inv_m.data(), inv_i.data(), vp, wp, iterations, lambda.mutable_data(), b_ptr);
+        return lambda;
+    }, py::arg("ia"), py::arg("ib"), py::arg("J"), py::arg("rhs"), py::arg("lo"), py::arg("hi"), py::arg("parent"),
+       py::arg("mu"), py::arg("block"), py::arg("inv_m"), py::arg("inv_i"), py::arg("v").noconvert(),
+       py::arg("w").noconvert(),
+       py::arg("iterations"), py::arg("B") = py::none());
 
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);

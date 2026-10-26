@@ -40,6 +40,7 @@ class PropertiesPanel(QWidget):
     editAssignmentRequested = Signal(str)   # assignment uid
     clearTrajectoryRequested = Signal(list)  # object ids
     exportTrajectoryRequested = Signal(str)  # object id
+    jointsRequested = Signal(str)           # object id: open the joints dialog for it
 
     def __init__(self, scene: Scene, editor: SceneEditor, units: UnitRegistry, parent=None) -> None:
         super().__init__(parent)
@@ -102,6 +103,7 @@ class PropertiesPanel(QWidget):
         scene.sceneReset.connect(self._schedule)
         scene.processesChanged.connect(self._schedule)
         scene.framesChanged.connect(self._schedule)
+        scene.jointsChanged.connect(self._schedule)
         self._sync()
 
     def set_simulated_ids(self, ids) -> None:
@@ -126,7 +128,9 @@ class PropertiesPanel(QWidget):
                 tuple((f.id, f.name) for f in self.scene.frames),
                 len(self.scene.objects), self._custom_sort,  # object count: frame/parent choices
                 frozenset(self.simulated_ids & set(ids)),
-                tuple((a.uid, a.enabled, a.process_id) for i in ids[-1:] for a in self.scene.assignments_for(i)))
+                tuple((a.uid, a.enabled, a.process_id) for i in ids[-1:] for a in self.scene.assignments_for(i)),
+                tuple((j.id, j.name, j.type, j.enabled) for i in ids[-1:] for j in self.scene.joints
+                      if i in (j.body_a, j.body_b)))
 
     def _sync(self) -> None:
         ids = [i for i in self.scene.selection if i in self.scene.objects]
@@ -173,6 +177,7 @@ class PropertiesPanel(QWidget):
             self._build_transform(o)
             if o.typedef.physical:
                 self._build_physical(o)
+                self._build_collision(objs)
             self._build_coordinates(o)
             self._build_appearance(objs)
             self._build_display(objs)
@@ -194,6 +199,8 @@ class PropertiesPanel(QWidget):
                 sec = self._section("physical", "Physical Properties")
                 self._add_prop(sec, "mass_mode", objs, origin=Origin.USER)
                 self._add_prop(sec, "density", objs, origin=Origin.USER)
+            if all(o.typedef.physical for o in objs):
+                self._build_collision(objs)
             self._build_appearance(objs)
             self._build_display(objs)
             if all(o.typedef.physical or o.type_id.startswith("group.") for o in objs):
@@ -574,6 +581,48 @@ class PropertiesPanel(QWidget):
                           "angular_momentum", "L = I·ω about the centre of mass (global frame)")
         self._add_readout(sec, "Kinetic energy", kinetic_energy, "energy", 1, Origin.DERIVED, "kinetic_energy",
                           "½·m·v² + ½·ω·L")
+
+    def _build_collision(self, objs: list[SceneObject]) -> None:
+        """Collision geometry (separate from the visual mesh), contact material and joints."""
+        from ..physics.colliders import collider_for
+        sec = self._section("collision", "Collision & Joints")
+        for key in ("collider", "radius", "length", "half_extents", "offset", "restitution", "friction",
+                    "show_collider"):
+            self._add_prop(sec, f"physics.{key}", objs)
+        primary = objs[-1]
+        shape = QLabel()
+        shape.setWordWrap(True)
+        shape.setObjectName("Muted")
+
+        def describe():
+            try:
+                c = collider_for(primary)
+            except Exception as exc:   # geometry errors are reported, not raised from the inspector
+                shape.setText(f"Collider unavailable: {exc}")
+                return
+            shape.setText("Does not collide (mass alone never makes an object collide)." if c is None
+                          else f"Collides as: {c.describe()}")
+        self._refreshers.append(describe)
+        describe()
+        sec.add_row("Effective collider", shape, search="collider shape effective approximate")
+        if len(objs) != 1:
+            return
+        joints = [j for j in self.scene.joints if primary.id in (j.body_a, j.body_b)]
+        for j in joints:
+            other = j.body_b if j.body_a == primary.id else j.body_a
+            other_name = self.scene.objects[other].name if other in self.scene.objects else (other or "world")
+            text = f"{j.id} · {j.name} — {j.type} to {other_name}" + ("" if j.enabled else " (disabled)")
+            lab = QLabel(text)
+            lab.setWordWrap(True)
+            sec.add_widget(lab, search=f"joint {j.name} {j.id} {j.type}")
+        if not joints:
+            note = QLabel("No joints.")
+            note.setObjectName("Muted")
+            sec.add_widget(note, search="joint")
+        btn = QPushButton(icons.icon("edit"), "Joints…")
+        btn.setToolTip("Create and edit joints of this object")
+        btn.clicked.connect(lambda: self.jointsRequested.emit(primary.id))
+        sec.add_buttons(btn)
 
     def _build_coordinates(self, o: SceneObject) -> None:
         sec = self._section("coordinates", "Coordinate Systems")

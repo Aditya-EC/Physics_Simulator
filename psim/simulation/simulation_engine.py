@@ -49,6 +49,7 @@ class Snapshot:
     steps: int
     custom: dict = None       # object id -> {key: value} custom properties written by update processes
     warnings: list = None     # skipped evaluations (error policy "skip") since the previous snapshot
+    contacts: list = None     # contact points of the last step: (point, normal from A to B, normal force N)
 
 
 class SimulationEngine:
@@ -72,6 +73,10 @@ class SimulationEngine:
         n = len(bodies.ids)
         self.acc = np.zeros((n, 3))
         self.alpha = np.zeros((n, 3))
+        self._gyro_setup()
+        self._pinned_setup()
+        self._physics_setup()
+        self.constraint_acc = None   # (Δv/Δt, Δω/Δt) of the last step's contacts and joints
         self.state = self._apply_prescribed(0.0, state)
         self.finished = False
         self.sampler = None     # EngineSampler when data recording is attached
@@ -95,6 +100,11 @@ class SimulationEngine:
                 s.q[p.idx] = out["orientation"]
                 s.w[p.idx] = out["angular_velocity"]
         com = b.com_offset_world(s.q)
+        pinned = self._pinned
+        if pinned is not None:
+            # translation not driven by anything: the object origin stays where it is while the body turns
+            s.x[pinned] = b.origin0[pinned] + com[pinned]
+            s.v[pinned] = np.cross(s.w[pinned], com[pinned])
         for p, out in outputs:
             if "position" in out:
                 # prescribed values describe the object origin; the state stores the COM
@@ -121,7 +131,52 @@ class SimulationEngine:
             self.world.set_stage(stage.x, stage.q, stage.v, stage.w)
         for p in self.plan.contributions:
             p.pdef.evaluate(ctx, p.idx, p.params)
+        if self.settings.gyroscopic and self._gyro_rows is not None:
+            alpha[self._gyro_rows] += self._gyroscopic(stage.q[self._gyro_rows], stage.w[self._gyro_rows])
         return acc, alpha
+
+    def _pinned_setup(self) -> None:
+        """Rows whose orientation is prescribed but whose position is neither integrated, prescribed nor updated."""
+        n = len(self.bodies.ids)
+        driven = self.plan.integrate_translation.copy()
+        turned = np.zeros(n, bool)
+        for p in self.plan.prescribed:
+            if "position" in p.pdef.writes:
+                driven[p.idx] = True
+            if "orientation" in p.pdef.writes:
+                turned[p.idx] = True
+        for p in self.plan.updates:
+            if {"position", "velocity"} & set(p.pdef.writes):
+                driven[p.idx] = True
+        rows = np.flatnonzero(turned & ~driven)
+        self._pinned = rows if len(rows) and self.bodies.has_com_offset else None
+
+    def _physics_setup(self) -> None:
+        """Collisions and joints (the native rigid-body constraint stage), if the plan uses them."""
+        setup = getattr(self.plan, "physics", None)
+        self.physics = None
+        if self.settings.physics_enabled and setup is not None and setup.has_work:
+            from ..physics.system import PhysicsSettings, PhysicsSystem
+            s = self.settings
+            self.physics = PhysicsSystem(setup, self.bodies, self.plan.integrate_translation,
+                                         self.plan.integrate_rotation,
+                                         PhysicsSettings(s.solver_iterations, s.position_iterations, s.baumgarte,
+                                                         s.contact_slop, s.restitution_threshold))
+
+    def _gyro_setup(self) -> None:
+        """Rows that get the gyroscopic term: integrated rotation and a non-zero inertia tensor."""
+        b = self.bodies
+        rows = np.flatnonzero(self.plan.integrate_rotation & np.array([np.any(i) for i in b.inertia_local], bool)) \
+            if b.inertia_local is not None and len(b.ids) else np.zeros(0, int)
+        self._gyro_rows = rows if len(rows) else None
+
+    def _gyroscopic(self, q: np.ndarray, w: np.ndarray) -> np.ndarray:
+        """−I_w⁻¹ (ω × I_w ω) for the selected rows (world frame)."""
+        b, rows = self.bodies, self._gyro_rows
+        i_w = numerics.rotate_tensors(np.ascontiguousarray(q), np.ascontiguousarray(b.inertia_local[rows]))
+        inv_w = numerics.rotate_tensors(np.ascontiguousarray(q), np.ascontiguousarray(b.inv_inertia_local[rows]))
+        lw = np.einsum("nij,nj->ni", i_w, w)
+        return -np.einsum("nij,nj->ni", inv_w, np.cross(w, lw))
 
     # ---- stepping ---------------------------------------------------------------------------------
     def step(self) -> bool:
@@ -137,9 +192,20 @@ class SimulationEngine:
         old = self.state
         updates = self._run_updates(t, dt)
         new, acc, alpha = integrate(self.settings.integrator, self.state.copy(), t, dt, self._deriv,
-                                    self.plan.integrate_translation, self.plan.integrate_rotation)
+                                    self.plan.integrate_translation, self.plan.integrate_rotation,
+                                    self.settings.adaptive_tolerance)
         self._apply_updates(updates, new)
         new = self._apply_prescribed(t + dt, new)
+        if self.physics is not None:
+            dv, dw = self.physics.step(new, dt, old)
+            if dt > 0:     # contact and joint forces are part of the total acceleration of this step
+                self.constraint_acc = (dv / dt, dw / dt)
+                acc, alpha = acc + dv / dt, alpha + dw / dt
+            if self.sampler is not None:
+                for a, b in self.physics.take_new_contacts():
+                    self.sampler.rec.log(t + dt, step + 1, "contact", f"Contact {a} ↔ {b}")
+            else:
+                self.physics.take_new_contacts()
         self._check_finite(new, t + dt)
         if self.sampler is not None:
             self.sampler.after_step(t, step, old, acc, alpha, new, dt)
@@ -247,6 +313,9 @@ class SimulationEngine:
             bodies.world = self.world
         n = len(bodies.ids)
         self.acc, self.alpha = np.zeros((n, 3)), np.zeros((n, 3))
+        self._gyro_setup()
+        self._pinned_setup()
+        self._physics_setup()
         self.state = self._apply_prescribed(self.clock.time, state)
         if self.sampler is not None:
             self.sampler.refresh_schema()
@@ -262,5 +331,11 @@ class SimulationEngine:
                 custom.setdefault(w.ids[ref], {})[key] = v.copy() if isinstance(v, np.ndarray) else v
             w.custom_dirty = set()
             warnings, w.skips = w.skips, []
+        contacts = []
+        if self.physics is not None:
+            dt = max(self.clock.delta_time, 1e-12)
+            contacts = [(np.array(c[2], float), np.array(c[3], float), float(c[5]) / dt)
+                        for c in getattr(self.physics, "last_contacts", [])]
         return Snapshot(list(self.bodies.ids), origins(self.bodies, s), s.q.copy(), s.v.copy(), s.w.copy(),
-                        self.acc.copy(), self.alpha.copy(), self.clock.time, self.clock.steps, custom, warnings)
+                        self.acc.copy(), self.alpha.copy(), self.clock.time, self.clock.steps, custom, warnings,
+                        contacts)

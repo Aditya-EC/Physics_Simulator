@@ -291,7 +291,8 @@ class DependencyDialog(QDialog):
         diag = QTextBrowser()
         if plan.diagnostics:
             diag.setHtml("<br>".join(
-                f"<span style='color:{'#e5534b' if d.level == 'error' else '#d9a33a'}'>{d.level.upper()}</span> "
+                f"<span style='color:{ {'error': '#e5534b', 'warning': '#d9a33a'}.get(d.level, '#7fa7d9')}'>"
+                f"{d.level.upper()}</span> "
                 f"{html.escape(d.message)}" for d in plan.diagnostics))
         else:
             diag.setHtml("<span style='color:#4fb36b'>No problems: the plan is valid.</span>")

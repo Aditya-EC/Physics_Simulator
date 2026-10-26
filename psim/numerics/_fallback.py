@@ -358,3 +358,99 @@ def quat_rotate_batch(q, v):
 def rotate_tensors(q, t):
     r = _quat_matrices(q)
     return r @ np.asarray(t, dtype=np.float64).reshape(-1, 3, 3) @ np.transpose(r, (0, 2, 1))
+
+
+def pgs_solve(ia, ib, J, rhs, lo, hi, parent, mu, block, inv_m, inv_i, v, w, iterations, B=None):
+    """Projected Gauss–Seidel on generic constraint rows (same algorithm and row order as the C++ core).
+
+    Rows J_r·[v_a, w_a, v_b, w_b] = rhs_r with lo_r ≤ λ_r ≤ hi_r, or |λ_r| ≤ μ_r·λ_parent for friction rows.
+    block_r = k (2…6) marks the first of k unbounded rows solved together (0 for the others, 1 = scalar).
+    B (M, 12), optional: impulse directions (default J). Impulses are applied as M⁻¹Bᵀλ while J·v = rhs is
+    enforced (effective mass J M⁻¹ Bᵀ); joints pass the midpoint-configuration Jacobian to avoid the energy loss
+    of projecting velocities onto the end-of-step tangent space.
+    v and w (N, 3) are updated in place; returns the accumulated impulses λ (M,).
+    """
+    block = np.array(block, np.int64)   # copy: singular blocks are rewritten below
+    ia = np.asarray(ia, np.int64)
+    ib = np.asarray(ib, np.int64)
+    J = np.asarray(J, np.float64).reshape(-1, 12)
+    B = J if B is None else np.asarray(B, np.float64).reshape(-1, 12)
+    m = len(ia)
+    if B.shape != J.shape:
+        raise ValueError("B must have the same shape as J")
+    inv_i = np.asarray(inv_i, np.float64).reshape(-1, 3, 3)
+    inv_m = np.asarray(inv_m, np.float64)
+    mj = np.zeros((m, 12))
+    k = np.zeros(m)
+    for r in range(m):
+        a, b = ia[r], ib[r]
+        if a >= 0:
+            mj[r, :3] = inv_m[a] * B[r, :3]
+            mj[r, 3:6] = inv_i[a] @ B[r, 3:6]
+            k[r] += J[r, :3] @ mj[r, :3] + J[r, 3:6] @ mj[r, 3:6]
+        if b >= 0:
+            mj[r, 6:9] = inv_m[b] * B[r, 6:9]
+            mj[r, 9:] = inv_i[b] @ B[r, 9:]
+            k[r] += J[r, 6:9] @ mj[r, 6:9] + J[r, 9:] @ mj[r, 9:]
+    lam = np.zeros(m)
+    kinv = {}
+    for r in range(m):
+        bs = int(block[r])
+        if bs >= 2:
+            sl = slice(r, r + bs)
+            K = np.zeros((bs, bs))
+            if ia[r] >= 0:
+                K += J[sl, :3] @ mj[sl, :3].T + J[sl, 3:6] @ mj[sl, 3:6].T
+            if ib[r] >= 0:
+                K += J[sl, 6:9] @ mj[sl, 6:9].T + J[sl, 9:] @ mj[sl, 9:].T
+            scale = float(np.max(np.abs(K)))
+            if scale > 0 and np.linalg.matrix_rank(K, tol=1e-12 * scale) == bs:
+                kinv[r] = np.linalg.inv(K)
+            else:   # singular block (e.g. angular rows of a point mass): solve its rows one by one
+                block[sl] = 1
+    rows = [r for r in range(m) if block[r] != 0 and (r in kinv or k[r] > 1e-14)]
+    for _ in range(int(iterations)):
+        for r in rows:
+            a, b = ia[r], ib[r]
+            if r in kinv:
+                bs = int(block[r])
+                sl = slice(r, r + bs)
+                cdot = np.zeros(bs)
+                if a >= 0:
+                    cdot += J[sl, :3] @ v[a] + J[sl, 3:6] @ w[a]
+                if b >= 0:
+                    cdot += J[sl, 6:9] @ v[b] + J[sl, 9:] @ w[b]
+                dl = kinv[r] @ (np.asarray(rhs[sl]) - cdot)
+                lam[sl] += dl
+                if a >= 0:
+                    v[a] += dl @ mj[sl, :3]
+                    w[a] += dl @ mj[sl, 3:6]
+                if b >= 0:
+                    v[b] += dl @ mj[sl, 6:9]
+                    w[b] += dl @ mj[sl, 9:]
+                continue
+            if k[r] <= 1e-14:
+                continue
+            cdot = 0.0
+            if a >= 0:
+                cdot += J[r, :3] @ v[a] + J[r, 3:6] @ w[a]
+            if b >= 0:
+                cdot += J[r, 6:9] @ v[b] + J[r, 9:] @ w[b]
+            if parent[r] >= 0:
+                limit = mu[r] * lam[parent[r]]
+                lo_r, hi_r = -limit, limit
+            else:
+                lo_r, hi_r = lo[r], hi[r]
+            old = lam[r]
+            new = min(hi_r, max(lo_r, old + (rhs[r] - cdot) / k[r]))
+            dl = new - old
+            lam[r] = new
+            if dl == 0.0:
+                continue
+            if a >= 0:
+                v[a] += mj[r, :3] * dl
+                w[a] += mj[r, 3:6] * dl
+            if b >= 0:
+                v[b] += mj[r, 6:9] * dl
+                w[b] += mj[r, 9:] * dl
+    return lam

@@ -52,6 +52,7 @@ integrate_linear = _impl.integrate_linear
 quat_integrate = _impl.quat_integrate
 quat_rotate_batch = _impl.quat_rotate_batch
 rotate_tensors = _impl.rotate_tensors
+pgs_solve = _impl.pgs_solve
 
 
 def backend_description() -> str:

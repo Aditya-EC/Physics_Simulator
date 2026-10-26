@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "psim/constraints.hpp"
 #include "psim/integrators.hpp"
 #include "psim/mesh_ops.hpp"
 #include "psim/transforms.hpp"
@@ -105,7 +106,27 @@ static void test_integrators() {
     CHECK_NEAR(q[3], std::sin(kPi / 4), 1e-12);
 }
 
+static void test_pgs_contact() {
+    // a 1 kg body falling at 2 m/s onto the fixed world (row: normal +z, lambda >= 0, target velocity 0)
+    const int64_t ia[1] = {-1}, ib[1] = {0}, parent[1] = {-1};
+    const double J[12] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0};
+    const double rhs[1] = {0.0}, lo[1] = {0.0}, hi[1] = {1e30}, mu[1] = {0.0};
+    const int64_t block[1] = {1};
+    const double inv_m[1] = {1.0}, inv_i[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    double v[3] = {0.5, 0.0, -2.0}, w[3] = {0, 0, 0}, lambda[1];
+    pgs_solve(1, ia, ib, J, rhs, lo, hi, parent, mu, block, 1, inv_m, inv_i, v, w, 10, lambda);
+    CHECK_NEAR(v[2], 0.0, 1e-12);
+    CHECK_NEAR(v[0], 0.5, 1e-12);
+    CHECK_NEAR(lambda[0], 2.0, 1e-12);
+    // separating bodies are not pulled back
+    double v2[3] = {0.0, 0.0, 1.0};
+    pgs_solve(1, ia, ib, J, rhs, lo, hi, parent, mu, block, 1, inv_m, inv_i, v2, w, 10, lambda);
+    CHECK_NEAR(v2[2], 1.0, 1e-12);
+    CHECK_NEAR(lambda[0], 0.0, 1e-12);
+}
+
 int main() {
+    test_pgs_contact();
     test_integrators();
     test_euler_roundtrip();
     test_pose_inverse();

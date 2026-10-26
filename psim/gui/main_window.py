@@ -243,6 +243,13 @@ class MainWindow(QMainWindow):
           checked=True)
         A("view.local_axes", "Show &All Local Axes", lambda v: self._env("show_local_axes", v), icon="frame_axes",
           checkable=True)
+        A("physics.joints", "&Joints…", lambda: self.open_joints(), icon="target",
+          tip="Create and edit joints (fixed, ball, revolute, prismatic, distance)")
+        A("physics.show_colliders", "Show All &Colliders", lambda v: self._env("show_colliders", v), icon="cube",
+          checkable=True, tip="Draw every collision shape (green: exact, yellow: approximate)")
+        A("physics.show_joints", "Show &Joints", lambda v: self._env("show_joints", v), checkable=True, checked=True)
+        A("physics.show_contacts", "Show C&ontacts", lambda v: self._env("show_contacts", v), checkable=True,
+          checked=True, tip="Draw contact points and normals (length ∝ contact force) while simulating")
         A("view.shadows", "&Shadows", lambda v: self._env("shadows", v), icon="sun", checkable=True, checked=True)
         A("view.ground_shadow", "&Ground Shadow", lambda v: self._env("ground_shadow", v), checkable=True, checked=True)
         A("view.stats", "Viewport Status &Overlay", lambda v: self._env("show_stats", v), checkable=True, checked=True)
@@ -396,8 +403,11 @@ class MainWindow(QMainWindow):
 
         m = mb.addMenu("&Physics")
         m.addAction(a["obj.mass_report"])
+        m.addAction(a["physics.joints"])
         m.addSeparator()
-        self._planned(m, "Rigid-body dynamics, collisions and joints — Phase 7")
+        m.addActions([a["physics.show_colliders"], a["physics.show_joints"], a["physics.show_contacts"]])
+        m.addSeparator()
+        m.addAction(a["sim.settings"])
 
         m = mb.addMenu("P&rocesses")
         m.addActions([a["proc.assign"], a["proc.manager"], a["proc.globals"], a["proc.validate"], a["proc.deps"],
@@ -455,10 +465,6 @@ class MainWindow(QMainWindow):
 
         m = mb.addMenu("&Help")
         m.addActions([a["help.controls"], a["help.about"], a["help.about_qt"]])
-
-    def _planned(self, menu: QMenu, text: str) -> None:
-        act = menu.addAction(icons.icon("info"), f"Planned: {text}")
-        act.setEnabled(False)
 
     def _fill_add_menu(self, menu: QMenu) -> None:
         menu.clear()
@@ -575,6 +581,7 @@ class MainWindow(QMainWindow):
         self.sim.stateChanged.connect(self._on_sim_state)
         self.trajectories = TrajectoryBuilder()
         self.viewport.trajectory_provider = self._trajectory_paths
+        self.viewport.contacts_provider = lambda: self.sim.contacts
         self.sim.recordingChanged.connect(self._on_recording_changed)
         self.plot_workspace.changed.connect(self._mark_dirty)
         self.recording_panel.intervalChanged.connect(self.sim.set_record_interval)
@@ -596,6 +603,7 @@ class MainWindow(QMainWindow):
         self.inspector.editAssignmentRequested.connect(self.edit_assignment)
         self.inspector.clearTrajectoryRequested.connect(self.clear_trajectory)
         self.inspector.exportTrajectoryRequested.connect(self.export_trajectory)
+        self.inspector.jointsRequested.connect(self.open_joints)
         self.scene.processesChanged.connect(self._mark_dirty_processes)
         self.viewport.status_provider = self._viewport_sim_status
         self._sync_sim_fields()
@@ -789,7 +797,8 @@ class MainWindow(QMainWindow):
         env = view.environment
         for k, attr in (("view.labels", "show_labels"), ("view.local_axes", "show_local_axes"),
                         ("view.shadows", "shadows"), ("view.ground_shadow", "ground_shadow"),
-                        ("view.stats", "show_stats")):
+                        ("view.stats", "show_stats"), ("physics.show_colliders", "show_colliders"),
+                        ("physics.show_joints", "show_joints"), ("physics.show_contacts", "show_contacts")):
             _set_checked(a[k], getattr(env, attr))
         sn = view.snap
         for k, attr in (("snap.grid", "grid_snap"), ("snap.rotate", "rotate_snap"), ("snap.scale", "scale_snap"),
@@ -1271,7 +1280,7 @@ class MainWindow(QMainWindow):
     def _report_plan(self, quiet: bool = False):
         plan = self.sim.validate()
         for d in plan.diagnostics:
-            (self.bus.error if d.level == "error" else self.bus.warning)(d.message, "processes")
+            {"error": self.bus.error, "warning": self.bus.warning}.get(d.level, self.bus.info)(d.message, "processes")
         if not quiet and not plan.diagnostics:
             self.bus.info(f"Process plan valid: {len(plan.body_ids)} bodies, "
                           f"{len(plan.contributions) + len(plan.prescribed)} active assignments", "processes")
@@ -1641,6 +1650,11 @@ class MainWindow(QMainWindow):
         self.processes_panel.rebuild()
 
     # ---- reference frames ------------------------------------------------------------------------------------
+    def open_joints(self, body: str | None = None) -> None:
+        from .dialogs.joints_dialog import JointsDialog
+        JointsDialog(self.scene, self.editor, self.units, body=body if isinstance(body, str) else None,
+                     parent=self).exec()
+
     def open_reference_frames(self, select: str | None = None) -> None:
         from .dialogs.frames_dialog import ReferenceFramesDialog
         ReferenceFramesDialog(self.scene, self.editor, self.units, select if isinstance(select, str) else None,

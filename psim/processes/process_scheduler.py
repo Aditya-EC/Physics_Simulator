@@ -40,7 +40,7 @@ class PlannedProcess:
 
 @dataclass
 class Diagnostic:
-    level: str          # "error" | "warning"
+    level: str          # "error" | "warning" | "info"
     message: str
     assignment: str = ""
 
@@ -55,6 +55,7 @@ class ExecutionPlan:
     integrate_rotation: np.ndarray         # (N,) bool
     writers: dict[tuple[str, str], list[str]]   # (object id, quantity) -> assignment uids
     diagnostics: list[Diagnostic]
+    physics: object = None                      # psim.physics.setup.PhysicsSetup (collisions / joints)
 
     @property
     def errors(self) -> list[Diagnostic]:
@@ -186,8 +187,11 @@ def build_plan(scene: Scene, assignments: list[ProcessAssignment]) -> ExecutionP
                                                "position, so it will not move"))
     updates, order_diags = _order_updates([p for p in planned if p.pdef.kind == "update"])
     diags += order_diags
+    from ..physics.setup import build_physics_setup
+    physics = build_physics_setup(scene, body_ids, trans, rot, lambda level, msg: diags.append(Diagnostic(level, msg)))
     return ExecutionPlan(body_ids, [p for p in planned if p.pdef.kind == "contribution"],
-                         [p for p in planned if p.pdef.kind == "prescribed"], updates, trans, rot, writers, diags)
+                         [p for p in planned if p.pdef.kind == "prescribed"], updates, trans, rot, writers, diags,
+                         physics)
 
 
 def _formula_checks(scene: Scene, pdef: ProcessDef) -> list[str]:

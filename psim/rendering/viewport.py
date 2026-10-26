@@ -84,10 +84,12 @@ class Viewport(QOpenGLWidget):
         self.setAcceptDrops(True)
         self.setMinimumSize(320, 240)
         self.trajectory_provider = None   # callable returning TrajectoryPath list (set by the main window)
+        self.contacts_provider = None     # callable returning the running simulation's contact points
         for sig in (scene.objectsAdded, scene.objectsRemoved, scene.objectsChanged, scene.selectionChanged):
             sig.connect(self._scene_changed)
         scene.sceneReset.connect(self._scene_changed)
         scene.framesChanged.connect(self._scene_changed)
+        scene.jointsChanged.connect(self._scene_changed)
 
     # ---- configuration -------------------------------------------------------------------------
     def set_view_settings(self, view: ViewSettings) -> None:
@@ -191,9 +193,10 @@ class Viewport(QOpenGLWidget):
                 paths = self.trajectory_provider()
             except Exception as exc:  # a broken path must not stop rendering
                 log.exception("Trajectory error: %s", exc)
+        contacts = self.contacts_provider() if self.contacts_provider is not None else []
         frame = FrameInput(self.scene, self.view, self.camera, w, h, self.defaultFramebufferObject(),
                            hover_id=self.hover_id, gizmo=self._gizmo_draw(), ghost=self._ghost, dpr=dpr,
-                           trajectories=paths)
+                           trajectories=paths, contacts=contacts)
         try:
             stats = self.renderer.render(frame)
         except Exception as exc:  # never let a rendering error escape into Qt's event loop

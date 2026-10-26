@@ -22,6 +22,7 @@ from PySide6.QtGui import QGuiApplication, QIcon, QSurfaceFormat  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from psim import APP_NAME, ORG_NAME, __version__  # noqa: E402
+from psim.project.templates import PROJECT_TEMPLATES  # noqa: E402
 
 
 def configure_opengl(samples: int = 4) -> None:
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="psim-studio", description=f"{APP_NAME} {__version__}")
     parser.add_argument("project", nargs="?", help="project file to open")
     parser.add_argument("--theme", choices=("dark", "light"))
-    parser.add_argument("--template", choices=("empty", "primitives", "mechanical", "simulation", "formulas", "frames", "recording"))
+    parser.add_argument("--template", choices=tuple(PROJECT_TEMPLATES))
     parser.add_argument("--no-recovery", action="store_true", help="do not offer autosave recovery")
     parser.add_argument("--reset-settings", action="store_true", help="forget window layout and preferences")
     parser.add_argument("--screenshot", help=argparse.SUPPRESS)

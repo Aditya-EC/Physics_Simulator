@@ -51,6 +51,14 @@ class SimulationSettings:
     record_overflow: str = "decimate"  # decimate | window | stop (see psim.recording.recording)
     record_process_outputs: bool = True
     integrator: str = "semi_implicit_euler"
+    adaptive_tolerance: float = 1e-8  # dopri5: error per sub-step relative to (1 + |state|)
+    gyroscopic: bool = True           # include −I⁻¹(ω × Iω) in the rotational equations (Euler's equations)
+    physics_enabled: bool = True      # collisions and joints (objects with colliders / joints only)
+    solver_iterations: int = 20       # constraint solver: velocity iterations per step
+    position_iterations: int = 8      # constraint solver: position-correction iterations per step
+    baumgarte: float = 1.0            # fraction of penetration / joint drift corrected per step
+    contact_slop: float = 0.002       # allowed penetration before position correction [m]
+    restitution_threshold: float = 0.2  # impacts slower than this do not bounce [m/s]
     breakpoints: list = field(default_factory=list)  # simulated times at which the run pauses
     min_delta_time: float = 1e-9
     max_delta_time: float = 10.0
@@ -76,6 +84,12 @@ class SimulationSettings:
             errors.append("Recording memory limit must be between 1 MB and 64 GB")
         if self.record_overflow not in ("decimate", "window", "stop"):
             errors.append("Recording overflow policy must be decimate, window or stop")
+        if not (1 <= self.solver_iterations <= 1000 and 0 <= self.position_iterations <= 1000):
+            errors.append("Solver iterations must be between 1 and 1000 (position iterations 0 to 1000)")
+        if not (0 <= self.baumgarte <= 1 and 0 <= self.contact_slop <= 1 and 0 <= self.restitution_threshold <= 100):
+            errors.append("Baumgarte factor must be 0…1, contact slop 0…1 m and restitution threshold 0…100 m/s")
+        if not (math.isfinite(self.adaptive_tolerance) and 1e-14 <= self.adaptive_tolerance <= 1e-2):
+            errors.append("Adaptive tolerance must be between 1e-14 and 1e-2")
         from .integrators import INTEGRATORS
         if self.integrator not in INTEGRATORS:
             errors.append(f"Unknown integrator '{self.integrator}'")

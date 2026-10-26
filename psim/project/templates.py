@@ -209,6 +209,58 @@ def _recording_demo(scene: Scene, editor: SceneEditor) -> None:
                           {"stiffness": 30.0, "rest_length": 2.0, "damping": 0.2})
 
 
+def _physics_demo(scene: Scene, editor: SceneEditor) -> None:
+    """Rigid bodies: a bouncing ball, a box stack, a hinged pendulum with a limit, a rope chain and a slider."""
+    from ..processes.process_base import TargetFilter
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 16, "width": 10})
+    ground.color = [0.30, 0.32, 0.36]
+    ball = scene.create_object("basic.sphere", name="Bouncing Ball", params={"radius": 0.2}, position=[-5.0, 0.0, 3.0])
+    ball.color = [0.95, 0.45, 0.20]
+    ball.linear_velocity = [1.0, 0.0, 0.0]
+    stack = [scene.create_object("body.rigid_box", name=f"Crate {k + 1}", position=[-2.0, 0.0, 0.25 + 0.5 * k],
+                                 params={"length": 0.5, "width": 0.5, "height": 0.5}) for k in range(3)]
+    for k, box in enumerate(stack):
+        box.color = [0.80, 0.62 - 0.1 * k, 0.35]
+    striker = scene.create_object("basic.sphere", name="Striker", params={"radius": 0.15}, position=[-4.0, 0.0, 0.15])
+    striker.linear_velocity = [4.0, 0.0, 0.0]
+    striker.color = [0.35, 0.75, 1.0]
+    post = scene.create_object("basic.cylinder", name="Post", params={"radius": 0.08, "height": 3.0},
+                               position=[1.5, 0.0, 1.5])
+    post.color = [0.55, 0.57, 0.62]
+    arm = scene.create_object("body.rigid_box", name="Pendulum Arm", position=[2.3, 0.0, 3.0],
+                              params={"length": 1.6, "width": 0.12, "height": 0.12})
+    arm.color = [0.55, 0.85, 0.45]
+    links = [scene.create_object("basic.sphere", name=f"Chain Link {k + 1}", params={"radius": 0.12},
+                                 position=[4.5 + 0.5 * k, -2.0, 3.0]) for k in range(3)]
+    for link in links:
+        link.color = [0.85, 0.75, 0.95]
+    rail_cart = scene.create_object("body.rigid_box", name="Slider", position=[-1.0, 3.0, 0.6],
+                                    params={"length": 0.4, "width": 0.3, "height": 0.2})
+    rail_cart.color = [0.95, 0.80, 0.30]
+    editor.add_objects([ground, ball, *stack, striker, post, arm, *links, rail_cart], text="Physics demo",
+                       select=False)
+    colliding = [ground, ball, striker, *links]
+    for o in colliding:
+        editor.set_property([o.id], "physics.collider", "auto")
+    editor.set_property([ball.id], "physics.restitution", 0.75)
+    editor.set_property([arm.id], "physics.show_collider", True)
+    editor.set_property([arm.id], "trajectory.enabled", True)
+    editor.set_property([links[-1].id], "trajectory.enabled", True)
+    # hinge at the top of the post, swinging freely about Y (the slider below shows limits and a motor)
+    editor.add_joint("revolute", arm.id, None, [1.5, 0.0, 3.0], [0.0, 1.0, 0.0], name="Hinge")
+    # rope chain hanging from a fixed point
+    prev, prev_point = None, [4.0, -2.0, 3.0]
+    for k, link in enumerate(links):
+        p = [4.5 + 0.5 * k, -2.0, 3.0]
+        editor.add_joint("distance", link.id, prev, p, name=f"Rope {k + 1}", anchor_world_b=prev_point, rope=True)
+        prev, prev_point = link.id, p
+    # slider on a horizontal rail, driven by a motor against its travel limits
+    editor.add_joint("prismatic", rail_cart.id, None, [-1.0, 3.0, 0.6], [1.0, 0.0, 0.0], name="Rail",
+                     limit_enabled=True, lower=-1.5, upper=1.5, motor_enabled=True, motor_speed=0.8, motor_max=40.0)
+    dynamic = [ball, *stack, striker, arm, *links, rail_cart]
+    editor.assign_process("dyn.gravity", TargetFilter(ids=[o.id for o in dynamic]), label="Earth gravity")
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
@@ -217,4 +269,5 @@ PROJECT_TEMPLATES = {
     "formulas": ("Formula Processes Demo", _formula_demo),
     "frames": ("Reference Frames Demo", _frames_demo),
     "recording": ("Data Recording & Plots Demo", _recording_demo),
+    "physics": ("Rigid Bodies, Collisions & Joints Demo", _physics_demo),
 }

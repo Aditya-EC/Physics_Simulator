@@ -21,7 +21,7 @@ class Section(QWidget):
         lay.setSpacing(0)
         self.header = QToolButton()
         self.header.setObjectName("SectionHeader")
-        self.header.setText(title)
+        self.header.setText(title.replace("&", "&&"))   # "&" is literal, not a mnemonic
         self.header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.header.clicked.connect(self.toggle)

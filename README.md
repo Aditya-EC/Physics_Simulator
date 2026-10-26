@@ -38,6 +38,15 @@ Implemented so far:
   - per-object trajectory markers (global or relative to any frame) and vector-arrow overlays
   - a plotting workspace with 2D and 3D plots, live updates, synchronized cursors and export
   - statistics, comparison between objects, CSV/JSON export and an HTML simulation report
+- **Phase 7**, advanced physics:
+  - rigid-body dynamics with the gyroscopic term (Euler's equations), plus midpoint, velocity
+    Verlet and adaptive Dormand–Prince 5(4) integrators
+  - collision detection (sphere, box, capsule, plane colliders kept separate from the visual mesh)
+    and response with restitution and Coulomb friction, resting contact and stacking
+  - fixed, ball, revolute, prismatic and distance (rod/rope) joints with limits and motors, solved by
+    a C++ projected Gauss–Seidel core with block solves and split-impulse position correction
+  - central gravity, region force fields and anchored spring-dampers; the Joints dialog, an inspector
+    *Collision & Joints* section and viewport drawing of colliders, joints and contacts
 
 ![Main window](docs/screenshot_main.png)
 
@@ -50,11 +59,13 @@ pip install -r requirements.txt          # PySide6, PyOpenGL, NumPy, pybind11, p
 python build_native.py                   # builds + tests the C++ core, installs it into psim/numerics/
 python app.py                            # launch
 python app.py examples/mechanical_demo.psim
-python app.py --template simulation      # start from a built-in project template (also: primitives, mechanical)
+python app.py --template simulation      # start from a built-in project template (also: primitives, mechanical,
+                                         # formulas, frames, recording, physics)
 python app.py examples/simulation_demo.psim   # then press F5 (Start)
 python app.py examples/formula_demo.psim      # formula processes, global parameters, custom outputs
 python app.py examples/frames_demo.psim       # reference frames: open Coordinates ▸ Relative Motion Panel, F5
 python app.py examples/recording_demo.psim    # trajectories and six ready-made plots (Plots ▸ Plot Workspace), F5
+python app.py examples/physics_demo.psim      # collisions, a stack, a hinge, a rope chain and a motorised slider, F5
 ```
 
 Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`.
@@ -101,18 +112,23 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_recording_analysis.py` | frame-relative position/velocity/acceleration from recordings against finite differences, Euler angles, net force/torque, kinetic energy, process forces, time-weighted statistics (uneven sampling), object comparison, CSV/JSON/trajectory export, HTML report, consistent snapshots while recording grows |
 | `test_trajectories.py` | path thinning (interval, maximum points, recent history), incremental vs. full builds, clear/preserve, relative paths attached to the frame's current pose, cache invalidation after decimation, arrows/time-label marks, vector arrows, label units, placement and angular acceleration |
 | `test_plots.py` | plot definitions (round trip, validation), series data in display units, axis titles, cursor read-out, plot editor, workspace (live data, synchronized cursors, save/restore, CSV and image export), recording panel, plots saved in projects |
+| `test_rigid_dynamics.py` | orders of convergence of all six integrators, Dormand–Prince keeps the fixed Δt, long-term energy of velocity Verlet, torque-free rotation (angular momentum and energy conserved, intermediate-axis flip) and the effect of disabling the gyroscopic term |
+| `test_physics_model.py` | colliders are explicit and separate from the mesh (mass alone never collides), joint anchors stored in local frames, joint validation, joints and physics settings in project files |
+| `test_physics.py` | bounce height e²·h, resting box with zero net force, sliding distance v²/(2μg), stick/slip on an incline, stable stack, momentum and elastic energy in collisions, a kinematic platform carrying a box, physical-pendulum period, point mass on a rod, prismatic slider, fixed joint, motor speed and limits, slack/taut rope, compound assemblies, ownership rules, disabling physics, C++ ≡ NumPy PGS (incl. separate impulse directions), energy of a large-swing pendulum |
+| `test_force_models.py` | circular orbit under central gravity (radius, period, μ/r²), softening at the centre, a force field acting only inside its region or everywhere, anchored-spring oscillation z(t), torque from an off-centre attachment |
+| `test_physics_gui.py` | Joints dialog (world anchors and axes → local frames, limits, rope length from anchors, one undo step, rejecting body A = body B), inspector Collision & Joints section, solver fields of the Simulation Settings dialog, collider/joint/contact overlay geometry, contacts in engine snapshots, Physics menu and overlay toggles with rendering |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **373 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 342 pass and 31 native-comparison tests are skipped. This was measured on
+Current result: **418 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 387 pass and 31 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
 
 **Application shell**
-- Menu bar with all 14 requested menus. Physics, Processes, Coordinates, Plots and Simulation
-  show their future features as *disabled "Planned: …" entries*. Nothing non-functional is
-  presented as working.
+- Menu bar with all 14 requested menus. During Phases 1–6, features of later phases were shown as
+  *disabled "Planned: …" entries*; with Phase 7 the last of these was replaced by working
+  commands. Nothing non-functional is presented as working.
 - Main toolbar: New/Open/Save/Save As, Undo/Redo, Add Object, Select/Move/Rotate/Scale,
   global/local gizmo, coordinate axes, grid, snapping, work plane, properties, camera controls,
   full screen.
@@ -490,6 +506,89 @@ packaging concern.
 - A self-contained **HTML simulation report**: settings, objects, processes, statistics, all
   open plots as images, and the event log.
 
+## 3f. What Phase 7 implements (advanced physics)
+
+![Physics demo](docs/screenshot_physics.png)
+
+**Rigid-body dynamics** (`psim/simulation/integrators.py`, `simulation_engine.py`).
+- Rotation follows Euler's equations: α = I_w⁻¹(τ − ω × I_w ω). The gyroscopic term can be switched
+  off in *Simulation ▸ Settings* only to reproduce simplified models.
+- Integrators: explicit Euler, semi-implicit Euler, midpoint (RK2), velocity Verlet, RK4 and
+  adaptive Dormand–Prince 5(4). The adaptive method subdivides each fixed Δt internally until a
+  relative tolerance is met, so the step contract of §4 still holds.
+- Mass properties of a body include all its descendants, so a simulated assembly is one compound
+  rigid body. If its orientation is prescribed but its translation is not driven, it turns about its
+  origin, not its centre of mass.
+
+**Collision geometry** (inspector ▸ *Collision & Joints*; `psim/physics/colliders.py`).
+- Collision shapes are separate from the visual mesh: sphere, box, capsule and plane (an infinite
+  static half-space), each with an optional radius, half extents, core length and offset.
+- `auto` uses the exact shape where the type has one: sphere, cube/cuboid, rigid box, capsule,
+  plane/disk and point mass. Other types get the mesh bounding box, marked *approximate* in the
+  inspector and the diagnostics.
+- **Mass alone never makes an object collide.** Only the rigid-body types default to `auto`; every
+  other object needs an explicit collider.
+- Per-object restitution (the larger value of a pair is used) and friction coefficient (geometric
+  mean).
+
+**Collision detection and response** (`psim/physics/collision.py`, `system.py`).
+- A bounding-sphere broadphase is followed by narrowphase pairs: sphere–{sphere, box, capsule, plane},
+  capsule–{capsule, box, plane} and box–{box, plane}. Box–box uses the 15-axis separating-axis
+  test with face clipping (up to 8 contact points) and closest points for edge–edge contacts.
+- Each contact gives a non-penetration row with restitution (impacts slower than the restitution
+  threshold do not bounce) and two Coulomb friction rows bounded by μ·λₙ.
+- Contacts are logged as *contact* events in the recording.
+
+**Joints** (*Physics ▸ Joints…*; `psim/physics/joints.py`).
+- Types:
+  - **fixed** — all six degrees of freedom
+  - **ball** — the anchors coincide
+  - **revolute** — a hinge, with an optional angle limit and motor
+  - **prismatic** — a slider, with an optional travel limit and motor
+  - **distance** — a rod of fixed length, or a rope that only limits the maximum length
+- A joint connects two bodies, or a body and the fixed world. Anchors and axes are entered in
+  world coordinates and stored in the bodies' local frames.
+- Joint coordinates, limits and motor speeds describe **body A relative to body B**.
+- Connected bodies do not collide with each other unless that option is enabled.
+
+**Solver** (`native/src/constraints.cpp`, NumPy fallback with the same algorithm).
+- All contacts and joints of a step become generic rows J·v = rhs with bounds. A C++ projected
+  Gauss–Seidel solver resolves them, solving the equality rows of each joint together as one
+  3–6-row block (exact for the joint, robust to large mass ratios).
+- A split-impulse position pass removes penetration and joint drift without adding velocity, so
+  it never injects energy.
+- Joint impulses act along the Jacobian of the **midpoint configuration of the step**. This turns
+  the velocity with the joint instead of projecting it onto the end-of-step tangent space. A
+  plain projection loses about KE·ω²Δt per second; a large-swing pendulum lost 20 % of its energy
+  in 6 s at Δt = 5 ms. Now it stays within 1 % over 10 s with velocity Verlet and RK4 (tested);
+  midpoint and Dormand–Prince behave the same.
+- Settings (*Simulation ▸ Settings ▸ Collisions and joints*): enable/disable, velocity and
+  position iterations, position-correction factor, contact slop and restitution threshold.
+
+**How the native solver and processes share objects** (`psim/physics/setup.py`).
+- A body is **dynamic** when only force/torque/acceleration processes act on it. The solver adds
+  contact and joint impulses to its velocity and corrects its position; processes never write it.
+- A body moved by prescribed or update processes, or without mass, is **kinematic**. It pushes
+  other bodies but is not pushed, so the processes remain its only writers.
+- Objects without processes are **static** colliders and joint anchors.
+- These roles are reported as diagnostics. Errors and warnings flag impossible set-ups: a moving
+  plane collider, a joint that cannot move anything, or a point mass hinged away from its centre.
+- Contact and joint forces are part of the recorded acceleration, so the *net force* plots
+  include them (a resting box shows zero net force).
+
+**Force models** (built-in processes).
+- *Central Gravity*: inverse-square attraction to a fixed point, with softening.
+- *Uniform Force Field (region)*: a force and/or acceleration inside an axis-aligned box, or
+  everywhere.
+- *Anchored Spring-Damper*: from a point on the body to a world anchor; it also gives a torque
+  when attached away from the centre of mass.
+- These join the existing uniform gravity, applied force, viscous damping and two-body spring.
+
+**Display.**
+- The viewport draws colliders (green: exact, yellow: approximate), joint anchors and axes
+  (magenta), and contact points with normals scaled by the contact force.
+- They are switched in the *Physics* menu, and per object with *Show collider*.
+
 ## 4. Architecture
 
 ```
@@ -499,6 +598,7 @@ native/                    C++17 numerical core + pybind11 bindings + C++ tests
   include/psim/vecmath.hpp     Vec3 / Quat / Mat3 / Mat4, Euler (extrinsic XYZ) conventions
   include/psim/transforms.hpp  poses, TRS, look-at, perspective / orthographic
   src/mesh_ops.cpp             ray casting, normals, feature edges, solid & shell mass properties
+  src/constraints.cpp          projected Gauss–Seidel constraint solver (block rows, impulse directions)
 psim/
   numerics/        facade: native module or NumPy fallback with an identical API
   core/            persistent ID allocator
@@ -520,6 +620,8 @@ psim/
                    permissions (developer role, Ed25519), signed packages, global parameters, library/*.json
   simulation/      settings, clock / rate controller, state, integrators, engine, threaded runner,
                    world (scene view for formulas, custom outputs)
+  physics/         colliders (separate from meshes), joints, collision detection, solver set-up and
+                   ownership rules, the constraint system (contacts, joints, limits, motors)
   plugins/         trusted application plugins (object types)
 tests/             pytest suites (see §2)
 examples/          sample projects
@@ -564,9 +666,27 @@ Key design decisions:
 
 ## 5. Limitations (honest status)
 
-- **Not implemented yet** (planned phases):
-  - rigid-body dynamics, collisions and joints (Phase 7)
-  - installer (Phase 8)
+- **Not implemented yet** (planned phase): installer and distribution (Phase 8).
+- Rigid-body physics limits (Phase 7):
+  - Constraint rows are built in Python. Only the solver runs in C++. The physics demo (10 bodies,
+    7 colliders, 5 joints) takes about 2.3 ms per step on this machine, so real-time Δt = 5 ms
+    is reached for scenes of this size but not for hundreds of bodies.
+  - The broadphase tests all pairs of bounding spheres (O(n²)).
+  - There is no continuous collision detection. Very fast, thin objects can pass through each
+    other when they move more than their thickness in one step; reduce Δt.
+  - Collision shapes are sphere, box, capsule and plane. Other meshes collide as their bounding
+    box (marked approximate), and there are no convex-hull or triangle-mesh colliders.
+  - Capsule–box contacts sample the capsule core and are approximate for deep edge contacts.
+  - Friction is isotropic Coulomb friction with one coefficient (no separate static coefficient,
+    no rolling resistance).
+  - Joints cannot break, and there are no joint springs (use the spring processes).
+  - The semi-implicit Euler integrator has a first-order energy lag (−½g²Δt² per step in free
+    fall) that the position correction does not give back. A 1.6 m bar hinged at one end and
+    released horizontally loses about 40 % of its swing energy in 30 s at Δt = 5 ms. Use
+    velocity Verlet or RK4 for long joint simulations; the physics demo does.
+  - The final recorded sample uses the constraint acceleration of the last step.
+  - Edits of colliders or joints during a run rebuild the solver at the next step. Contacts that
+    were active are re-detected from the new geometry.
 - Recording, trajectory and plot limits:
   - Recorded data is not stored in the project file (plot definitions are). Use the CSV/JSON
     export to keep data, or re-run the simulation.
@@ -579,14 +699,12 @@ Key design decisions:
   - Statistics and exports read a consistent snapshot. If the recording is thinned exactly while
     being read, the read is retried at the next refresh.
   - The report is HTML (print it to PDF from a browser if needed).
-- Simulation physics limits for this phase:
-  - Rotational dynamics uses α = I_w⁻¹·τ without the gyroscopic ω × Iω term, which belongs to
-    the Phase 7 rigid-body solver.
-  - There are no collisions, so objects pass through each other and the ground.
-  - Spring and rope *geometry* does not deform with the spring process.
+- Simulation physics limits:
+  - Objects without colliders pass through each other and the ground.
+  - Spring and rope *geometry* does not deform with the spring process or rope joints.
   - The engine is vectorised NumPy plus C++ kernels: about 0.5 ms (semi-implicit) or 1.4 ms
     (RK4) per step for a 7-body scene on this machine. That supports real-time rates of a
-    few hundred Hz for small scenes; a fully native step loop is planned with Phase 7.
+    few hundred Hz for small scenes. The step loop itself is not native.
   - Under software OpenGL, rendering competes with the engine thread for the Python GIL. The
     overrun detection then correctly reports reduced achieved rates.
 - Formula processes limits:
@@ -621,5 +739,6 @@ Key design decisions:
 ## 6. Next steps
 
 1. Run the test suite on Windows with a hardware GPU.
-2. Phase 7: rigid-body dynamics (gyroscopic terms), collisions with the ground and between
-   objects, joints and additional solvers.
+2. Phase 8: testing on more platforms, packaging and distribution.
+3. Physics performance: build constraint rows in C++, add a spatial broadphase and continuous
+   collision detection, and add convex-hull colliders.

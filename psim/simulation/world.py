@@ -17,6 +17,7 @@ import numpy as np
 
 from .. import numerics
 from ..processes.formula_runtime import FormulaRuntimeError, QuatValue
+from ..scene.analysis import body_mass_properties
 from ..scene.scene_manager import Scene
 
 
@@ -62,11 +63,12 @@ def capture_static(scene: Scene) -> list[StaticObject]:
         com = np.zeros(3)
         if o.typedef.physical:
             mp = o.mass_properties()
-            mass = mp["mass"] or 0.0
             density = mp["density"] or 0.0
             volume = mp["volume"] or 0.0
-            inertia = np.asarray(mp["inertia"], float)
-            com = np.asarray(mp["com"], float)
+        body = body_mass_properties(scene, o.id)   # with the parts that move with it (assemblies)
+        mass = body["mass"]
+        inertia = np.asarray(body["inertia"], float)
+        com = np.asarray(body["com"], float)
         out.append(StaticObject(
             o.id, o.type_id, tuple(o.tags), o.parent_id, np.asarray(p, float), np.asarray(q, float),
             np.asarray(o.linear_velocity, float), np.asarray(o.angular_velocity, float), mass, density, volume,

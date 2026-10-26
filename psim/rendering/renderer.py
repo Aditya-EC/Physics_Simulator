@@ -18,6 +18,7 @@ from .. import numerics
 from ..scene import geometry as g
 from ..scene.scene_manager import Scene, SceneError
 from . import coordinate_axes as axes_geo
+from . import physics_overlay
 from . import grid as grid_geo
 from . import shaders
 from .camera import OrbitCamera
@@ -53,6 +54,7 @@ class FrameInput:
     hover_id: str | None = None
     gizmo: GizmoDraw | None = None
     trajectories: list = field(default_factory=list)   # TrajectoryPath, built from the recording
+    contacts: list = field(default_factory=list)       # (point, normal, force) of the running simulation
     ghost: GhostDraw | None = None
     dpr: float = 1.0
 
@@ -312,6 +314,18 @@ class Renderer:
             a, c = axes_geo.cross_lines(p, cam.world_per_pixel(p, h) * 6, fr.color)
             pts.append(a)
             cols.append(c)
+        marker = cam.world_per_pixel(cam.target, h) * 6
+        a, c = physics_overlay.collider_lines(scene, env.show_colliders)
+        pts += a
+        cols += c
+        if env.show_joints:
+            a, c = physics_overlay.joint_lines(scene, marker)
+            pts += a
+            cols += c
+        if env.show_contacts:
+            a, c = physics_overlay.contact_lines(f.contacts, marker)
+            pts += a
+            cols += c
         if pts:
             GL.glDisable(GL.GL_DEPTH_TEST)
             self._lines(np.vstack(pts), np.vstack(cols), viewproj, w, h, 2.0)

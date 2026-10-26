@@ -15,6 +15,7 @@ assignments — are still read):
       "global_parameters": [{"name", "type", "quantity", "value", "description"}...] (v2, optional)
       "reference_frames": [{"id", "name", "parent", "position", "orientation", "follow_rotation", …}...],
       "frame_counter": next FRM- number (v2, optional; frames are never reused)
+      "joints": [<Joint.to_dict()>...], "joint_counter": next JNT- number (v2, optional)
       "assets":     {"meshes": {<asset id>: {"name", "vertices", "indices"}}},
       "units":      {"preferred": {...}, "custom_units": [...]},
       "view":       <ViewSettings.to_dict()>,
@@ -87,6 +88,8 @@ def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dic
         "global_parameters": [dict(g) for g in scene.global_parameters],
         "reference_frames": scene.frames_snapshot(),
         "frame_counter": scene.next_frame_number,
+        "joints": scene.joints_snapshot(),
+        "joint_counter": scene.next_joint_number,
         "assets": {"meshes": mesh_assets.to_dict({a for a in used_assets if a})},
         "units": units.to_dict(),
         "view": data.view.to_dict(),
@@ -205,6 +208,15 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
     for f in frames:
         if f.parent and f.parent not in seen:
             data.warnings.append(f"{f.id} ({f.name}): attached to missing object '{f.parent}'")
+    from ..physics.joints import JOINT_ID, JointError, validate_joints
+    try:
+        joints = validate_joints(raw.get("joints", []))
+    except JointError as exc:
+        raise ProjectError(str(exc)) from None
+    for j in joints:
+        for b in (j.body_a, j.body_b):
+            if b and b not in seen:
+                data.warnings.append(f"{j.id} ({j.name}): connects the missing object '{b}'")
     for obj in objects:
         if obj.parent_id and obj.parent_id not in seen:
             data.warnings.append(f"{obj.id}: parent '{obj.parent_id}' not found; object moved to the scene root")
@@ -220,6 +232,12 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
                                           *(int(FRAME_ID.match(f.id).group(1)) + 1 for f in frames))
         except (TypeError, ValueError):
             scene.next_frame_number = 1 + max((int(FRAME_ID.match(f.id).group(1)) for f in frames), default=0)
+        scene.joints = joints
+        try:
+            scene.next_joint_number = max(int(raw.get("joint_counter", 1)), 1,
+                                          *(int(JOINT_ID.match(j.id).group(1)) + 1 for j in joints))
+        except (TypeError, ValueError):
+            scene.next_joint_number = 1 + max((int(JOINT_ID.match(j.id).group(1)) for j in joints), default=0)
         scene.simulating = False
         try:
             scene.next_process_number = max(int(raw.get("process_counter", 1)), 1)
@@ -248,6 +266,7 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
     scene.sceneReset.emit()
     scene.processesChanged.emit()
     scene.framesChanged.emit()
+    scene.jointsChanged.emit()
 
     if isinstance(raw.get("units"), dict):
         data.warnings += units.load_dict(raw["units"])
