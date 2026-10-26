@@ -192,10 +192,10 @@ class SimulationEngine:
         self.finished = self.clock.next_step_dt(self.settings.duration, self.settings.duration_policy) is None
 
     def replace_plan(self, plan: ExecutionPlan, bodies: BodySet, state: SimState, keep: set[str],
-                     statics=None, globals_: dict | None = None) -> None:
+                     statics=None, globals_: dict | None = None, frames=None) -> None:
         """Swap in a rebuilt plan; bodies listed in `keep` continue from the engine's own state.
 
-        `statics` / `globals_` refresh the formula world's view of the scene (e.g. after a mass edit);
+        `statics` / `globals_` / `frames` refresh the formula world's view of the scene (e.g. after a mass edit);
         custom-property values written by update processes are kept.
         """
         if not plan.ok:
@@ -213,6 +213,9 @@ class SimulationEngine:
             w.statics = statics
         if self.world is not None and globals_ is not None:
             self.world.globals = globals_
+        if self.world is not None and frames is not None:
+            self.world.frames = list(frames)
+            self.world.frame_index = {f.id: i for i, f in enumerate(self.world.frames)}
         old = {oid: i for i, oid in enumerate(self.bodies.ids)}
         for k, oid in enumerate(bodies.ids):
             if oid in keep and oid in old:

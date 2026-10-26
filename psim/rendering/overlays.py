@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, 
 
 from .. import numerics
 from ..scene.object_base import SceneObject
-from ..scene.scene_manager import Scene
+from ..scene.scene_manager import Scene, SceneError
 from ..units.unit_registry import UnitRegistry
 from . import grid as grid_geo
 from .camera import OrbitCamera
@@ -93,12 +93,16 @@ def paint_overlays(p: QPainter, scene: Scene, view: ViewSettings, cam: OrbitCame
         bold = QFont(base_font)
         bold.setBold(True)
         p.setFont(bold)
-        pts = np.eye(3) * ax.length * 1.08
+        pts = np.eye(3) * ax.length * 1.08 + np.asarray(ax.origin, float)
         xy, ok = cam.project(pts, width, height)
         for (x, y), vis, name, col in zip(xy, ok, "XYZ", (ax.x_color, ax.y_color, ax.z_color)):
             if vis:
                 p.setPen(qcolor(col))
                 p.drawText(QRectF(x - 10, y - 10, 20, 20), Qt.AlignmentFlag.AlignCenter, name)
+
+    # ---- named reference frames ------------------------------------------------------------------------
+    if view.environment.show_labels:
+        _paint_frame_labels(p, scene, cam, width, height, small)
 
     # ---- object labels -------------------------------------------------------------------------------
     if view.environment.show_labels:
@@ -173,6 +177,28 @@ def _paint_com_symbol(p: QPainter, scene: Scene, obj: SceneObject, cam: OrbitCam
     for k, col in enumerate((QColor(245, 245, 245), QColor(25, 25, 25), QColor(245, 245, 245), QColor(25, 25, 25))):
         p.setBrush(col)
         p.drawPie(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r), k * 90 * 16, 90 * 16)
+
+
+def _paint_frame_labels(p: QPainter, scene: Scene, cam: OrbitCamera, w: float, h: float, font: QFont) -> None:
+    for fr in scene.frames:
+        if not (fr.visible and fr.show_label):
+            continue
+        try:
+            pos, q = scene.frame_world_pose(fr.id)
+        except SceneError:
+            continue
+        r = np.asarray(numerics.quat_to_matrix(q))
+        pts = np.vstack([pos, *(pos + r[:, i] * fr.axis_length * 1.1 for i in range(3))])
+        xy, ok = cam.project(pts, w, h)
+        p.setFont(font)
+        if ok[0]:
+            p.setPen(qcolor(fr.color))
+            p.drawText(QPointF(xy[0][0] + 6, xy[0][1] + 14), fr.name)
+        for (x, y), vis, name, col in zip(xy[1:], ok[1:], ("x", "y", "z"),
+                                           ((0.95, 0.45, 0.42), (0.55, 0.86, 0.45), (0.45, 0.65, 1.0))):
+            if vis:
+                p.setPen(qcolor(col))
+                p.drawText(QPointF(x + 2, y - 2), name)
 
 
 def _paint_local_axis_labels(p, scene, obj, cam, w, h, font) -> None:

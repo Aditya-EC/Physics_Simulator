@@ -37,6 +37,7 @@ from .object_library import ObjectLibraryPanel
 from .outliner import Outliner
 from .properties_panel import PropertiesPanel
 from .simulation_controller import SimulationController
+from .relative_motion_panel import RelativeMotionPanel
 from .simulation_panels import ProcessesPanel, SimulationFields
 from .dialogs.process_dialogs import AssignProcessDialog, DependencyDialog, ProcessDocumentationDialog
 from .dialogs.simulation_settings_dialog import SimulationSettingsDialog
@@ -145,6 +146,8 @@ class MainWindow(QMainWindow):
         self.bottom_tabs.addTab(self.object_table, icons.icon("table"), "Object Table")
         self.processes_panel = ProcessesPanel(self.scene, self.editor)
         self.bottom_tabs.addTab(self.processes_panel, icons.icon("function"), "Processes")
+        self.relative_motion = RelativeMotionPanel(self.scene, self.units)
+        self.bottom_tabs.addTab(self.relative_motion, icons.icon("frame_axes"), "Relative Motion")
         self.bottom_tabs.addTab(self.performance, icons.icon("activity"), "Performance")
         self.dock_bottom = self._dock("Panels", "dock_bottom", self.bottom_tabs, B)
         self.resizeDocks([self.dock_library, self.dock_inspector], [300, 340], Qt.Orientation.Horizontal)
@@ -272,8 +275,16 @@ class MainWindow(QMainWindow):
             A(f"distribute.{'xyz'[axis]}", f"Distribute Along {'XYZ'[axis]}",
               lambda _=False, a=axis: self._distribute(a))
         # units / tools / window / help
+        A("coord.frames", "&Reference Frames…", self.open_reference_frames, icon="frame_axes",
+          tip="Create and edit named reference frames (fixed or attached to objects)")
+        A("coord.add_frame", "&Add Reference Frame at Selection", self.add_frame_at_selection, icon="target",
+          tip="Attach a new named frame to the selected object, at its origin")
+        A("coord.relative", "Relative &Motion Panel", self.show_relative_motion, icon="activity",
+          tip="Position, velocity and acceleration of an object expressed in / relative to any frame")
         A("units.dialog", "&Units && Custom Units…", self.open_units, icon="ruler")
         A("units.si", "Reset Display Units to &SI", self.reset_units)
+        A("units.inspector", "&Formula Unit Inspector…", self.open_unit_inspector, icon="function",
+          tip="Unit requirements of processes and dimensions of formula expressions")
         A("tools.shortcuts", "&Keyboard Shortcuts…", self.open_shortcuts, icon="keyboard")
         A("tools.preferences", "&Preferences…", self.open_preferences, icon="settings", shortcut="Ctrl+,")
         A("window.save_layout", "&Save Layout As…", self.save_layout)
@@ -377,13 +388,15 @@ class MainWindow(QMainWindow):
         m.addAction(a["view.local_axes"])
         m.addAction(a["scene.axes"])
         m.addSeparator()
-        self._planned(m, "Named reference frames and frame-relative kinematics — Phase 5")
+        m.addActions([a["coord.frames"], a["coord.add_frame"], a["coord.relative"]])
 
         m = mb.addMenu("Pl&ots")
         self._planned(m, "2D/3D scientific plotting workspace — Phase 6")
 
         m = mb.addMenu("&Units")
         m.addActions([a["units.dialog"], a["units.si"]])
+        m.addSeparator()
+        m.addAction(a["units.inspector"])
 
         m = mb.addMenu("Si&mulation")
         m.addActions([a["sim.start"], a["sim.pause"], a["sim.stop"], a["sim.reset"], a["sim.step"]])
@@ -587,6 +600,7 @@ class MainWindow(QMainWindow):
                   "obj.add_property", "obj.save_template", "view.frame_selected", "scene.group"):
             a[k].setEnabled(has)
         a["edit.rename"].setEnabled(len(sel) == 1)
+        a["coord.add_frame"].setEnabled(has)
         a["file.export_obj"].setEnabled(len(sel) == 1)
         a["scene.ungroup"].setEnabled(any(self.scene.children(i) for i in sel))
         a["scene.unparent"].setEnabled(any(self.scene.get(i).parent_id for i in sel))
@@ -1465,6 +1479,34 @@ class MainWindow(QMainWindow):
             return
         self.bus.info(f"Withdrew {d.process_id}; assignments that use it are reported as errors", "processes")
         self.processes_panel.rebuild()
+
+    # ---- reference frames ------------------------------------------------------------------------------------
+    def open_reference_frames(self, select: str | None = None) -> None:
+        from .dialogs.frames_dialog import ReferenceFramesDialog
+        ReferenceFramesDialog(self.scene, self.editor, self.units, select if isinstance(select, str) else None,
+                              self).exec()
+
+    def add_frame_at_selection(self) -> None:
+        o = self.scene.primary
+        if o is None:
+            return
+        names = {f.name.lower() for f in self.scene.frames}
+        base = f"{o.name} frame"
+        name, k = base, 2
+        while name.lower() in names:
+            name, k = f"{base} {k}", k + 1
+        fid = self.editor.add_frame(name, o.id)
+        self.statusBar().showMessage(f"Added reference frame '{name}' ({fid}) attached to {o.name}", 4000)
+        self.open_reference_frames(fid)
+
+    def open_unit_inspector(self) -> None:
+        from ..processes.process_registry import process_registry
+        from .dialogs.unit_inspector_dialog import FormulaUnitInspector
+        FormulaUnitInspector(process_registry(), self.units, None, self).exec()
+
+    def show_relative_motion(self) -> None:
+        self.dock_bottom.show()
+        self.bottom_tabs.setCurrentWidget(self.relative_motion)
 
     def edit_global_parameters(self) -> None:
         from .dialogs.process_dialogs import GlobalParametersDialog

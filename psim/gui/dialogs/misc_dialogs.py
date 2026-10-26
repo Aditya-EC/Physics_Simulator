@@ -16,6 +16,7 @@ from ... import __version__, numerics
 from ...plugins import loaded_plugins, plugin_errors
 from ...scene.analysis import combined_mass_properties
 from ...scene.scene_manager import Scene
+from ...units.unit_expressions import si_unit_text
 from ...units.unit_registry import UnitError, UnitRegistry
 from ..actions import ActionRegistry
 
@@ -149,8 +150,8 @@ class UnitsDialog(QDialog):
         note.setWordWrap(True)
         note.setObjectName("Muted")
         pl.addWidget(note)
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Quantity", "Dimension", "Display unit"])
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Quantity", "Dimension", "SI base units", "Display unit"])
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         pl.addWidget(self.table)
@@ -176,10 +177,17 @@ class UnitsDialog(QDialog):
         self.base.setEditable(True)
         self.factor = QLineEdit()
         self.factor.setPlaceholderText("e.g. 201.168")
+        self.base.lineEdit().setPlaceholderText("a unit or an expression, e.g. m, kN·mm, furlong/fortnight")
+        self.preview = QLabel()
+        self.preview.setObjectName("Muted")
+        self.preview.setWordWrap(True)
         form.addRow("Symbol", self.sym)
         form.addRow("Name", self.name)
         form.addRow("1 symbol =", self.factor)
-        form.addRow("× base unit", self.base)
+        form.addRow("× unit or expression", self.base)
+        form.addRow("", self.preview)
+        self.base.editTextChanged.connect(self._preview)
+        self.factor.textChanged.connect(self._preview)
         cl.addLayout(form)
         row = QHBoxLayout()
         add = QPushButton("Add Unit")
@@ -206,11 +214,12 @@ class UnitsDialog(QDialog):
         for r, q in enumerate(qs):
             self.table.setItem(r, 0, QTableWidgetItem(q.label))
             self.table.setItem(r, 1, QTableWidgetItem(str(q.dimension)))
+            self.table.setItem(r, 2, QTableWidgetItem(si_unit_text(q.dimension)))
             combo = QComboBox()
             combo.addItems(q.units)
             combo.setCurrentText(self.units.preferred_unit(q.key))
             combo.currentTextChanged.connect(lambda sym, k=q.key: self.units.set_preferred_unit(k, sym))
-            self.table.setCellWidget(r, 2, combo)
+            self.table.setCellWidget(r, 3, combo)
         cu = self.units.custom_units()
         self.custom.setRowCount(len(cu))
         for r, u in enumerate(cu):
@@ -223,6 +232,25 @@ class UnitsDialog(QDialog):
                 if self.base.findText(sym) < 0:
                     self.base.addItem(sym)
         self.base.setCurrentText(current or "m")
+
+    def _preview(self, *_a) -> None:
+        text = self.base.currentText().strip()
+        if not text:
+            self.preview.setText("")
+            return
+        try:
+            f, dim = self.units.parse_expression(text)
+        except UnitError as exc:
+            self.preview.setText(str(exc))
+            return
+        try:
+            factor = float(self.factor.text()) if self.factor.text().strip() else 1.0
+        except ValueError:
+            factor = float("nan")
+        quantities = [q.label for q in self.units.quantities_for_dimension(dim)]
+        what = ", ".join(quantities) if quantities else "no known quantity — cannot be used"
+        self.preview.setText(f"{self.units.describe_dimension(dim) if quantities else f'[{dim}]'} → {what}. "
+                             f"1 unit = {factor * f:.10g} {si_unit_text(dim)}")
 
     def _reset(self) -> None:
         self.units.reset_preferences()

@@ -13,6 +13,8 @@ assignments — are still read):
       "processes":  [<ProcessAssignment.to_dict()>...],  # evaluation order (v2)
       "process_counter": <next numeric process assignment id> (v2)
       "global_parameters": [{"name", "type", "quantity", "value", "description"}...] (v2, optional)
+      "reference_frames": [{"id", "name", "parent", "position", "orientation", "follow_rotation", …}...],
+      "frame_counter": next FRM- number (v2, optional; frames are never reused)
       "assets":     {"meshes": {<asset id>: {"name", "vertices", "indices"}}},
       "units":      {"preferred": {...}, "custom_units": [...]},
       "view":       <ViewSettings.to_dict()>,
@@ -81,6 +83,8 @@ def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dic
         "processes": scene.process_snapshot(),
         "process_counter": scene.next_process_number,
         "global_parameters": [dict(g) for g in scene.global_parameters],
+        "reference_frames": scene.frames_snapshot(),
+        "frame_counter": scene.next_frame_number,
         "assets": {"meshes": mesh_assets.to_dict({a for a in used_assets if a})},
         "units": units.to_dict(),
         "view": data.view.to_dict(),
@@ -190,6 +194,14 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
                                     else [])
     except ProcessError as exc:
         raise ProjectError(str(exc)) from None
+    from ..coordinates.frames import FRAME_ID, FrameError, validate_frames
+    try:
+        frames = validate_frames(raw.get("reference_frames", []))
+    except FrameError as exc:
+        raise ProjectError(str(exc)) from None
+    for f in frames:
+        if f.parent and f.parent not in seen:
+            data.warnings.append(f"{f.id} ({f.name}): attached to missing object '{f.parent}'")
     for obj in objects:
         if obj.parent_id and obj.parent_id not in seen:
             data.warnings.append(f"{obj.id}: parent '{obj.parent_id}' not found; object moved to the scene root")
@@ -199,6 +211,13 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
     try:
         scene.assignments = assignments
         scene.global_parameters = globals_
+        scene.frames = frames
+        try:
+            scene.next_frame_number = max(int(raw.get("frame_counter", 1)), 1,
+                                          *(int(FRAME_ID.match(f.id).group(1)) + 1 for f in frames))
+        except (TypeError, ValueError):
+            scene.next_frame_number = 1 + max((int(FRAME_ID.match(f.id).group(1)) for f in frames), default=0)
+        scene.simulating = False
         try:
             scene.next_process_number = max(int(raw.get("process_counter", 1)), 1)
         except (TypeError, ValueError):
@@ -225,6 +244,7 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
         data.warnings += cycles
     scene.sceneReset.emit()
     scene.processesChanged.emit()
+    scene.framesChanged.emit()
 
     if isinstance(raw.get("units"), dict):
         data.warnings += units.load_dict(raw["units"])

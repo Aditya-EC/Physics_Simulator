@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
 
 from ...rendering.view_settings import ViewSettings
 from ...units.unit_registry import UnitRegistry
-from ..widgets.inputs import ColorButton, NumberField
+from ..widgets.inputs import ColorButton, NumberField, VectorField
 
 
 class ViewportSettingsDialog(QDialog):
@@ -110,7 +110,16 @@ class ViewportSettingsDialog(QDialog):
         form = QFormLayout(w)
         ax = self.view.axes
         self._bool(form, "Show global axes", ax, "visible")
+        unit = self.units.preferred_unit("length")
+        origin = VectorField(3, self.units, unit, 4, -1e7, 1e7)
+        origin.set_si(ax.origin)
+        origin.committed.connect(lambda v: self._set(ax, "origin", [float(c) for c in v]))
+        origin.setToolTip("Where the global axes and origin marker are drawn. Display only: global coordinates "
+                          "are always measured from the world origin (0, 0, 0). To measure from another point, "
+                          "create a named reference frame (Coordinates ▸ Reference Frames).")
+        form.addRow(f"Axes drawn at [{unit}]", origin)
         self._length(form, "Arrow length", ax, "length", 1e-3, 1e5)
+        self._float(form, "Arrow-head size", ax, "arrow_size", 0.0, 5.0, 0.1, suffix=" ×")
         self._float(form, "Line thickness", ax, "line_width", 0.5, 10.0, 0.5, suffix=" px")
         self._color(form, "X axis colour", ax, "x_color")
         self._color(form, "Y axis colour", ax, "y_color")

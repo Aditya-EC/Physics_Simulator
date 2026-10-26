@@ -25,7 +25,10 @@ class GridSettings:
 @dataclass
 class AxesSettings:
     visible: bool = True
+    # where the global axes are drawn (display only: global coordinates are always measured from (0, 0, 0))
+    origin: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     length: float = 1.5
+    arrow_size: float = 1.0           # arrow-head size relative to the default (14 % of the length)
     line_width: float = 3.0
     x_color: list[float] = field(default_factory=lambda: [0.91, 0.30, 0.28])
     y_color: list[float] = field(default_factory=lambda: [0.42, 0.80, 0.32])

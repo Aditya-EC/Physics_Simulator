@@ -8,12 +8,16 @@ from ..scene import geometry as g
 from .view_settings import AxesSettings
 
 
+def head_length(ax: AxesSettings) -> float:
+    return ax.length * 0.14 * max(ax.arrow_size, 0.0)
+
+
 def global_axes(ax: AxesSettings) -> tuple[np.ndarray, np.ndarray]:
-    o = np.zeros(3)
+    o = np.asarray(ax.origin, float)
     pts, cols = [], []
     for i, c in enumerate((ax.x_color, ax.y_color, ax.z_color)):
         e = np.zeros(3)
-        e[i] = ax.length * 0.86  # leave room for the arrow head
+        e[i] = max(ax.length - head_length(ax), 0.0)  # leave room for the arrow head
         pts += [o, o + e]
         cols += [[*c, 1.0]] * 2
     return np.array(pts), np.array(cols)
@@ -21,14 +25,16 @@ def global_axes(ax: AxesSettings) -> tuple[np.ndarray, np.ndarray]:
 
 def axis_heads(ax: AxesSettings) -> list[tuple[g.Mesh, np.ndarray, list[float]]]:
     """Cone meshes (local +Z) and model matrices for the arrow heads of the global axes."""
-    head_len = ax.length * 0.14
+    head_len = head_length(ax)
+    if head_len <= 0:
+        return []
     cone = g.cone(head_len * 0.36, head_len, 24)
     out = []
     rots = [numerics.quat_from_axis_angle([0, 1, 0], np.pi / 2), numerics.quat_from_axis_angle([1, 0, 0], -np.pi / 2),
             np.array([1.0, 0, 0, 0])]
     for i, (q, c) in enumerate(zip(rots, (ax.x_color, ax.y_color, ax.z_color))):
-        p = np.zeros(3)
-        p[i] = ax.length - head_len / 2
+        p = np.array(ax.origin, float)
+        p[i] += ax.length - head_len / 2
         out.append((cone, np.asarray(numerics.trs_matrix(p, q, [1, 1, 1])), list(c)))
     return out
 

@@ -29,6 +29,7 @@ import re
 from dataclasses import dataclass, field
 
 from ..units.dimensions import Dimension
+from ..units.unit_expressions import UnitExpressionError, parse_unit_expression
 from ..units.unit_registry import UnitError, UnitRegistry, default_registry
 
 
@@ -49,6 +50,8 @@ class FormulaSyntaxError(ValueError):
 @dataclass
 class Node:
     pos: int = field(default=0, kw_only=True)
+    end: int = field(default=-1, kw_only=True, compare=False)   # exclusive end in the source (leaves, calls…)
+    start: int = field(default=-1, kw_only=True, compare=False)  # opening '(' when the node was parenthesised
 
 
 @dataclass
@@ -124,6 +127,7 @@ class Token:
     kind: str   # number | string | name | op | unit | end
     text: str
     pos: int
+    end: int = -1   # exclusive end position in the source
 
 
 def tokenize(src: str) -> list[Token]:
@@ -136,90 +140,33 @@ def tokenize(src: str) -> list[Token]:
         kind = m.lastgroup
         text = m.group()
         if kind == "number":
-            tokens.append(Token("number", text, i))
+            tokens.append(Token("number", text, i, m.end()))
             # a '[' immediately after a number starts a unit annotation
             j = m.end()
             if j < len(src) and src[j] == "[":
                 close = src.find("]", j)
                 if close < 0:
                     raise FormulaSyntaxError("Unclosed unit annotation", j, src)
-                tokens.append(Token("unit", src[j + 1:close].strip(), j))
+                tokens.append(Token("unit", src[j + 1:close].strip(), j, close + 1))
                 i = close + 1
                 continue
         elif kind == "name" and text in KEYWORD_OPS:
-            tokens.append(Token("op", KEYWORD_OPS[text], i))
+            tokens.append(Token("op", KEYWORD_OPS[text], i, m.end()))
         elif kind != "ws":
-            tokens.append(Token(kind, text, i))
+            tokens.append(Token(kind, text, i, m.end()))
         i = m.end()
-    tokens.append(Token("end", "", len(src)))
+    tokens.append(Token("end", "", len(src), len(src)))
     return tokens
 
 
 # ---- units ------------------------------------------------------------------------------------------------
 
-_UNIT_TOKEN = re.compile(r"\s*(?:(?P<sym>[^\s*/^·()]+)|(?P<op>[*/^·()]))")
-
-
 def parse_unit(text: str, registry: UnitRegistry | None = None) -> tuple[float, Dimension]:
-    """Parse a unit expression such as 'm/s^2', 'kg*m^2', 'N·m', '1/s' into (SI factor, dimension)."""
-    reg = registry or default_registry()
-    text = text.strip()
-    if not text:
-        raise UnitError("Empty unit")
-    if reg.has_unit(text):
-        u = reg.unit(text)
-        if u.offset:
-            raise UnitError(f"Unit '{text}' has an offset and cannot be used in formulas")
-        return u.factor, u.dimension
-    toks = [(m.group("sym"), m.group("op")) for m in _UNIT_TOKEN.finditer(text) if m.group().strip()]
-    pos = 0
-
-    def atom():
-        nonlocal pos
-        if pos >= len(toks):
-            raise UnitError(f"Incomplete unit expression '{text}'")
-        sym, op = toks[pos]
-        pos += 1
-        if op == "(":
-            f, d = product()
-            if pos >= len(toks) or toks[pos][1] != ")":
-                raise UnitError(f"Missing ')' in unit '{text}'")
-            pos += 1
-        elif sym == "1":
-            f, d = 1.0, Dimension()
-        elif sym is not None:
-            if not reg.has_unit(sym):
-                raise UnitError(f"Unknown unit '{sym}' in '{text}'")
-            u = reg.unit(sym)
-            f, d = u.factor, u.dimension
-        else:
-            raise UnitError(f"Unexpected '{op}' in unit '{text}'")
-        if pos < len(toks) and toks[pos][1] == "^":
-            pos += 1
-            if pos >= len(toks) or toks[pos][0] is None:
-                raise UnitError(f"Missing exponent in unit '{text}'")
-            try:
-                e = int(toks[pos][0])
-            except ValueError:
-                raise UnitError(f"Unit exponents must be integers ('{text}')") from None
-            pos += 1
-            f, d = f ** e, d ** e
-        return f, d
-
-    def product():
-        nonlocal pos
-        f, d = atom()
-        while pos < len(toks) and toks[pos][1] in ("*", "·", "/"):
-            op = toks[pos][1]
-            pos += 1
-            f2, d2 = atom()
-            f, d = (f * f2, d * d2) if op != "/" else (f / f2, d / d2)
-        return f, d
-
-    f, d = product()
-    if pos != len(toks):
-        raise UnitError(f"Unexpected text in unit '{text}'")
-    return f, d
+    """Parse a unit expression such as 'm/s^2', 'kg*m^2', 'N·m', 'kg·m²/s', '1/s' into (SI factor, dimension)."""
+    try:
+        return parse_unit_expression(text, registry or default_registry())
+    except UnitExpressionError as exc:
+        raise UnitError(str(exc)) from None
 
 
 # ---- parser ----------------------------------------------------------------------------------------------------
@@ -238,6 +185,9 @@ class Parser:
     def error(self, msg: str, tok: Token | None = None) -> FormulaSyntaxError:
         t = tok or self.tok
         return FormulaSyntaxError(msg, t.pos, self.src)
+
+    def _prev_end(self) -> int:
+        return self.tokens[self.i - 1].end
 
     def accept(self, *ops: str) -> Token | None:
         t = self.tok
@@ -316,7 +266,7 @@ class Parser:
             if t.text == "+":
                 return operand
             if isinstance(operand, Num):  # fold negative literals (keeps exponents constant)
-                return Num(-operand.value, operand.dim, operand.unit_text, pos=t.pos)
+                return Num(-operand.value, operand.dim, operand.unit_text, pos=t.pos, end=operand.end)
             return Unary("-", operand, pos=t.pos)
         return self.power()
 
@@ -333,12 +283,12 @@ class Parser:
             if (t := self.accept(".")):
                 if self.tok.kind != "name":
                     raise self.error("Expected an attribute name after '.'")
-                node = Attr(node, self.tok.text, pos=t.pos)
+                node = Attr(node, self.tok.text, pos=t.pos, end=self.tok.end)
                 self.i += 1
             elif (t := self.accept("[")):
                 idx = self.ternary()
                 self.expect("]")
-                node = Index(node, idx, pos=t.pos)
+                node = Index(node, idx, pos=t.pos, end=self._prev_end())
             elif self.tok.kind == "op" and self.tok.text == "(":
                 if not isinstance(node, Name):
                     raise self.error("Only named functions can be called")
@@ -350,7 +300,7 @@ class Parser:
                         if self.accept(")"):
                             break
                         self.expect(",")
-                node = Call(node.id, args, pos=node.pos)
+                node = Call(node.id, args, pos=node.pos, end=self._prev_end())
             else:
                 return node
 
@@ -368,21 +318,47 @@ class Parser:
                     factor, dim = parse_unit(ut.text, self.registry)
                 except UnitError as exc:
                     raise self.error(str(exc), ut) from None
-                return Num(value * factor, dim, ut.text, pos=t.pos)
-            return Num(value, pos=t.pos)
+                return Num(value * factor, dim, ut.text, pos=t.pos, end=ut.end)
+            return Num(value, pos=t.pos, end=t.end)
         if t.kind == "string":
             self.i += 1
-            return Str(t.text[1:-1], pos=t.pos)
+            return Str(t.text[1:-1], pos=t.pos, end=t.end)
         if t.kind == "name":
             self.i += 1
-            return Name(t.text, pos=t.pos)
-        if self.accept("("):
+            return Name(t.text, pos=t.pos, end=t.end)
+        if (open_paren := self.accept("(")):
             node = self.ternary()
             self.expect(")")
+            node.start, node.end = open_paren.pos, self._prev_end()
             return node
         if t.kind == "end":
             raise self.error("Unexpected end of expression")
         raise self.error(f"Unexpected '{t.text}'")
+
+
+def children(node: Node) -> list[Node]:
+    if isinstance(node, Attr):
+        return [node.obj]
+    if isinstance(node, Index):
+        return [node.obj, node.index]
+    if isinstance(node, Call):
+        return list(node.args)
+    if isinstance(node, Unary):
+        return [node.operand]
+    if isinstance(node, Binary):
+        return [node.left, node.right]
+    if isinstance(node, Cond):
+        return [node.test, node.then, node.other]
+    return []
+
+
+def span(node: Node) -> tuple[int, int]:
+    """(start, end) of the source text a node was parsed from (including parentheses around it)."""
+    start, end = (node.start if node.start >= 0 else node.pos), node.end
+    for c in children(node):
+        cs, ce = span(c)
+        start, end = min(start, cs), max(end, ce)
+    return start, max(end, start)
 
 
 def parse(src: str, registry: UnitRegistry | None = None) -> Node:

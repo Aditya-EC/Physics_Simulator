@@ -267,3 +267,25 @@ def test_developer_menu_hidden_and_globals_menu_present(window):
     procs = [m for m in window.menuBar().actions() if m.text().replace("&", "") == "Processes"][0].menu()
     assert "Global Parameters…" in [a.text().replace("&", "") for a in procs.actions()]
     assert not any("planned" in a.text().lower() for a in procs.actions())
+
+
+def test_reference_frames_render_and_menu(window):
+    w = window
+    coords = [m for m in w.menuBar().actions() if m.text().replace("&", "") == "Coordinates"][0].menu()
+    texts = [a.text().replace("&", "") for a in coords.actions()]
+    assert "Reference Frames…" in texts and "Relative Motion Panel" in texts
+    assert not any("planned" in t.lower() or "phase" in t.lower() for t in texts)
+    w.project.view.axes.visible = False
+    w.project.view.grids["XY"].visible = False
+    before = _render(w).copy()
+    fid = w.editor.add_frame("Probe", None, [0.3, 0.2, 0.5], axis_length=1.2)
+    after = _render(w)
+    diff = sum(before.pixel(x, y) != after.pixel(x, y) for x in range(0, before.width(), 4)
+               for y in range(0, before.height(), 4))
+    assert diff > 50
+    w.editor.update_frame(fid, visible=False)
+    hidden = _render(w)
+    assert sum(before.pixel(x, y) != hidden.pixel(x, y) for x in range(0, before.width(), 4)
+               for y in range(0, before.height(), 4)) < diff / 5
+    w.show_relative_motion()
+    assert w.bottom_tabs.currentWidget() is w.relative_motion

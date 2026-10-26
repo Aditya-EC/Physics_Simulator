@@ -181,6 +181,7 @@ class CompiledProcess:
     object_ids: set[str]
     updated_refs: set[str]
     reads: set[str]
+    frame_ids: set[str] = field(default_factory=set)
 
     @property
     def writes(self) -> set[str]:
@@ -203,6 +204,25 @@ def _param_defs(spec: FormulaProcessSpec) -> list[PropertyDef]:
         except (KeyError, PropertyError, UnitError) as exc:
             raise ProcessError(f"Parameter definition {p!r}: {exc}") from None
     return defs
+
+
+def param_types(param_defs: list[PropertyDef]) -> dict[str, FType]:
+    """Formula types of process parameters (param.<key>)."""
+    return {d.key: _ftype({v: k for k, v in _VALUE_TYPES.items()}[d.vtype], d.quantity) for d in param_defs}
+
+
+def check_env(spec: FormulaProcessSpec, param_defs: list[PropertyDef] | None = None) -> CheckEnv:
+    """Static typing environment of a specification: its parameters, globals and custom properties.
+
+    Raises ProcessError / KeyError / UnitError for malformed declarations.
+    """
+    param_defs = _param_defs(spec) if param_defs is None else param_defs
+    params = param_types(param_defs)
+    globals_ = {str(g["name"]): _ftype(str(g.get("type", "float")), g.get("quantity"), g.get("unit"))
+                for g in spec.globals}
+    custom = {str(c["key"]): _ftype(str(c.get("type", "float")), c.get("quantity"), c.get("unit"))
+              for c in spec.custom}
+    return CheckEnv(mode=spec.mode, kind=spec.kind, params=params, globals_=globals_, custom=custom)
 
 
 def compile_spec(spec: FormulaProcessSpec) -> tuple[CompiledProcess | None, list[ValidationIssue]]:
@@ -230,11 +250,7 @@ def compile_spec(spec: FormulaProcessSpec) -> tuple[CompiledProcess | None, list
         meta("Invalid target count limits")
     try:
         param_defs = _param_defs(spec)
-        params = {d.key: _ftype({v: k for k, v in _VALUE_TYPES.items()}[d.vtype], d.quantity) for d in param_defs}
-        globals_ = {str(g["name"]): _ftype(str(g.get("type", "float")), g.get("quantity"), g.get("unit"))
-                    for g in spec.globals}
-        custom = {str(c["key"]): _ftype(str(c.get("type", "float")), c.get("quantity"), c.get("unit"))
-                  for c in spec.custom}
+        env = check_env(spec, param_defs)
     except (ProcessError, KeyError, UnitError) as exc:
         meta(str(exc))
         return None, issues
@@ -243,8 +259,8 @@ def compile_spec(spec: FormulaProcessSpec) -> tuple[CompiledProcess | None, list
 
     stmts, script_issues = split_script(spec.script)
     issues += script_issues
-    env = CheckEnv(mode=spec.mode, kind=spec.kind, params=params, globals_=globals_, custom=custom)
     object_ids: set[str] = set()
+    frame_ids: set[str] = set()
     updated: set[str] = set()
     reads: set[str] = set()
     lets, requires, outputs = [], [], []
@@ -260,6 +276,7 @@ def compile_spec(spec: FormulaProcessSpec) -> tuple[CompiledProcess | None, list
             issues.append(ValidationIssue(st.line, exc.pos + 1 if exc.pos >= 0 else 0, exc.message))
             continue
         object_ids |= checker.object_ids
+        frame_ids |= checker.frame_ids
         updated |= checker.updated_refs
         reads |= _collect_reads(node)
         fn = compile_expr(node, checker.types, st.source)
@@ -290,7 +307,7 @@ def compile_spec(spec: FormulaProcessSpec) -> tuple[CompiledProcess | None, list
             if st.target_index is not None and spec.max_targets is not None and st.target_index >= spec.max_targets:
                 issues.append(ValidationIssue(st.line, 0, f"targets[{st.target_index}] exceeds max_targets"))
                 continue
-            expected = custom.get(q[7:]) if base == "custom" else OUTPUT_TARGETS[q]
+            expected = env.custom.get(q[7:]) if base == "custom" else OUTPUT_TARGETS[q]
             if expected is None:
                 issues.append(ValidationIssue(st.line, 0, f"Custom property '{q[7:]}' is not declared"))
                 continue
@@ -315,7 +332,7 @@ def compile_spec(spec: FormulaProcessSpec) -> tuple[CompiledProcess | None, list
         issues.append(ValidationIssue(0, 0, "'after' dependencies apply to update processes only"))
     if issues:
         return None, issues
-    return CompiledProcess(spec, lets, requires, outputs, param_defs, object_ids, updated, reads), []
+    return CompiledProcess(spec, lets, requires, outputs, param_defs, object_ids, updated, reads, frame_ids), []
 
 
 def _collect_reads(node: Node) -> set[str]:
@@ -484,8 +501,11 @@ DEFAULT_OBJECT = {
 class MockWorld:
     """Minimal world for process test cases (objects given as plain attribute dictionaries)."""
 
-    def __init__(self, objects: dict[str, dict], globals_: dict, dt: float) -> None:
+    def __init__(self, objects: dict[str, dict], globals_: dict, dt: float, frames: dict | None = None) -> None:
         self.ids = list(objects)
+        # named frames: {"FRM-0001": {"position", "orientation", "velocity", "angular_velocity"}} (global, SI)
+        self.frame_ids = list(frames or {})
+        self.frames = [((frames or {})[f] or {}) for f in self.frame_ids]
         self.objs = []
         for oid in self.ids:
             o = dict(DEFAULT_OBJECT)
@@ -558,6 +578,16 @@ class MockWorld:
     def children(self, ref):
         return ()
 
+    def resolve_frame(self, fid):
+        if fid not in self.frame_ids:
+            raise FormulaRuntimeError(f"Missing reference frame '{fid}'")
+        return self.frame_ids.index(fid)
+
+    def frame_state(self, fref):
+        f = self.frames[fref]
+        return (np.asarray(f.get("position", [0, 0, 0]), float), np.asarray(f.get("orientation", [1, 0, 0, 0]), float),
+                np.asarray(f.get("velocity", [0, 0, 0]), float), np.asarray(f.get("angular_velocity", [0, 0, 0]), float))
+
 
 @dataclass
 class TestResult:
@@ -579,7 +609,8 @@ def run_tests(cp: CompiledProcess) -> list[TestResult]:
 
     A test case: {"name", "objects": {"self" | id: {attr: value}}, "targets": [ids], "params": {...},
     "globals": {...}, "updated": {"<id>.<quantity>": value}, "t", "dt", "expect": {"<quantity>" or
-    "<id>.<quantity>": value}, "tolerance", "expect_error": "substring"}.
+    "<id>.<quantity>": value}, "frames": {"FRM-0001": {"position", "orientation", "velocity",
+    "angular_velocity"}}, "tolerance", "expect_error": "substring"}.
     Values are SI. Objects default to a 1 kg unit cube at rest at the origin.
     """
     results = []
@@ -587,7 +618,8 @@ def run_tests(cp: CompiledProcess) -> list[TestResult]:
         name = str(tc.get("name", f"test {k + 1}"))
         try:
             objects = tc.get("objects") or {"self": {}}
-            world = MockWorld(objects, {g: v for g, v in (tc.get("globals") or {}).items()}, float(tc.get("dt", 0.01)))
+            world = MockWorld(objects, {g: v for g, v in (tc.get("globals") or {}).items()}, float(tc.get("dt", 0.01)),
+                              tc.get("frames"))
             for key, val in (tc.get("updated") or {}).items():
                 oid, q = key.split(".", 1)
                 world.updated_values[(world.resolve(oid), q)] = QuatValue(val) if q == "orientation" else (

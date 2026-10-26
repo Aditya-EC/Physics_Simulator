@@ -26,6 +26,12 @@ Implemented so far:
     dependency ordering, project-wide global parameters and custom-property outputs
   - developer-only authoring: a passphrase-protected developer role, a sealed process registry
     that enforces it, and Ed25519-signed process packages
+- **Phase 5**, coordinates and units:
+  - named reference frames, fixed or attached to objects and assemblies, usable for poses, vector
+    components, formulas (`frame("FRM-0001")`) and a Relative Motion panel
+  - a strict separation of *expressing* a vector in a frame (rotation only) from motion *relative to*
+    a moving frame (transport, Euler, centripetal and Coriolis terms), checked against finite differences
+  - derived custom units from unit expressions and a Formula Unit Inspector
 
 ![Main window](docs/screenshot_main.png)
 
@@ -41,6 +47,7 @@ python app.py examples/mechanical_demo.psim
 python app.py --template simulation      # start from a built-in project template (also: primitives, mechanical)
 python app.py examples/simulation_demo.psim   # then press F5 (Start)
 python app.py examples/formula_demo.psim      # formula processes, global parameters, custom outputs
+python app.py examples/frames_demo.psim       # reference frames: open Coordinates ▸ Relative Motion Panel, F5
 ```
 
 Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`.
@@ -69,7 +76,7 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_native.py` | C++ core ≡ NumPy fallback (quaternions, poses, matrices, ray casting, normals, feature edges, mass properties) |
 | `test_objects.py` | every registered type builds valid, outward-oriented geometry; volumes vs. analytic formulas; inertia tensors (box, sphere, cylinder, thin plate); mass modes; registry validation; OBJ import |
 | `test_properties.py` | typed coercion and validation, custom properties (keys, ranges, types), property paths, read-only rules |
-| `test_units.py` | conversions, incompatible-dimension errors, custom units, preferences, per-property display units |
+| `test_units.py` | conversions, incompatible-dimension errors, custom units, preferences, per-property display units; unit expressions (superscripts, negative exponents), SI names of dimensions, custom units defined from expressions, formula unit inspection and process unit requirements, Units and Formula Unit Inspector dialogs |
 | `test_coordinates.py` | Euler convention, gimbal lock, global ↔ local poses through hierarchies, relative-frame representation |
 | `test_editing.py` | unique persistent IDs (never reused), undo/redo of every edit type, group/ungroup, clipboard, align/distribute, parallel-axis combination |
 | `test_project_io.py` | save/load round trip, rejection of malformed/unsupported/unsafe files, warnings, example projects |
@@ -81,10 +88,12 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_formulas.py` | formula parser (precedence, unit literals, error positions), type and dimension checking, runtime semantics and domain errors, aggregates, scripts (`let`/`require`/targets), test-case runner |
 | `test_formula_processes.py` | library processes in the engine against analytic results (discrete update rules ≡ semi-implicit Euler bit-for-bit, N-body circular orbit, drag terminal velocity, prescribed Lissajous with numerical rates, kinetic-energy output), required globals, update dependency cycles, missing writers and references, error policies; permissions (sealed registry, wrong passphrase, forged token), signing, tamper and untrusted-key rejection, version rules, withdrawal, developer CLI, projects that try to embed formulas |
 | `test_developer_gui.py` | developer-mode unlock, process editor (refuses without token, validate with line highlighting, tests, sign & publish), global-parameters dialog with unit conversion |
+| `test_frames.py` | relative position/velocity/acceleration and relative rotation against finite differences in translating and non-uniformly rotating frames (ω ∦ α), points fixed in a frame, representation vs. relative velocity, named-frame validation, attached/translating frames, poses edited in frames, undo, project files, kinematics of children of simulated assemblies, frames and `rel_velocity` in formulas and the engine, unsimulated objects at rest |
+| `test_coordinates_gui.py` | Reference Frames dialog (one undo step, re-attaching and toggling rotation keep the frame in place, duplicate names), inspector poses and vector components in a named frame, Relative Motion panel on a turntable before and during a run |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **322 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 291 pass and 31 native-comparison tests are skipped. This was measured on
+Current result: **346 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 315 pass and 31 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -329,6 +338,73 @@ client-side scheme prevents reverse engineering. A stronger guarantee would need
 an OS-level install location writable only by administrators, which is a Phase 8
 packaging concern.
 
+## 3d. What Phase 5 implements (coordinates and units)
+
+**Named reference frames** (`psim/coordinates/frames.py`, *Coordinates ▸ Reference Frames…*).
+- A frame has a persistent id (`FRM-0001`, never reused), a unique name, and is either fixed in
+  the global frame or attached to an object or assembly.
+- An attached frame's origin is a point fixed on its parent (offset in parent axes). Its axes
+  either rotate with the parent, or keep a fixed global orientation (a translating frame).
+- *Add Reference Frame at Selection* creates one in a click. Frames are drawn in the viewport
+  with their name, are undoable, and are saved in the project.
+- Re-attaching a frame or switching "axes rotate with the parent" keeps it where it is in space.
+- Deleting a parent leaves the frame detached. That is reported, and undo restores it.
+
+**Where frames are used.**
+- **Inspector ▸ Relative to:** read and edit position and orientation relative to the global
+  frame, the parent assembly, any object's local frame, or a named frame.
+- **Inspector ▸ Vectors in:** velocity, acceleration, force, torque, angular velocity and
+  angular acceleration are shown and entered with the components of the chosen frame's axes. This
+  is a representation change only; values are stored globally.
+- **Relative Motion panel** (bottom panels, or *Coordinates ▸ Relative Motion Panel*). For an
+  object's centre of mass or origin and any frame, it shows, side by side:
+  - *expressed in frame*: Rᵀ·v, the absolute vector re-expressed
+  - *relative to frame*: what an observer moving with the frame measures, the time derivatives
+    of the coordinates in that frame, for position, velocity, acceleration, orientation, angular
+    velocity and angular acceleration
+  - the acceleration breakdown: frame-origin acceleration, Euler α×r, centripetal ω×(ω×r) and
+    Coriolis 2ω×v_rel
+
+  Before a run, velocities are the initial values and accelerations are shown as unknown.
+  During a run, the values are live.
+- **Formulas:**
+  - `frame("FRM-0001")` with `.position`, `.orientation`, `.velocity`, `.angular_velocity`,
+    `.x_axis`…
+  - `to_local / to_global / point_to_local / point_to_global` accept an object or a frame.
+  - `rel_position(obj, F)` and `rel_velocity(obj, F)` / `rel_velocity(p, v, F)` give kinematic
+    relative motion in F's components.
+  - Missing frames are reported before the run. Frame edits during a run apply at the next step.
+
+**Kinematics** (`psim/coordinates/kinematics.py`, `scene_kinematics.py`).
+- One implementation of rigid-body point velocity and acceleration, attached frames, and relative
+  motion and rotation is shared by the GUI.
+- It is verified against central finite differences of the coordinates seen from translating,
+  non-uniformly rotating frames (with α not parallel to ω).
+- During a run, objects inside a simulated assembly move with its rigid velocity field, and
+  objects that no process moves are at rest. The formula world follows the same rules.
+  *(This fixes a Phase 4 inconsistency: unsimulated objects used to report their stale initial
+  velocity, and children of a simulated assembly their stale pose.)*
+
+**Units.**
+- **Unit expressions** (`psim/units/unit_expressions.py`), shared by formulas and the Units
+  dialog: `kg·m²/s²`, `m·s⁻¹`, `kN*cm`, `furlong/fortnight`, with superscripts, negative
+  exponents and parentheses.
+- **Custom units** can be defined against any unit expression (*1 kip = 1000 × lbf*,
+  *1 fpf = 1 × furlong/fortnight*). The result must match an existing quantity, so it is
+  selectable as a display unit. A live preview shows the dimension and the SI equivalent.
+- The Project Units table shows each quantity's dimension and its SI base-unit form (kg·m/s²).
+- **Units ▸ Formula Unit Inspector**:
+  - It shows a process's unit requirements: parameters, globals, custom properties and
+    permitted outputs, each with its quantity, SI unit and display unit.
+  - For any expression typed in that process's context, it shows the type, dimension, SI unit
+    and matching quantities of the result and of every sub-expression. Errors are marked with a
+    caret.
+
+**Global axes.**
+- The viewport settings add an arrow-head size and an *Axes drawn at* position.
+- The position is display only, and the tooltip says so: global coordinates are always measured
+  from the world origin. Named frames are the way to measure from elsewhere.
+
 ## 4. Architecture
 
 ```
@@ -349,6 +425,8 @@ psim/
                    overlays, thumbnails, viewport widget, serializable view settings
   gui/             main window, actions/shortcuts, library, inspector, outliner, panels, dialogs, theme, icons
   project/         serialization, autosave/recovery, project templates
+  coordinates/     named reference frames, frame kinematics (representation vs. relative motion),
+                   kinematic state of scene objects and frames
   processes/       process definitions, sealed registry, built-in processes, scheduler (plan + diagnostics),
                    formula parser / dimensional checker / compiler, formula process specs + test runner,
                    permissions (developer role, Ed25519), signed packages, global parameters, library/*.json
@@ -425,6 +503,14 @@ Key design decisions:
     (`if(c, a, b)`).
   - Dimensions are checked; units of *custom properties* are taken from their declared quantity.
   - The process editor uses JSON text fields for globals, custom properties and test cases.
+- Coordinate system limits:
+  - A named frame is attached to an object or assembly, not to another named frame. Nest
+    assemblies to build chains.
+  - Formulas refer to frames by literal id (`frame("FRM-0001")`). A library process therefore
+    cannot take a frame as a parameter. Relative *acceleration* is not available inside formulas,
+    because it would need the accelerations being computed in the same step. The Relative
+    Motion panel shows it.
+  - The "Axes drawn at" setting moves only the drawn axes, not the coordinate origin.
 - Box (marquee) selection, measurement tools and a numeric "move relative to object" dialog are
   not implemented. Relative placement is done through the inspector's *Relative to* frame
   selector and surface snapping.
@@ -441,5 +527,4 @@ Key design decisions:
 ## 6. Next steps
 
 1. Run the test suite on Windows with a hardware GPU.
-2. Phase 5: named reference frames and frame-relative kinematics.
-3. Phase 6: data recorder (sampling every N steps), trajectories and the plotting workspace.
+2. Phase 6: data recorder (sampling every N steps), trajectories and the plotting workspace.

@@ -33,6 +33,7 @@ class Scene(QObject):
     sceneReset = Signal()
     processesChanged = Signal()       # process assignments added / removed / edited
     globalsChanged = Signal()         # global parameters edited
+    framesChanged = Signal()          # named reference frames added / removed / edited
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -44,6 +45,9 @@ class Scene(QObject):
         # project-wide named parameters readable by formulas as global.<name>:
         # {"name", "type": "float"|"vec3", "quantity": str|None, "value": SI value, "description"}
         self.global_parameters: list[dict] = []
+        self.frames: list = []                 # ReferenceFrame, named user-defined frames
+        self.next_frame_number = 1             # FRM-0001, ... never reused
+        self.simulating = False                # a simulation session is active (set by the controller)
         # values produced by a running simulation that are not object properties
         # (e.g. current total acceleration); cleared when a session ends
         self.runtime: dict[str, dict] = {}
@@ -71,6 +75,9 @@ class Scene(QObject):
         self.assignments = []
         self.next_process_number = 1
         self.global_parameters = []
+        self.frames = []
+        self.next_frame_number = 1
+        self.simulating = False
         self.runtime = {}
         self.sceneReset.emit()
 
@@ -100,6 +107,58 @@ class Scene(QObject):
         import copy as _copy
         self.global_parameters = _copy.deepcopy(data)
         self.globalsChanged.emit()
+
+    # ---- named reference frames --------------------------------------------------------------
+    def allocate_frame_id(self) -> str:
+        used = {f.id for f in self.frames}
+        while True:
+            fid = f"FRM-{self.next_frame_number:04d}"
+            self.next_frame_number += 1
+            if fid not in used:
+                return fid
+
+    def frame(self, fid: str | None):
+        return next((f for f in self.frames if f.id == fid), None)
+
+    def frames_snapshot(self) -> list[dict]:
+        return [f.to_dict() for f in self.frames]
+
+    def apply_frames(self, data: list[dict]) -> None:
+        from ..coordinates.frames import FRAME_ID, validate_frames
+        self.frames = validate_frames(data)
+        for f in self.frames:
+            self.next_frame_number = max(self.next_frame_number, int(FRAME_ID.match(f.id).group(1)) + 1)
+        self.framesChanged.emit()
+
+    def frame_world_pose(self, fid: str) -> tuple[np.ndarray, np.ndarray]:
+        f = self.frame(fid)
+        if f is None:
+            raise SceneError(f"Missing reference frame '{fid}'")
+        if f.parent is None:
+            return np.asarray(f.position, float), np.asarray(f.orientation, float)
+        if f.parent not in self.objects:
+            raise SceneError(f"Reference frame '{f.name}' is attached to the missing object '{f.parent}'")
+        pp, pq = self.world_pose(f.parent)
+        origin = np.asarray(pp, float) + numerics.quat_rotate(pq, f.position)
+        q = numerics.quat_multiply(pq, f.orientation) if f.follow_rotation else np.asarray(f.orientation, float)
+        return np.asarray(origin, float), np.asarray(numerics.quat_normalize(q), float)
+
+    def reference_pose(self, ref: str | None) -> tuple[np.ndarray, np.ndarray]:
+        """Global pose of a reference: None (global frame), an object id or a frame id."""
+        if not ref:
+            return np.zeros(3), np.array([1.0, 0.0, 0.0, 0.0])
+        if ref.startswith("FRM-"):
+            return self.frame_world_pose(ref)
+        return self.world_pose(ref)
+
+    def reference_name(self, ref: str | None) -> str:
+        if not ref:
+            return "Global"
+        f = self.frame(ref)
+        if f is not None:
+            return f"{f.name} ({f.id})"
+        o = self.find(ref)
+        return f"{o.name} ({o.id})" if o else ref
 
     def apply_process_snapshot(self, data: list[dict]) -> None:
         from ..processes.process_base import ProcessAssignment
@@ -247,7 +306,7 @@ class Scene(QObject):
         wp, wq = self.world_pose(oid)
         if not frame_id:
             return wp, wq
-        fp, fq = self.world_pose(frame_id)
+        fp, fq = self.reference_pose(frame_id)
         ip, iq = numerics.pose_inverse(fp, fq)
         p, q = numerics.pose_compose(ip, iq, wp, wq)
         return np.asarray(p, float), np.asarray(q, float)
@@ -259,7 +318,7 @@ class Scene(QObject):
         cp, cq = self.pose_in_frame(oid, frame_id)
         position = cp if position is None else np.asarray(position, float)
         orientation = cq if orientation is None else np.asarray(orientation, float)
-        fp, fq = self.world_pose(frame_id)
+        fp, fq = self.reference_pose(frame_id)
         wp, wq = numerics.pose_compose(fp, fq, position, orientation)
         self.set_world_pose(oid, wp, wq)
 
@@ -365,4 +424,7 @@ class Scene(QObject):
                 o.typedef.coerce_params(o.params)
             except PropertyError as exc:
                 problems.append(f"{o.id}: {exc}")
+        for f in self.frames:
+            if f.parent and f.parent not in self.objects:
+                problems.append(f"{f.id} ({f.name}): attached to the missing object '{f.parent}'")
         return problems

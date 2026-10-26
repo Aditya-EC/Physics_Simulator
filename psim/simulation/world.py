@@ -2,9 +2,12 @@
 
 Objects are addressed by *refs* (indices into the list of all scene objects
 captured at Start). Simulated bodies read their attributes from the engine's
-current solver-stage state; other objects read the values captured at Start
-(they do not move during the run). Custom properties written by update
-processes are kept here and published with each snapshot.
+current solver-stage state. A descendant of a simulated body moves rigidly
+with it (its pose is composed with the body's, its velocity follows the body's
+rigid velocity field); every other object is at rest during the run, so its
+velocity and angular velocity are zero. Named reference frames are attached to
+such objects and derive their motion the same way. Custom properties written
+by update processes are kept here and published with each snapshot.
 """
 from __future__ import annotations
 
@@ -73,16 +76,39 @@ def capture_static(scene: Scene) -> list[StaticObject]:
     return out
 
 
+@dataclass
+class StaticFrame:
+    id: str
+    parent: int | None          # ref of the parent object, None = fixed in the global frame
+    position: np.ndarray        # origin offset (parent axes) or global origin
+    q: np.ndarray               # orientation offset (follow_rotation) or global orientation
+    follow_rotation: bool
+
+
+def capture_frames(scene: Scene, statics: list[StaticObject]) -> list[StaticFrame]:
+    index = {s.id: i for i, s in enumerate(statics)}
+    out = []
+    for f in scene.frames:
+        if f.parent is not None and f.parent not in index:
+            continue  # detached frame: reported by the scheduler if a formula uses it
+        out.append(StaticFrame(f.id, index.get(f.parent) if f.parent else None, np.asarray(f.position, float),
+                               np.asarray(f.orientation, float), f.follow_rotation))
+    return out
+
+
 def global_values(scene: Scene) -> dict:
     return {g["name"]: (np.asarray(g["value"], float) if isinstance(g["value"], list) else g["value"])
             for g in scene.global_parameters}
 
 
 class EngineWorld:
-    def __init__(self, statics: list[StaticObject], body_ids: list[str], globals_: dict, dt: float) -> None:
+    def __init__(self, statics: list[StaticObject], body_ids: list[str], globals_: dict, dt: float,
+                 frames: list[StaticFrame] | None = None) -> None:
         self.statics = statics
         self.ids = [s.id for s in statics]
         self.ref_index = {oid: i for i, oid in enumerate(self.ids)}
+        self.frames = list(frames or [])
+        self.frame_index = {f.id: i for i, f in enumerate(self.frames)}
         self.set_bodies(body_ids)
         self.globals = globals_
         self.dt = dt
@@ -96,6 +122,22 @@ class EngineWorld:
     def set_bodies(self, body_ids: list[str]) -> None:
         self.body_refs = [self.ref_index[b] for b in body_ids]
         self.ref_to_body = {r: i for i, r in enumerate(self.body_refs)}
+        # each object's driver (itself or nearest simulated ancestor) and its pose in the driver's frame
+        self.driver: dict[int, int] = {}
+        self.rel_pose: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        for ref, s in enumerate(self.statics):
+            cur = s
+            while cur is not None:
+                d = self.ref_index.get(cur.id)
+                if d in self.ref_to_body:
+                    self.driver[ref] = d
+                    if d != ref:
+                        ds = self.statics[d]
+                        ip, iq = numerics.pose_inverse(ds.origin, ds.q)
+                        rp, rq = numerics.pose_compose(ip, iq, s.origin, s.q)
+                        self.rel_pose[ref] = (np.asarray(rp, float), np.asarray(rq, float))
+                    break
+                cur = self.statics[self.ref_index[cur.parent]] if cur.parent in self.ref_index else None
 
     def set_stage(self, x, q, v, w) -> None:
         self.x, self.q, self.v, self.w = x, q, v, w
@@ -116,14 +158,43 @@ class EngineWorld:
 
     # ---- World protocol -------------------------------------------------------------------------------
     def _pose(self, ref: int):
+        """(origin, q, COM velocity, angular velocity, COM) of any object at the current solver stage."""
         s = self.statics[ref]
-        i = self.ref_to_body.get(ref)
-        if i is None or self.x is None:
-            return s.origin, s.q, s.v, s.w, s.origin + numerics.quat_rotate(s.q, s.com_local)
-        q = self.q[i]
-        com = self.x[i]
-        origin = com - np.asarray(numerics.quat_rotate(q, s.com_local), float)
-        return origin, q, self.v[i], self.w[i], com
+        d = self.driver.get(ref)
+        if d is None or self.x is None:
+            com = s.origin + np.asarray(numerics.quat_rotate(s.q, s.com_local), float)
+            return s.origin, s.q, np.zeros(3), np.zeros(3), com
+        i = self.ref_to_body[d]
+        q, com_b, v_b, w_b = self.q[i], self.x[i], self.v[i], self.w[i]
+        if d == ref:
+            origin = com_b - np.asarray(numerics.quat_rotate(q, s.com_local), float)
+            return origin, q, v_b, w_b, com_b
+        ds = self.statics[d]
+        origin_b = com_b - np.asarray(numerics.quat_rotate(q, ds.com_local), float)
+        rp, rq = self.rel_pose[ref]
+        origin, q_ref = numerics.pose_compose(origin_b, q, rp, rq)
+        origin, q_ref = np.asarray(origin, float), np.asarray(q_ref, float)
+        com = origin + np.asarray(numerics.quat_rotate(q_ref, s.com_local), float)
+        return origin, q_ref, v_b + np.cross(w_b, com - com_b), np.array(w_b, float), com
+
+    # ---- named frames ---------------------------------------------------------------------------------
+    def resolve_frame(self, frame_id: str) -> int:
+        try:
+            return self.frame_index[frame_id]
+        except KeyError:
+            raise FormulaRuntimeError(f"Missing reference frame '{frame_id}'") from None
+
+    def frame_state(self, fref: int):
+        """(origin, q, origin velocity, angular velocity) of a named frame, global."""
+        f = self.frames[fref]
+        if f.parent is None:
+            return f.position.copy(), f.q.copy(), np.zeros(3), np.zeros(3)
+        origin_p, q_p, v, w, com = self._pose(f.parent)
+        origin = origin_p + np.asarray(numerics.quat_rotate(q_p, f.position), float)
+        vel = v + np.cross(w, origin - com)
+        if f.follow_rotation:
+            return origin, np.asarray(numerics.quat_multiply(q_p, f.q), float), vel, np.array(w, float)
+        return origin, f.q.copy(), vel, np.zeros(3)
 
     def attr(self, ref: int, name: str):
         s = self.statics[ref]

@@ -149,10 +149,42 @@ def _formula_demo(scene: Scene, editor: SceneEditor) -> None:
         editor.assign_process(pid, TargetFilter(ids=[discrete.id]))
 
 
+def _frames_demo(scene: Scene, editor: SceneEditor) -> None:
+    """Named reference frames: a turntable carrying a frame, a ball crossing it, a fixed lab frame.
+
+    Open Coordinates ▸ Relative Motion Panel, pick the ball and the 'Deck' frame and run: the ball moves in a
+    straight line (zero absolute acceleration) but the deck observer sees it curve under the centripetal and
+    Coriolis terms.
+    """
+    from ..processes.process_base import TargetFilter
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 10, "width": 8})
+    ground.color = [0.32, 0.34, 0.38]
+    deck = scene.create_object("basic.cylinder", name="Turntable", params={"radius": 2.0, "height": 0.1},
+                               position=[0.0, 0.0, 0.05])
+    deck.color = [0.33, 0.45, 0.62]
+    rider = scene.create_object("basic.cube", name="Rider", params={"size": 0.3}, position=[1.4, 0.0, 0.25])
+    rider.color = [0.55, 0.80, 0.35]
+    ball = scene.create_object("basic.sphere", name="Ball", params={"radius": 0.15}, position=[-3.5, -0.8, 0.25])
+    ball.linear_velocity = [1.0, 0.0, 0.0]
+    ball.color = [0.95, 0.50, 0.20]
+    ball.overlays.update(name=True, velocity=True)
+    editor.add_objects([ground, deck, rider, ball], text="Reference frames demo", select=False)
+    editor.reparent([rider.id], deck.id)
+    editor.add_frame("Deck", deck.id, [0.0, 0.0, 0.05], axis_length=0.8,
+                     description="Rotates with the turntable")
+    editor.add_frame("Deck (non-rotating)", deck.id, [0.0, 0.0, 0.05], follow_rotation=False, visible=False,
+                     description="Origin on the turntable axis, global orientation")
+    editor.add_frame("Lab", None, [-4.0, 3.0, 0.0], axis_length=0.8, color=[0.55, 0.80, 1.0])
+    editor.assign_process("rot.fixed_axis", TargetFilter(ids=[deck.id]), {"axis": [0, 0, 1], "angular_speed": 0.8})
+    editor.assign_process("kin.free_motion", TargetFilter(ids=[ball.id]))
+    editor.scene.set_selection([ball.id])
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
     "mechanical": ("Mechanical Demo", _mechanical_demo),
     "simulation": ("Simulation Demo", _simulation_demo),
     "formulas": ("Formula Processes Demo", _formula_demo),
+    "frames": ("Reference Frames Demo", _frames_demo),
 }

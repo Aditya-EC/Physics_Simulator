@@ -194,6 +194,12 @@ def _formula_checks(scene: Scene, pdef: ProcessDef) -> list[str]:
     """References that can only be checked against the scene: object ids and required globals."""
     from ..units.unit_registry import default_registry
     problems = [f"missing object reference '{oid}'" for oid in sorted(pdef.compiled.object_ids) if oid not in scene]
+    for fid in sorted(pdef.compiled.frame_ids):
+        f = scene.frame(fid)
+        if f is None:
+            problems.append(f"missing reference frame '{fid}' (Coordinates ▸ Reference Frames)")
+        elif f.parent and f.parent not in scene:
+            problems.append(f"reference frame '{f.name}' ({fid}) is attached to the missing object '{f.parent}'")
     reg = default_registry()
     for g in pdef.formula_spec.globals:
         have = scene.global_parameter(g["name"])

@@ -108,6 +108,22 @@ class GlobalsCommand(QUndoCommand):
         self.scene.apply_globals(self.before)
 
 
+class FramesCommand(QUndoCommand):
+    def __init__(self, scene: Scene, before: list[dict], after: list[dict], text: str) -> None:
+        super().__init__(text)
+        self.scene, self.before, self.after = scene, before, after
+        self._first = True
+
+    def redo(self) -> None:
+        if self._first:
+            self._first = False
+            return
+        self.scene.apply_frames(self.after)
+
+    def undo(self) -> None:
+        self.scene.apply_frames(self.before)
+
+
 class SceneEditor:
     """High-level, undoable operations on a Scene.
 
@@ -270,6 +286,41 @@ class SceneEditor:
         return self.edit_processes(mutate, "Reorder processes")
 
     # ---- global parameters ------------------------------------------------------------------------------
+    # ---- named reference frames ----------------------------------------------------------------
+    def set_frames(self, frames: list[dict], text: str = "Edit Reference Frames") -> bool:
+        from ..coordinates.frames import validate_frames
+        after = [f.to_dict() for f in validate_frames(copy.deepcopy(frames))]
+        for f in after:
+            if f["parent"] is not None and f["parent"] not in self.scene.objects:
+                raise SceneError(f"{f['name']}: missing object reference '{f['parent']}'")
+        before = self.scene.frames_snapshot()
+        if after == before:
+            return False
+        self.scene.apply_frames(after)
+        self._push(FramesCommand(self.scene, before, copy.deepcopy(after), text))
+        return True
+
+    def add_frame(self, name: str, parent: str | None = None, position=(0.0, 0.0, 0.0),
+                  orientation=(1.0, 0.0, 0.0, 0.0), **options) -> str:
+        fid = self.scene.allocate_frame_id()
+        data = {"id": fid, "name": name, "parent": parent, "position": list(position),
+                "orientation": list(orientation), **options}
+        self.set_frames(self.scene.frames_snapshot() + [data], f"Add Reference Frame '{name}'")
+        return fid
+
+    def update_frame(self, fid: str, **changes) -> bool:
+        frames = self.scene.frames_snapshot()
+        for f in frames:
+            if f["id"] == fid:
+                f.update(changes)
+                return self.set_frames(frames, f"Edit Reference Frame '{f['name']}'")
+        raise SceneError(f"Missing reference frame '{fid}'")
+
+    def remove_frames(self, ids) -> bool:
+        ids = set(ids)
+        return self.set_frames([f for f in self.scene.frames_snapshot() if f["id"] not in ids],
+                               "Remove Reference Frame" + ("s" if len(ids) > 1 else ""))
+
     def set_global_parameters(self, params: list[dict], text: str = "Edit Global Parameters") -> bool:
         from ..processes.global_parameters import validate_globals
         params = validate_globals(params)

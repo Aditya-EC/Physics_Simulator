@@ -16,7 +16,7 @@ from OpenGL import GL
 
 from .. import numerics
 from ..scene import geometry as g
-from ..scene.scene_manager import Scene
+from ..scene.scene_manager import Scene, SceneError
 from . import coordinate_axes as axes_geo
 from . import grid as grid_geo
 from . import shaders
@@ -286,6 +286,19 @@ class Renderer:
                 a, c = axes_geo.cross_lines(com[:3], size, (0.98, 0.98, 0.98))
                 pts.append(a)
                 cols.append(c)
+        for fr in scene.frames:  # named reference frames
+            if not fr.visible:
+                continue
+            try:
+                p, q = scene.frame_world_pose(fr.id)
+            except SceneError:
+                continue  # detached (parent deleted); reported in Errors & Warnings
+            a, c = axes_geo.frame_lines(p, q, fr.axis_length)
+            pts.append(a)
+            cols.append(c)
+            a, c = axes_geo.cross_lines(p, cam.world_per_pixel(p, h) * 6, fr.color)
+            pts.append(a)
+            cols.append(c)
         if pts:
             GL.glDisable(GL.GL_DEPTH_TEST)
             self._lines(np.vstack(pts), np.vstack(cols), viewproj, w, h, 2.0)
@@ -304,8 +317,9 @@ class Renderer:
                 self._draw_mesh(cone, model, color, 1.0, 0.0, 0.4, False, 0.0, stats)
             if ax.show_origin_marker:
                 s = ax.length * 0.035
-                self._draw_mesh(self._origin_marker, np.diag([s, s, s, 1.0]), (0.92, 0.92, 0.92), 1.0, 0.0, 0.3,
-                                False, 0.0, stats)
+                marker = np.diag([s, s, s, 1.0])
+                marker[:3, 3] = ax.origin
+                self._draw_mesh(self._origin_marker, marker, (0.92, 0.92, 0.92), 1.0, 0.0, 0.3, False, 0.0, stats)
 
         # ---- placement ghost ---------------------------------------------------------------------------------
         if f.ghost is not None:

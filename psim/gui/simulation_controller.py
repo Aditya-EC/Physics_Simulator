@@ -25,7 +25,7 @@ from ..simulation.runner import RunState, RunStats, SimulationRunner
 from ..simulation.settings import PacingMode, SimulationSettings
 from ..simulation.simulation_engine import SimulationEngine, SimulationError, Snapshot
 from ..simulation.state import capture_bodies
-from ..simulation.world import EngineWorld, capture_static, global_values
+from ..simulation.world import EngineWorld, capture_frames, capture_static, global_values
 
 
 class SimulationController(QObject):
@@ -57,6 +57,7 @@ class SimulationController(QObject):
         scene.objectsChanged.connect(self._on_objects_changed)
         scene.processesChanged.connect(self._on_processes_changed)
         scene.globalsChanged.connect(self._on_processes_changed)
+        scene.framesChanged.connect(self._on_processes_changed)
 
     # ---- state -------------------------------------------------------------------------------------
     @property
@@ -113,8 +114,9 @@ class SimulationController(QObject):
                             "(Processes ▸ Assign Process).")
             return False
         bodies, state = capture_bodies(self.scene, plan.body_ids)
-        world = EngineWorld(capture_static(self.scene), plan.body_ids, global_values(self.scene),
-                            self.settings.delta_time)
+        statics = capture_static(self.scene)
+        world = EngineWorld(statics, plan.body_ids, global_values(self.scene), self.settings.delta_time,
+                            capture_frames(self.scene, statics))
         try:
             engine = SimulationEngine(SimulationSettings.from_dict(self.settings.to_dict()), plan, bodies, state, world)
         except SimulationError as exc:
@@ -124,7 +126,8 @@ class SimulationController(QObject):
         self._reported = set()
         self._body_ids = list(plan.body_ids)
         self.editor.recording = False
-        self.scene.runtime = {}
+        self.scene.runtime = {oid: {} for oid in plan.body_ids}  # accelerations unknown until the first snapshot
+        self.scene.simulating = True
         self.runner.start(engine, paused=paused)
         self._set_state("paused" if paused else "running")
         s = self.settings
@@ -187,6 +190,7 @@ class SimulationController(QObject):
         self._initial = None
         self._body_ids = []
         self.scene.runtime = {}
+        self.scene.simulating = False
         self.editor.recording = True
         self._set_state("idle")
         self.scene.notify_changed(list(self.scene.objects))
@@ -295,7 +299,9 @@ class SimulationController(QObject):
         bodies, state = capture_bodies(self.scene, plan.body_ids)
         keep = set(plan.body_ids) - edited - set(new_ids)
         self._body_ids = list(plan.body_ids)
-        self.runner.replace_plan(plan, bodies, state, keep, capture_static(self.scene), global_values(self.scene))
+        statics = capture_static(self.scene)
+        self.runner.replace_plan(plan, bodies, state, keep, statics, global_values(self.scene),
+                                 capture_frames(self.scene, statics))
         if edited:
             self.info.emit(f"Applied edits of {', '.join(sorted(edited))} to the running simulation")
 

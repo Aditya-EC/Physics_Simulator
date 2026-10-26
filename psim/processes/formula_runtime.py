@@ -45,6 +45,8 @@ class World(Protocol):
     def tagged(self, tag: str) -> tuple[int, ...]: ...
     def of_type(self, type_id: str) -> tuple[int, ...]: ...
     def children(self, ref: int) -> tuple[int, ...]: ...
+    def resolve_frame(self, frame_id: str) -> int: ...
+    def frame_state(self, fref: int) -> tuple: ...   # (origin, quaternion, origin velocity, angular velocity)
 
 
 class EvalContext:
@@ -144,6 +146,19 @@ class Compiler:
                     raise self.err(f"Object has no {name} (no parent?)", n)
                 return ctx.world.attr(ref, name)
             return get
+        if kind == "frame":
+            def frame_attr(ctx):
+                origin, q, v, w = ctx.world.frame_state(obj(ctx))
+                if name == "position":
+                    return np.array(origin, float)
+                if name == "orientation":
+                    return QuatValue(q)
+                if name == "velocity":
+                    return np.array(v, float)
+                if name == "angular_velocity":
+                    return np.array(w, float)
+                return np.asarray(numerics.quat_to_matrix(q), float)[:, "xyz".index(name[0])].copy()
+            return frame_attr
         if kind == "quat":
             k = "wxyz".index(name)
             return lambda ctx: float(obj(ctx).q[k])
@@ -210,8 +225,32 @@ class Compiler:
         raise self.err(f"Unknown operator '{op}'", n)
 
     # ---- calls -------------------------------------------------------------------------------------------
+    def _frame_fn(self, node: Node) -> Callable[[EvalContext], tuple]:
+        """Compile an object or frame expression to a function returning (origin, R, origin velocity, ω)."""
+        val = self.compile(node)
+        if self.type_of(node).kind == "frame":
+            def named(ctx):
+                origin, q, v, w = ctx.world.frame_state(val(ctx))
+                return (np.asarray(origin, float), np.asarray(numerics.quat_to_matrix(q), float),
+                        np.asarray(v, float), np.asarray(w, float))
+            return named
+
+        def local(ctx):
+            ref = val(ctx)
+            if ref is None:
+                raise self.err("Object has no parent frame", node)
+            world = ctx.world
+            origin = np.asarray(world.attr(ref, "position"), float)
+            w = np.asarray(world.attr(ref, "angular_velocity"), float)
+            v = np.asarray(world.attr(ref, "velocity"), float) + np.cross(w, origin - world.attr(ref, "com"))
+            return origin, np.asarray(numerics.quat_to_matrix(world.attr(ref, "orientation").q), float), v, w
+        return local
+
     def _call(self, n: Call) -> Fn:
         f = n.func
+        if f == "frame":
+            fid = n.args[0].value
+            return lambda ctx: ctx.world.resolve_frame(fid)
         if f == "object":
             oid = n.args[0].value
             return lambda ctx: ctx.world.resolve(oid)
@@ -247,21 +286,45 @@ class Compiler:
             c, x, y = (self.compile(a) for a in n.args)
             return lambda ctx: x(ctx) if c(ctx) else y(ctx)
         if f in ("to_local", "to_global", "point_to_local", "point_to_global"):
-            o, v = self.compile(n.args[0]), self.compile(n.args[1])
+            fr, v = self._frame_fn(n.args[0]), self.compile(n.args[1])
             to_local = f.endswith("local")
             point = f.startswith("point_")
 
             def frame(ctx):
-                ref = o(ctx)
-                r = np.asarray(numerics.quat_to_matrix(ctx.world.attr(ref, "orientation").q), float)
+                origin, r, _vf, _wf = fr(ctx)
                 vec = np.asarray(v(ctx), float)
                 if to_local:
-                    if point:
-                        vec = vec - ctx.world.attr(ref, "position")
-                    return r.T @ vec
+                    return r.T @ (vec - origin if point else vec)
                 out = r @ vec
-                return out + ctx.world.attr(ref, "position") if point else out
+                return out + origin if point else out
             return frame
+        if f == "rel_position":
+            o, fr = self.compile(n.args[0]), self._frame_fn(n.args[1])
+
+            def rel_position(ctx):
+                origin, r, _vf, _wf = fr(ctx)
+                return r.T @ (np.asarray(ctx.world.attr(o(ctx), "com"), float) - origin)
+            return rel_position
+        if f == "rel_velocity":
+            fr = self._frame_fn(n.args[-1])
+            if len(n.args) == 2:
+                o = self.compile(n.args[0])
+
+                def pv(ctx):
+                    ref = o(ctx)
+                    return ctx.world.attr(ref, "com"), ctx.world.attr(ref, "velocity")
+            else:
+                pf, vf = self.compile(n.args[0]), self.compile(n.args[1])
+
+                def pv(ctx):
+                    return pf(ctx), vf(ctx)
+
+            def rel_velocity(ctx):
+                origin, r, v_f, w_f = fr(ctx)
+                p, v = pv(ctx)
+                p, v = np.asarray(p, float), np.asarray(v, float)
+                return r.T @ (v - v_f - np.cross(w_f, p - origin))
+            return rel_velocity
         args = [self.compile(a) for a in n.args]
         impl = _IMPLS[f]
         node = n

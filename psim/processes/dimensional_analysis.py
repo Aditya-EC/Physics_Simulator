@@ -51,11 +51,15 @@ class FType:
 
     def describe(self) -> str:
         names = {"num": "scalar", "vec2": "2D vector", "vec3": "3D vector", "mat3": "3×3 matrix", "quat": "quaternion",
-                 "bool": "Boolean", "obj": "object", "set": "object set", "str": "string"}
+                 "bool": "Boolean", "obj": "object", "set": "object set", "str": "string", "frame": "reference frame"}
         base = names.get(self.kind, self.kind)
         if self.kind in NUMERIC and not self.poly:
             base += f" [{self.dim}]"
         return base
+
+
+def _article(word: str) -> str:
+    return "an" if word[:1].lower() in "aeiou" else "a"
 
 
 def T(kind: str, dim: Dimension = DIMLESS) -> FType:
@@ -64,6 +68,8 @@ def T(kind: str, dim: Dimension = DIMLESS) -> FType:
 
 NUM, VEC3, BOOL, OBJ, SET, QUAT, MAT3 = T("num"), T("vec3"), FType("bool"), FType("obj"), FType("set"), FType("quat"), \
     T("mat3")
+FRAME = FType("frame")
+FRAMES = ("obj", "frame")      # anything that defines a coordinate frame (an object's local frame or a named frame)
 
 # Object attributes visible to formulas (global frame unless stated).
 OBJECT_ATTRS: dict[str, FType] = {
@@ -90,6 +96,15 @@ OBJECT_ATTRS: dict[str, FType] = {
     "x_axis": T("vec3"), "y_axis": T("vec3"), "z_axis": T("vec3"),
     "parent": OBJ,
     "children": SET,
+}
+
+# Attributes of named reference frames (global frame; velocity is that of the frame origin).
+FRAME_ATTRS: dict[str, FType] = {
+    "position": T("vec3", D.LENGTH),
+    "orientation": QUAT,
+    "velocity": T("vec3", D.VELOCITY),
+    "angular_velocity": T("vec3", D.FREQUENCY),
+    "x_axis": T("vec3"), "y_axis": T("vec3"), "z_axis": T("vec3"),
 }
 
 # Output targets of formula processes.
@@ -135,6 +150,7 @@ class Checker:
         self.env = env
         self.types: dict[int, FType] = {}
         self.object_ids: set[str] = set()      # literal object("...") references, validated at plan time
+        self.frame_ids: set[str] = set()       # literal frame("...") references, validated at plan time
         self.updated_refs: set[str] = set()    # quantities read through updated(...)
         self._it_depth = 0
 
@@ -158,7 +174,8 @@ class Checker:
         kinds = (kinds,) if isinstance(kinds, str) else kinds
         if t.kind not in kinds:
             names = " or ".join(FType(k).describe().split(" [")[0] for k in kinds)
-            raise self.error(f"{what} expects a {names}, got a {t.describe()}", node)
+            got = t.describe()
+            raise self.error(f"{what} expects {_article(names)} {names}, got {_article(got)} {got}", node)
 
     def _dimless(self, t: FType, node: Node, what: str) -> None:
         if not t.poly and not t.dim.is_dimensionless:
@@ -251,6 +268,11 @@ class Checker:
             if n.name not in OBJECT_ATTRS:
                 raise self.error(f"Objects have no attribute '{n.name}'", n)
             return OBJECT_ATTRS[n.name]
+        if t.kind == "frame":
+            if n.name not in FRAME_ATTRS:
+                raise self.error(f"Reference frames have no attribute '{n.name}' "
+                                 f"(available: {', '.join(FRAME_ATTRS)})", n)
+            return FRAME_ATTRS[n.name]
         if t.kind in VECTORS and n.name in ("x", "y", "z")[: 2 if t.kind == "vec2" else 3]:
             return FType("num", t.dim, poly=t.poly)
         if t.kind == "quat" and n.name in ("w", "x", "y", "z"):
@@ -330,6 +352,12 @@ class Checker:
             return self._aggregate(n)
         if f == "updated":
             return self._updated(n)
+        if f == "frame":
+            if len(n.args) != 1 or not isinstance(n.args[0], Str):
+                raise self.error('frame() takes one string literal argument, e.g. frame("FRM-0001")', n)
+            self.types[id(n.args[0])] = FType("str")
+            self.frame_ids.add(n.args[0].value)
+            return FRAME
         if f in ("object", "tagged", "of_type"):
             if len(n.args) != 1 or not isinstance(n.args[0], Str):
                 raise self.error(f"{f}() takes one string literal argument", n)
@@ -560,12 +588,30 @@ def _to_euler(c, n, args):
 
 def _frame(name):
     def rule(c, n, args):
-        c._need(args[0], "obj", n, f"{name}()")
+        c._need(args[0], FRAMES, n, f"{name}()")
         c._need(args[1], "vec3", n, f"{name}()")
         if name.startswith("point_"):
             c._same_dim(args[1], T("vec3", D.LENGTH), n, f"{name}() (expects a position)")
         return FType("vec3", args[1].dim, poly=args[1].poly)
     return rule
+
+
+def _rel_position(c, n, args):
+    c._need(args[0], "obj", n, "rel_position()")
+    c._need(args[1], FRAMES, n, "rel_position()")
+    return T("vec3", D.LENGTH)
+
+
+def _rel_velocity(c, n, args):
+    if len(args) == 2:
+        c._need(args[0], "obj", n, "rel_velocity()")
+    else:
+        c._need(args[0], "vec3", n, "rel_velocity(p, v, frame)")
+        c._same_dim(args[0], T("vec3", D.LENGTH), n, "rel_velocity(p, v, frame) (p must be a position)")
+        c._need(args[1], "vec3", n, "rel_velocity(p, v, frame)")
+        c._same_dim(args[1], T("vec3", D.VELOCITY), n, "rel_velocity(p, v, frame) (v must be a velocity)")
+    c._need(args[-1], FRAMES, n, "rel_velocity()")
+    return T("vec3", D.VELOCITY)
 
 
 def _set_of(name):
@@ -598,6 +644,7 @@ FUNCTIONS = {
     "quat_from_euler": (1, _quat_from_euler), "to_euler": (1, _to_euler),
     "to_local": (2, _frame("to_local")), "to_global": (2, _frame("to_global")),
     "point_to_local": (2, _frame("point_to_local")), "point_to_global": (2, _frame("point_to_global")),
+    "rel_position": (2, _rel_position), "rel_velocity": ((2, 3), _rel_velocity),
     "all": (0, _set_of("all")), "children": (1, _set_of("children")),
 }
 AGGREGATES = {"sum_of", "mean_of", "min_of", "max_of", "count"}
@@ -608,7 +655,10 @@ FUNCTION_DOCS = {
     "Vectors": "vec2 vec3 norm|mag|length normalize dot cross distance project angle_between, v.x v.y v.z, v[i]",
     "Matrices": "identity diag outer transpose inverse det, M * v, M * N",
     "Rotations": "rotate(q, v) conj quat_axis_angle quat_from_euler to_euler, q1 * q2",
-    "Frames": "to_local(obj, v) to_global(obj, v) point_to_local(obj, p) point_to_global(obj, p)",
+    "Frames": "frame(\"FRM-0001\") with .position .orientation .velocity .angular_velocity .x_axis …; "
+              "to_local(F, v) to_global(F, v) point_to_local(F, p) point_to_global(F, p) (representation, "
+              "F = object or frame); rel_position(obj, F), rel_velocity(obj, F) or rel_velocity(p, v, F): "
+              "centre of mass relative to a moving frame, in F components",
     "Objects": "self, object(\"OBJ-000001\"), targets[i], others, it, parent, children, all(), tagged(\"tag\"), "
                "of_type(\"basic.sphere\"), obj.custom.<key>",
     "Aggregates": "sum_of(set, expr) mean_of(set, expr) min_of(set, expr) max_of(set, expr) count(set)",

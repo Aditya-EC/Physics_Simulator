@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, Q
                                QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
 from .. import numerics
+from ..coordinates.kinematics import rotation_of
+from ..coordinates.scene_kinematics import reference_choices
 from ..properties.property_system import Origin, PropertyError, ValueType
 from ..scene.editing import SceneEditor
 from ..scene.materials import PHYSICAL_MATERIALS
@@ -43,7 +45,8 @@ class PropertiesPanel(QWidget):
         self._signature = None
         self._refreshers: list[Callable[[], None]] = []
         self._sections: list[Section] = []
-        self._frame: str | None = None  # None = global, "@parent", or object id
+        self._frame: str | None = None  # pose frame: None = global, "@parent", an object id or a frame id
+        self._vec_frame: str | None = None  # frame whose axes physical vectors are expressed in
         self._custom_sort = "definition"
         self.simulated_ids: set[str] = set()   # objects whose dynamic state a running simulation owns
 
@@ -95,6 +98,7 @@ class PropertiesPanel(QWidget):
         scene.hierarchyChanged.connect(self._schedule)
         scene.sceneReset.connect(self._schedule)
         scene.processesChanged.connect(self._schedule)
+        scene.framesChanged.connect(self._schedule)
         self._sync()
 
     def set_simulated_ids(self, ids) -> None:
@@ -115,15 +119,18 @@ class PropertiesPanel(QWidget):
     def _compute_signature(self, ids):
         objs = [self.scene.objects[i] for i in ids]
         return (tuple(ids), tuple(o.type_id for o in objs), tuple(tuple(o.custom) for o in objs),
-                tuple(o.mass_mode for o in objs), tuple(o.parent_id for o in objs), self._frame,
+                tuple(o.mass_mode for o in objs), tuple(o.parent_id for o in objs), self._frame, self._vec_frame,
+                tuple((f.id, f.name) for f in self.scene.frames),
                 len(self.scene.objects), self._custom_sort,  # object count: frame/parent choices
                 frozenset(self.simulated_ids & set(ids)),
                 tuple((a.uid, a.enabled, a.process_id) for i in ids[-1:] for a in self.scene.assignments_for(i)))
 
     def _sync(self) -> None:
         ids = [i for i in self.scene.selection if i in self.scene.objects]
-        if self._frame not in (None, "@parent") and (self._frame not in self.scene.objects or self._frame in ids):
+        if not self._ref_valid(self._frame, ids):
             self._frame = None
+        if not self._ref_valid(self._vec_frame, ids):
+            self._vec_frame = None
         sig = self._compute_signature(ids)
         if sig != self._signature:
             self._ids = ids
@@ -244,7 +251,7 @@ class PropertiesPanel(QWidget):
 
     def _add_prop(self, sec: Section, path: str, objs: list[SceneObject], *, label: str | None = None,
                   origin: Origin | None = None, read_only: bool = False, tooltip: str = "",
-                  quantity: str | None = None) -> QWidget:
+                  quantity: str | None = None, frame_rotation: Callable[[], np.ndarray] | None = None) -> QWidget:
         primary = objs[-1]
         d = primary.property_def(path)
         label = label or d.label
@@ -285,9 +292,14 @@ class PropertiesPanel(QWidget):
             w = VectorField(t.size, self.units, self.units.display_unit(path, quantity) if quantity else None,
                             d.precision, d.minimum, d.maximum)
             w.setReadOnly(ro)
-            w.committed.connect(lambda v: self._commit(objs, path, v))
             unit_widget = self._unit_combo(path, quantity, w.set_unit)
-            self._refreshers.append(lambda: w.set_si(primary.get(path)))
+            if frame_rotation is None or t != ValueType.VEC3:
+                w.committed.connect(lambda v: self._commit(objs, path, v))
+                self._refreshers.append(lambda: w.set_si(primary.get(path)))
+            else:  # shown in another frame's axes, stored globally
+                w.committed.connect(lambda v: self._commit(objs, path, [float(c) for c in
+                                                                       frame_rotation() @ np.asarray(v, float)]))
+                self._refreshers.append(lambda: w.set_si(frame_rotation().T @ np.asarray(primary.get(path), float)))
         elif t == ValueType.COLOR:
             w = ColorButton()
             w.setEnabled(not ro)
@@ -376,19 +388,26 @@ class PropertiesPanel(QWidget):
             info.setObjectName("Muted")
             sec.add_widget(info, search="triangles mesh")
 
+    def _ref_valid(self, ref: str | None, ids: list[str]) -> bool:
+        if ref in (None, "@parent", "@self"):
+            return True
+        if ref.startswith("FRM-"):  # a detached frame (parent deleted) falls back to global
+            f = self.scene.frame(ref)
+            return f is not None and (f.parent is None or f.parent in self.scene.objects)
+        return ref in self.scene.objects and ref not in ids
+
     def _frame_choices(self, o: SceneObject) -> list[tuple[str, str | None]]:
-        choices: list[tuple[str, str | None]] = [("Global", None)]
-        if o.parent_id and o.parent_id in self.scene.objects:
-            choices.append((f"Parent ({self.scene.objects[o.parent_id].name})", "@parent"))
-        for other in self.scene.objects.values():
-            if other.id != o.id:
-                choices.append((f"{other.name} ({other.id})", other.id))
-        return choices
+        return reference_choices(self.scene, exclude=o.id, include_parent_of=o.id)
+
+    def _resolve_ref(self, o: SceneObject, ref: str | None) -> str | None:
+        if ref == "@parent":
+            return o.parent_id if o.parent_id in self.scene.objects else None
+        if ref == "@self":
+            return o.id
+        return ref
 
     def _frame_id(self, o: SceneObject) -> str | None:
-        if self._frame == "@parent":
-            return o.parent_id if o.parent_id in self.scene.objects else None
-        return self._frame
+        return self._resolve_ref(o, self._frame)
 
     def _build_transform(self, o: SceneObject) -> None:
         sec = self._section("transform", "Transform")
@@ -493,9 +512,31 @@ class PropertiesPanel(QWidget):
         else:
             self._add_prop(sec, "mass_input", [o], origin=Origin.USER)
 
+        vec_combo = QComboBox()
+        choices = self._frame_choices(o)
+        choices.insert(1, ("Own local axes", "@self"))
+        for text, data in choices:
+            vec_combo.addItem(text, data)
+        vec_combo.setCurrentIndex(max(vec_combo.findData(self._vec_frame), 0))
+        vec_combo.setToolTip("Axes in which the vectors below are shown and entered. This only re-expresses the "
+                             "same global vectors (a rotation); values are stored in global coordinates. For "
+                             "motion measured relative to a moving frame use the Relative Motion panel.")
+
+        def vec_frame_changed(_i):
+            self._vec_frame = vec_combo.currentData()
+            self._schedule()
+        vec_combo.currentIndexChanged.connect(vec_frame_changed)
+        sec.add_row("Vectors in", vec_combo, search="frame vector components representation")
+
+        def vec_rotation():
+            ref = self._resolve_ref(o, self._vec_frame)
+            return rotation_of(self.scene.reference_pose(ref)[1])
+        rot = None if self._vec_frame is None else vec_rotation
+        frame_text = "global frame" if self._vec_frame is None else f"axes of {vec_combo.currentText()}"
         for path in ("linear_velocity", "linear_acceleration", "angular_velocity", "angular_acceleration", "force",
                      "torque"):
-            self._add_prop(sec, path, [o], origin=Origin.USER, tooltip=INITIAL_TIP + " Global frame.")
+            self._add_prop(sec, path, [o], origin=Origin.USER, tooltip=f"{INITIAL_TIP} Components in the {frame_text}.",
+                           frame_rotation=rot)
 
         def momentum():
             m = mp()["mass"] or 0.0

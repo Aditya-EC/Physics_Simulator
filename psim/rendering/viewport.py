@@ -86,6 +86,7 @@ class Viewport(QOpenGLWidget):
         for sig in (scene.objectsAdded, scene.objectsRemoved, scene.objectsChanged, scene.selectionChanged):
             sig.connect(self._scene_changed)
         scene.sceneReset.connect(self._scene_changed)
+        scene.framesChanged.connect(self._scene_changed)
 
     # ---- configuration -------------------------------------------------------------------------
     def set_view_settings(self, view: ViewSettings) -> None:

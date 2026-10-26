@@ -13,6 +13,7 @@ import numpy as np
 
 from . import dimensions as D
 from .dimensions import Dimension
+from .unit_expressions import UnitExpressionError, parse_unit_expression, si_unit_text
 
 
 class UnitError(ValueError):
@@ -188,6 +189,21 @@ class UnitRegistry:
                 return q.key
         return None
 
+    def quantities_for_dimension(self, dim: Dimension) -> list[QuantityKind]:
+        return [q for q in self._quantities.values() if q.dimension == dim]
+
+    def parse_expression(self, text: str) -> tuple[float, Dimension]:
+        """SI factor and dimension of a unit expression such as 'kN·mm', 'furlong/fortnight' or 'kg·m²/s'."""
+        try:
+            return parse_unit_expression(text, self)
+        except UnitExpressionError as exc:
+            raise UnitError(str(exc)) from None
+
+    def describe_dimension(self, dim: Dimension) -> str:
+        """'[L·T^-1] = m/s (Velocity)' style description of a dimension."""
+        names = ", ".join(q.label for q in self.quantities_for_dimension(dim))
+        return f"[{dim}] = {si_unit_text(dim)}" + (f" ({names})" if names else "")
+
     def custom_units(self) -> list[Unit]:
         return [u for u in self._units.values() if u.custom]
 
@@ -238,7 +254,10 @@ class UnitRegistry:
 
     # ---- custom units -----------------------------------------------------
     def add_custom_unit(self, symbol: str, name: str, base_unit: str, factor: float) -> Unit:
-        """Define `1 symbol = factor * base_unit` (base unit may itself be custom)."""
+        """Define `1 symbol = factor × base` where base is a unit or a unit expression ('kN·mm', 'ft/min').
+
+        The resulting dimension must belong to a known quantity, so the unit can be selected for display.
+        """
         symbol = symbol.strip()
         if not _SYMBOL_RE.match(symbol):
             raise UnitError("Unit symbol must be 1-16 non-space characters and not start with a digit")
@@ -246,10 +265,18 @@ class UnitRegistry:
             raise UnitError(f"Unit '{symbol}' already exists")
         if not np.isfinite(factor) or factor <= 0:
             raise UnitError("Conversion factor must be a positive finite number")
-        base = self.unit(base_unit)
-        if base.offset:
-            raise UnitError("Custom units cannot be based on offset units")
-        unit = Unit(symbol, name.strip() or symbol, base.dimension, base.factor * float(factor), custom=True)
+        base_unit = base_unit.strip()
+        if self.has_unit(base_unit):
+            base = self.unit(base_unit)
+            if base.offset:
+                raise UnitError("Custom units cannot be based on offset units")
+            base_factor, dim = base.factor, base.dimension
+        else:
+            base_factor, dim = self.parse_expression(base_unit)
+        if not self.quantities_for_dimension(dim):
+            raise UnitError(f"'{base_unit}' has the dimension {si_unit_text(dim)} [{dim}], which is not a quantity "
+                            "known to the application; custom units must be compatible with an existing quantity")
+        unit = Unit(symbol, name.strip() or symbol, dim, base_factor * float(factor), custom=True)
         self._units[symbol] = unit
         self._rebuild_quantity_units()
         return unit
