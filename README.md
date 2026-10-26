@@ -141,13 +141,13 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_batch.py` | headless batch runs: CSV/JSON/report/state outputs against analytic values, property and global overrides, restore-and-continue, stop conditions, exit codes for invalid input and numerical failure |
 | `test_measurements.py` | distance and angle values (precise near 180°, undefined at the vertex), centre-of-mass points, undo, dangling objects, project files, viewport overlays, Measurements panel |
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
-| `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel |
+| `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport) |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind), sort-and-sweep keeps every overlapping pair, input validation |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **501 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 456 pass and 45 native-comparison tests are skipped. This was measured on
+Current result: **503 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 458 pass and 45 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -853,9 +853,9 @@ Key design decisions:
     because it would need the accelerations being computed in the same step. The Relative
     Motion panel shows it.
   - The "Axes drawn at" setting moves only the drawn axes, not the coordinate origin.
-- Box (marquee) selection and a numeric "move relative to object" dialog are not implemented.
-  Relative placement is done through the inspector's *Relative to* frame
-  selector and surface snapping.
+- A numeric "move relative to object" dialog is not implemented. Relative placement is done
+  through the inspector's *Relative to* frame selector and surface snapping. Box selection uses an
+  object's projected bounding-box centre, not its full outline.
 - Imported meshes are stored inside the project file (as JSON arrays) rather than as
   separate asset files. Very large meshes make projects large.
 - When the theme is switched at runtime, icons on a few panel buttons keep the previous tint

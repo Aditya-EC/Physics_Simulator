@@ -1,10 +1,11 @@
 """Phase 8 GUI: stop-conditions dialog, simulation-state actions, measurements, performance profile."""
 from __future__ import annotations
 
+import numpy as np
 from PySide6.QtCore import Qt
 
-
 from test_coordinates_gui import owned  # noqa: F401  (fixture)
+from test_gui import window  # noqa: F401  (fixture)
 
 
 def test_stop_conditions_dialog_checks_and_returns_conditions(scene, owned):  # noqa: F811
@@ -39,3 +40,53 @@ def test_performance_panel_shows_the_stage_profile(qapp, owned):  # noqa: F811
     p.update_sim_stats(RunStats("running", 0.1, 10, 0.01, 1.0, "afap", 100, 900, 9, 0.01, 0, False, 1.9, prof))
     text = p.labels["profile"].text()
     assert "constraints 1.500" in text and "total 1.860" in text and "updates" not in text
+
+
+def test_objects_in_rect_selects_by_projected_centre(scene):
+    from psim.rendering.camera import OrbitCamera
+    from psim.rendering.picking import objects_in_rect
+    s, e = scene
+    a = e.add_new("basic.cube", position=[-2, 0, 0.5])
+    b = e.add_new("basic.cube", position=[2, 0, 0.5])
+    hidden = e.add_new("basic.sphere", position=[-2, 0, 0.5])
+    e.set_property([hidden.id], "visible", False)
+    cam = OrbitCamera()
+    w, h = 800, 600
+    (xa, ya), (xb, yb) = cam.project(np.array([[-2, 0, 0.5], [2, 0, 0.5]]), w, h)[0]
+    assert objects_in_rect(s, cam, w, h, xa - 5, ya - 5, xa + 5, ya + 5) == [a.id]       # hidden ones excluded
+    both = objects_in_rect(s, cam, w, h, xb + 5, yb + 5, xa - 5, ya - 5)                # any corner order
+    assert set(both) == {a.id, b.id}
+    assert objects_in_rect(s, cam, w, h, 0, 0, 3, 3) == []
+
+
+def test_box_selection_in_window(window):  # noqa: F811
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from test_gui import _move, _render, _screen_pos
+    w = window
+    a = w.editor.add_new("basic.cube", position=[-1.5, 0, 0.5])
+    b = w.editor.add_new("basic.cube", position=[1.5, 0, 0.5])
+    w.viewport.frame_objects(None)
+    _render(w)
+    vp = w.viewport
+    w.actions_["tool.select"].trigger()
+    pa, pb = _screen_pos(w, [-1.5, 0, 0.5]), _screen_pos(w, [1.5, 0, 0.5])
+    left = min(pa.x(), pb.x())
+    start = QPoint(left - 60, max(pa.y(), pb.y()) + 60)
+    if vp.pick_at(start) is not None:
+        start = QPoint(3, vp.height() - 3)
+    end = QPoint((pa.x() + pb.x()) // 2, min(pa.y(), pb.y()) - 60)
+    cam_before = vp.camera.eye().copy()
+    QTest.mousePress(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    for t in np.linspace(0, 1, 6)[1:]:
+        _move(vp, QPoint(int(start.x() + (end.x() - start.x()) * t), int(start.y() + (end.y() - start.y()) * t)))
+    assert vp._box is not None
+    QTest.mouseRelease(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    assert w.scene.selection == [a.id] and b.id not in w.scene.selection and vp._box is None
+    assert np.allclose(vp.camera.eye(), cam_before)                  # no orbit in the Select tool
+    w.actions_["tool.translate"].trigger()                          # other tools: the same drag orbits
+    QTest.mousePress(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    for t in np.linspace(0, 1, 6)[1:]:
+        _move(vp, QPoint(int(start.x() + (end.x() - start.x()) * t), int(start.y() + (end.y() - start.y()) * t)))
+    QTest.mouseRelease(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    assert not np.allclose(vp.camera.eye(), cam_before) and w.scene.selection == [a.id]

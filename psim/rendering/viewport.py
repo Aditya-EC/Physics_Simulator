@@ -68,7 +68,8 @@ class Viewport(QOpenGLWidget):
         self._drag_payload: dict | None = None
         self._press_pos: QPoint | None = None
         self._last_pos: QPoint | None = None
-        self._mode: str | None = None  # orbit | pan | gizmo | pending
+        self._mode: str | None = None  # orbit | pan | gizmo | pending | box
+        self._box: tuple[int, int, int, int] | None = None   # box selection rectangle (press x, y, current x, y)
         self._drag: gz.DragState | None = None
         self._drag_text = ""
         self.last_stats = FrameStats()
@@ -243,6 +244,8 @@ class Viewport(QOpenGLWidget):
         try:
             overlays.paint_overlays(painter, self.scene, self.view, self.camera, self.units, self.width(),
                                     self.height(), self._hud_lines(), self._drag_text, paths)
+            if self._box is not None:
+                overlays.paint_selection_box(painter, *self._box)
             if self._drag_payload is not None:
                 overlays.paint_drop_hint(painter, self.width(), self.height(),
                                          f"Release to place · work plane {self.view.snap.work_plane}"
@@ -347,7 +350,11 @@ class Viewport(QOpenGLWidget):
             if handle is not None:
                 self._start_gizmo_drag(handle, pos)
                 return
-            self._mode = "pending_pan" if mods & Qt.KeyboardModifier.ShiftModifier and not self.pick_at(pos) else "pending"
+            on_object = self.pick_at(pos) is not None
+            if self.tool == "select" and not on_object:
+                self._mode = "pending_box"     # Select tool: dragging on empty space draws a selection box
+            else:
+                self._mode = "pending_pan" if mods & Qt.KeyboardModifier.ShiftModifier and not on_object else "pending"
         elif btn in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
             self._mode = "pan" if btn == Qt.MouseButton.MiddleButton else "pending_rmb"
 
@@ -385,6 +392,12 @@ class Viewport(QOpenGLWidget):
                     self.scene.get(i).scale = [float(c) for c in s]
                 self._drag_text = self._describe_drag(poses)
                 self.scene.notify_changed(list(poses))
+            return
+        if self._mode in ("pending_box", "box"):
+            if moved or self._mode == "box":
+                self._mode = "box"
+                self._box = (self._press_pos.x(), self._press_pos.y(), pos.x(), pos.y())
+                self.update()
             return
         if self._mode == "pending" and moved:
             self._mode = "orbit"
@@ -433,6 +446,23 @@ class Viewport(QOpenGLWidget):
             self._drag_text = ""
             self.update()
             return
+        if mode == "box" and self._box is not None:
+            x0, y0, x1, y1 = self._box
+            self._box = None
+            ids = picking.objects_in_rect(self.scene, self.camera, self.width(), self.height(), x0, y0, x1, y1)
+            mods = e.modifiers()
+            sel = self.scene.selection
+            if mods & Qt.KeyboardModifier.ControlModifier:
+                sel = [i for i in sel if i not in ids] + [i for i in ids if i not in sel]
+            elif mods & Qt.KeyboardModifier.ShiftModifier:
+                sel = sel + [i for i in ids if i not in sel]
+            else:
+                sel = ids
+            self.scene.set_selection(sel)
+            self.update()
+            return
+        if mode == "pending_box":
+            mode = "pending"            # a click without dragging: same as clicking empty space
         if mode == "pending" and e.button() == Qt.MouseButton.LeftButton:
             hit = self.pick_at(pos)
             mods = e.modifiers()

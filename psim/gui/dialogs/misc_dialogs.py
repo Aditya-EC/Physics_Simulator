@@ -322,7 +322,8 @@ CONTROLS_HTML = """
 <h3>Viewport</h3>
 <table cellspacing="4">
 <tr><td><b>Left click</b></td><td>Select object (Ctrl: toggle, Shift: add)</td></tr>
-<tr><td><b>Left drag on empty space</b></td><td>Orbit camera (Alt + left drag orbits anywhere)</td></tr>
+<tr><td><b>Left drag on empty space</b></td><td>Select tool (Q): box selection (Shift adds, Ctrl toggles);
+other tools: orbit camera. Alt + left drag always orbits</td></tr>
 <tr><td><b>Middle / right drag, Shift + left drag</b></td><td>Pan camera</td></tr>
 <tr><td><b>Mouse wheel</b></td><td>Zoom towards the cursor</td></tr>
 <tr><td><b>Double click</b></td><td>Frame the clicked object</td></tr>

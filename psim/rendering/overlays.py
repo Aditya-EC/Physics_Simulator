@@ -336,6 +336,15 @@ def _paint_triad(p: QPainter, cam: OrbitCamera, ax, height: float, font: QFont) 
         p.drawText(QRectF(end.x() - 7.5, end.y() - 7.5, 15, 15), Qt.AlignmentFlag.AlignCenter, name)
 
 
+def paint_selection_box(p: QPainter, x0: float, y0: float, x1: float, y1: float) -> None:
+    """Translucent rectangle of a box selection in progress."""
+    rect = QRectF(QPointF(min(x0, x1), min(y0, y1)), QPointF(max(x0, x1), max(y0, y1)))
+    p.fillRect(rect, QColor(80, 150, 255, 40))
+    pen = QPen(QColor(110, 170, 255, 220), 1.0, Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawRect(rect)
+
+
 def paint_drop_hint(p: QPainter, width: float, height: float, text: str) -> None:
     path = QPainterPath()
     path.addRoundedRect(QRectF(6, 6, width - 12, height - 12), 8, 8)

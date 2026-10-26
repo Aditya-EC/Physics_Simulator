@@ -96,3 +96,26 @@ def placement_position(scene: Scene, origin, direction, mesh_lo, mesh_hi, work_p
             if abs(n[k]) < 0.1:  # only snap tangential coordinates
                 pos[k] = round(pos[k] / increment) * increment
     return pos, surface_id
+
+
+def objects_in_rect(scene: Scene, camera, width: float, height: float, x0: float, y0: float, x1: float,
+                    y1: float) -> list[str]:
+    """Visible objects whose world bounding-box centre projects inside the screen rectangle (any corner order).
+
+    Used by box selection; object order follows the scene (deterministic)."""
+    lo_x, hi_x = sorted((x0, x1))
+    lo_y, hi_y = sorted((y0, y1))
+    ids, centres = [], []
+    for oid in scene.objects:
+        if not scene.is_effectively_visible(oid):
+            continue
+        b = scene.world_bounds([oid])
+        if b is None:
+            continue
+        ids.append(oid)
+        centres.append((np.asarray(b[0], float) + np.asarray(b[1], float)) / 2)
+    if not ids:
+        return []
+    xy, ok = camera.project(np.array(centres), width, height)
+    return [oid for oid, (x, y), vis in zip(ids, xy, ok)
+            if vis and lo_x <= x <= hi_x and lo_y <= y <= hi_y]

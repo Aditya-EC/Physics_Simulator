@@ -33,12 +33,18 @@ Open one and press **F5** to run it:
 
 - **Add objects** by dragging them from the *Object Library* into the viewport (they rest on the
   work plane or snap to surfaces), by double-clicking a library item, or with *Objects ▸ Add Object*.
-- **Select** objects by clicking, or in the *Scene Hierarchy*. Ctrl-click adds to the selection.
+- **Select** objects by clicking, or in the *Scene Hierarchy*. Shift-click adds and Ctrl-click
+  toggles. With the Select tool (Q), dragging a rectangle on empty space selects every visible
+  object whose centre is inside it (Shift adds, Ctrl toggles).
 - **Transform** them with the gizmo: Q select, W move, E rotate, R scale; toggle global/local axes in
   the toolbar.
   Grid, rotation and scale snapping, and the work plane, are in *Scene ▸ Snapping*.
-- **Navigate** the camera: left-drag on empty space (or Alt + left-drag anywhere) orbits, middle or
-  right drag (or Shift + left drag) pans, and the wheel zooms towards the cursor. *View* has the standard views, *Fit Entire Scene* (Home) and camera follow modes.
+- **Navigate** the camera:
+  - left-drag on empty space orbits (in the Select tool, where it draws a selection box, use
+    Alt + left-drag)
+  - middle or right drag (or Shift + left drag) pans
+  - the wheel zooms towards the cursor
+  *View* has the standard views, *Fit Entire Scene* (Home) and camera follow modes.
 - **Group** objects into assemblies (*Scene ▸ Group*, Ctrl+G). Children move with their parent,
   and a simulated assembly moves as one rigid body.
 - Every edit can be undone (Ctrl+Z) and redone (Ctrl+Y). The *History* panel lists every step.
