@@ -45,7 +45,11 @@ class SimulationSettings:
     pacing: PacingMode = PacingMode.REAL_TIME
     duration_policy: DurationPolicy = DurationPolicy.FINAL_PARTIAL_STEP
     max_catch_up_steps: int = 10      # per scheduler tick when behind schedule
-    record_every_n_steps: int = 1
+    record_every_n_steps: int = 1     # data recording interval, independent of Δt and the render rate
+    record_enabled: bool = True
+    record_max_mb: float = 256.0      # memory limit of the recording
+    record_overflow: str = "decimate"  # decimate | window | stop (see psim.recording.recording)
+    record_process_outputs: bool = True
     integrator: str = "semi_implicit_euler"
     breakpoints: list = field(default_factory=list)  # simulated times at which the run pauses
     min_delta_time: float = 1e-9
@@ -68,6 +72,10 @@ class SimulationSettings:
             errors.append("Maximum catch-up steps must be at least 1")
         if self.record_every_n_steps < 1:
             errors.append("Recording interval must be at least 1 step")
+        if not (math.isfinite(self.record_max_mb) and 1 <= self.record_max_mb <= 65536):
+            errors.append("Recording memory limit must be between 1 MB and 64 GB")
+        if self.record_overflow not in ("decimate", "window", "stop"):
+            errors.append("Recording overflow policy must be decimate, window or stop")
         from .integrators import INTEGRATORS
         if self.integrator not in INTEGRATORS:
             errors.append(f"Unknown integrator '{self.integrator}'")
@@ -117,6 +125,10 @@ class SimulationSettings:
                     v = str(v)
                 elif k == "breakpoints":
                     v = sorted(float(b) for b in v)
+                elif isinstance(getattr(s, k), bool):
+                    v = bool(v)
+                elif isinstance(getattr(s, k), str):
+                    v = str(v)
                 elif isinstance(getattr(s, k), int):
                     v = int(v)
                 else:

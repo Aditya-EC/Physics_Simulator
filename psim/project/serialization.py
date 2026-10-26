@@ -20,6 +20,7 @@ assignments — are still read):
       "view":       <ViewSettings.to_dict()>,
       "simulation": <SimulationSettings.to_dict()>,
       "ui":         {"layout": <base64 Qt window state>}   (optional)
+      "plots":      [<PlotSpec.to_dict()>...]              (optional; recorded data is not stored)
     }
 
 Project files are pure data. Loading never evaluates code: every field is
@@ -60,6 +61,7 @@ class ProjectData:
     view: ViewSettings = field(default_factory=ViewSettings)
     simulation: SimulationSettings = field(default_factory=SimulationSettings)
     ui: dict = field(default_factory=dict)
+    plots: list[dict] = field(default_factory=list)   # PlotSpec dicts of the plot workspace
     warnings: list[str] = field(default_factory=list)
 
 
@@ -90,6 +92,7 @@ def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dic
         "view": data.view.to_dict(),
         "simulation": data.simulation.to_dict(),
         "ui": dict(data.ui),
+        "plots": [dict(p) for p in data.plots],
     }
 
 
@@ -255,6 +258,13 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
         data.warnings += [f"Simulation settings: {e}" for e in data.simulation.validate()]
     if isinstance(raw.get("metadata"), dict):
         data.metadata = {str(k): str(v) for k, v in raw["metadata"].items()}
+    if isinstance(raw.get("plots"), list):
+        from ..recording.plot_spec import PlotSpec, PlotSpecError
+        for i, p in enumerate(raw["plots"]):
+            try:
+                data.plots.append(PlotSpec.from_dict(p).to_dict())
+            except PlotSpecError as exc:
+                data.warnings.append(f"Plot #{i + 1} skipped: {exc}")
     if isinstance(raw.get("ui"), dict):
         data.ui = {k: v for k, v in raw["ui"].items() if isinstance(v, str)}
     return data

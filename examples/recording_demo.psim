@@ -1,0 +1,1017 @@
+{
+ "format": "psim-project",
+ "format_version": 2,
+ "app_version": "0.1.0",
+ "metadata": {
+  "title": "Data Recording & Plots Demo",
+  "created": "2026-10-26T04:46:35+00:00",
+  "modified": "2026-10-26T04:46:35+00:00"
+ },
+ "id_counter": 5,
+ "objects": [
+  {
+   "id": "OBJ-000001",
+   "type": "basic.plane",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 14.0,
+    "width": 8.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "name": "Ground",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.32,
+    0.34,
+    0.38
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 5.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000002",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.12,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {
+    "name": true,
+    "velocity": true,
+    "velocity_arrow": true
+   },
+   "custom": [],
+   "trajectory": {
+    "enabled": true,
+    "arrows": true,
+    "arrow_spacing": 0.25,
+    "time_labels": true,
+    "label_spacing": 0.5
+   },
+   "name": "Projectile",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -6.0,
+    -2.0,
+    0.12
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.5,
+    0.2
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "mass",
+   "density": 1000.0,
+   "mass_input": 0.4,
+   "linear_velocity": [
+    7.0,
+    0.0,
+    8.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000003",
+   "type": "body.point_mass",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "display_radius": 0.12
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "trajectory": {
+    "enabled": true,
+    "color": [
+     0.35,
+     0.75,
+     1.0
+    ]
+   },
+   "name": "Mass A",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -1.0,
+    2.0,
+    1.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.72,
+    0.25
+   ],
+   "opacity": 1.0,
+   "material": "Glossy Plastic",
+   "metallic": 0.0,
+   "roughness": 0.25,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "mass",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000004",
+   "type": "body.point_mass",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "display_radius": 0.12
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "trajectory": {
+    "enabled": true,
+    "color": [
+     0.55,
+     0.9,
+     0.45
+    ]
+   },
+   "name": "Mass B",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.6,
+    2.0,
+    1.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.72,
+    0.25
+   ],
+   "opacity": 1.0,
+   "material": "Glossy Plastic",
+   "metallic": 0.0,
+   "roughness": 0.25,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "mass",
+   "density": 1000.0,
+   "mass_input": 2.0,
+   "linear_velocity": [
+    -0.5,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  }
+ ],
+ "processes": [
+  {
+   "uid": "PRC-0001",
+   "process": "dyn.gravity",
+   "targets": {
+    "ids": [
+     "OBJ-000002"
+    ],
+    "types": [],
+    "tags": []
+   },
+   "params": {
+    "g": [
+     0.0,
+     0.0,
+     -9.80665
+    ]
+   },
+   "enabled": true,
+   "label": "Earth gravity"
+  },
+  {
+   "uid": "PRC-0002",
+   "process": "lib.quadratic_drag",
+   "targets": {
+    "ids": [
+     "OBJ-000002"
+    ],
+    "types": [],
+    "tags": []
+   },
+   "params": {
+    "rho": 1.225,
+    "cd": 0.47,
+    "area": 0.045
+   },
+   "enabled": true,
+   "label": ""
+  },
+  {
+   "uid": "PRC-0003",
+   "process": "dyn.spring",
+   "targets": {
+    "ids": [
+     "OBJ-000003",
+     "OBJ-000004"
+    ],
+    "types": [],
+    "tags": []
+   },
+   "params": {
+    "stiffness": 30.0,
+    "rest_length": 2.0,
+    "damping": 0.2
+   },
+   "enabled": true,
+   "label": ""
+  }
+ ],
+ "process_counter": 4,
+ "global_parameters": [],
+ "reference_frames": [],
+ "frame_counter": 1,
+ "assets": {
+  "meshes": {}
+ },
+ "units": {
+  "preferred": {},
+  "property_units": {},
+  "custom_units": []
+ },
+ "view": {
+  "grids": {
+   "XY": {
+    "plane": "XY",
+    "visible": true,
+    "color": [
+     0.55,
+     0.58,
+     0.64
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "YZ": {
+    "plane": "YZ",
+    "visible": false,
+    "color": [
+     0.62,
+     0.55,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "XZ": {
+    "plane": "XZ",
+    "visible": false,
+    "color": [
+     0.55,
+     0.62,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   }
+  },
+  "axes": {
+   "visible": true,
+   "origin": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "length": 1.5,
+   "arrow_size": 1.0,
+   "line_width": 3.0,
+   "x_color": [
+    0.91,
+    0.3,
+    0.28
+   ],
+   "y_color": [
+    0.42,
+    0.8,
+    0.32
+   ],
+   "z_color": [
+    0.32,
+    0.55,
+    0.97
+   ],
+   "show_labels": true,
+   "show_origin_marker": true,
+   "show_view_triad": true
+  },
+  "snap": {
+   "grid_snap": true,
+   "translate_increment": 0.25,
+   "rotate_snap": false,
+   "rotate_increment_deg": 15.0,
+   "scale_snap": false,
+   "scale_increment": 0.1,
+   "surface_snap": true,
+   "work_plane": "XY",
+   "work_plane_offset": 0.0
+  },
+  "environment": {
+   "background_top": [
+    0.17,
+    0.18,
+    0.2
+   ],
+   "background_bottom": [
+    0.1,
+    0.105,
+    0.115
+   ],
+   "shadows": true,
+   "ground_shadow": true,
+   "ambient": 0.35,
+   "light_azimuth_deg": 35.0,
+   "light_elevation_deg": 55.0,
+   "light_intensity": 2.6,
+   "show_labels": true,
+   "show_local_axes": false,
+   "highlight_color": [
+    0.98,
+    0.62,
+    0.18
+   ],
+   "show_stats": true,
+   "msaa_samples": 4
+  },
+  "camera": {
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "distance": 9.0,
+   "azimuth_deg": -55.0,
+   "elevation_deg": 28.0,
+   "fov_deg": 45.0,
+   "orthographic": false
+  },
+  "bookmarks": {}
+ },
+ "simulation": {
+  "delta_time": 0.002,
+  "update_rate_hz": 100.0,
+  "duration": 2.0,
+  "render_fps": 60.0,
+  "pacing": "real_time",
+  "duration_policy": "final_partial_step",
+  "max_catch_up_steps": 10,
+  "record_every_n_steps": 5,
+  "record_enabled": true,
+  "record_max_mb": 256.0,
+  "record_overflow": "decimate",
+  "record_process_outputs": true,
+  "integrator": "rk4",
+  "breakpoints": [],
+  "min_delta_time": 1e-09,
+  "max_delta_time": 10.0,
+  "min_update_rate_hz": 0.1,
+  "max_update_rate_hz": 100000.0
+ },
+ "ui": {},
+ "plots": [
+  {
+   "title": "Projectile height and speed",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000002",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "z": null,
+     "label": "height",
+     "color": [
+      0.3,
+      0.62,
+      0.95
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000002",
+      "quantity": "speed",
+      "component": "",
+      "frame": null
+     },
+     "z": null,
+     "label": "speed",
+     "color": [
+      0.95,
+      0.55,
+      0.2
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "height [m] / speed [m/s]",
+   "z_label": ""
+  },
+  {
+   "title": "Projectile path (side view)",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": "OBJ-000002",
+      "quantity": "com",
+      "component": "x",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000002",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "z": null,
+     "label": "with drag",
+     "color": [
+      0.95,
+      0.55,
+      0.2
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "o",
+     "marker_size": 4
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  },
+  {
+   "title": "Oscillator positions",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000003",
+      "quantity": "position",
+      "component": "x",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.35,
+      0.8,
+      0.45
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000004",
+      "quantity": "position",
+      "component": "x",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.85,
+      0.35,
+      0.55
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  },
+  {
+   "title": "Spring force vs displacement (Mass A)",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": "OBJ-000003",
+      "quantity": "displacement",
+      "component": "x",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000003",
+      "quantity": "net_force",
+      "component": "x",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.65,
+      0.5,
+      0.95
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  },
+  {
+   "title": "Kinetic energies",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000002",
+      "quantity": "kinetic_energy",
+      "component": "",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.3,
+      0.62,
+      0.95
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000003",
+      "quantity": "kinetic_energy",
+      "component": "",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.95,
+      0.55,
+      0.2
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000004",
+      "quantity": "kinetic_energy",
+      "component": "",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.35,
+      0.8,
+      0.45
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  },
+  {
+   "title": "Trajectories",
+   "kind": "3d",
+   "series": [
+    {
+     "x": {
+      "object": "OBJ-000002",
+      "quantity": "com",
+      "component": "x",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000002",
+      "quantity": "com",
+      "component": "y",
+      "frame": null
+     },
+     "z": {
+      "object": "OBJ-000002",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "label": "Projectile",
+     "color": [
+      0.3,
+      0.62,
+      0.95
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": "OBJ-000003",
+      "quantity": "com",
+      "component": "x",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000003",
+      "quantity": "com",
+      "component": "y",
+      "frame": null
+     },
+     "z": {
+      "object": "OBJ-000003",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "label": "Mass A",
+     "color": [
+      0.95,
+      0.55,
+      0.2
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": "OBJ-000004",
+      "quantity": "com",
+      "component": "x",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000004",
+      "quantity": "com",
+      "component": "y",
+      "frame": null
+     },
+     "z": {
+      "object": "OBJ-000004",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "label": "Mass B",
+     "color": [
+      0.35,
+      0.8,
+      0.45
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  }
+ ]
+}

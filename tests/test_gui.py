@@ -28,6 +28,8 @@ def window(qapp, requires_gl, tmp_path):
     w.undo.setClean()
     w._extra_dirty = False
     w.close()
+    w.deleteLater()  # closed windows would otherwise accumulate (and be restyled by every theme change)
+    QTest.qWait(0)
 
 
 def _render(w):
@@ -289,3 +291,37 @@ def test_reference_frames_render_and_menu(window):
                for y in range(0, before.height(), 4)) < diff / 5
     w.show_relative_motion()
     assert w.bottom_tabs.currentWidget() is w.relative_motion
+
+
+def test_trajectory_and_3d_plot_render_after_a_run(window, qtbot):
+    from psim.processes.process_base import TargetFilter
+    from psim.simulation.settings import PacingMode
+    w = window
+    w.project.view.axes.visible = False
+    w.project.view.grids["XY"].visible = False
+    ball = w.editor.add_new("basic.sphere", position=[-2, 0, 0.5], params={"radius": 0.1})
+    w.editor.set_property([ball.id], "linear_velocity", [2.0, 0, 3.0])
+    w.editor.assign_process("dyn.gravity", TargetFilter(ids=[ball.id]))
+    w.editor.set_property([ball.id], "trajectory.enabled", True)
+    w.editor.set_property([ball.id], "trajectory.width", 4.0)
+    w.project.simulation.pacing = PacingMode.AS_FAST_AS_POSSIBLE
+    w.project.simulation.duration = 0.6
+    w.viewport.frame_objects(None)
+    assert w.sim.start()
+    qtbot.waitUntil(lambda: w.sim.state == "finished", timeout=10000)
+    w.sim.stop()
+    assert w.sim.recording is not None and w.sim.recording.n > 50
+    with_path = _render(w).copy()
+    w.editor.set_property([ball.id], "trajectory.enabled", False)
+    without = _render(w)
+    diff = sum(with_path.pixel(x, y) != without.pixel(x, y) for x in range(0, with_path.width(), 3)
+               for y in range(0, with_path.height(), 3))
+    assert diff > 40
+    w.show_plots()
+    w.scene.set_selection([ball.id])
+    w.plot_workspace.add_quick("trajectory3d")
+    QTest.qWait(200)
+    view = w.plot_workspace.plots[-1][1]
+    img = view.grab_image()
+    colors = {img.pixel(x, y) for x in range(0, img.width(), 7) for y in range(0, img.height(), 7)}
+    assert len(colors) > 10

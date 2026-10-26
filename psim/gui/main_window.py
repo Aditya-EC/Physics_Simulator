@@ -37,6 +37,9 @@ from .object_library import ObjectLibraryPanel
 from .outliner import Outliner
 from .properties_panel import PropertiesPanel
 from .simulation_controller import SimulationController
+from ..rendering.trajectories import TrajectoryBuilder
+from .plots.workspace import QUICK_PLOTS, PlotWorkspace
+from .recording_panel import RecordingPanel
 from .relative_motion_panel import RelativeMotionPanel
 from .simulation_panels import ProcessesPanel, SimulationFields
 from .dialogs.process_dialogs import AssignProcessDialog, DependencyDialog, ProcessDocumentationDialog
@@ -148,8 +151,15 @@ class MainWindow(QMainWindow):
         self.bottom_tabs.addTab(self.processes_panel, icons.icon("function"), "Processes")
         self.relative_motion = RelativeMotionPanel(self.scene, self.units)
         self.bottom_tabs.addTab(self.relative_motion, icons.icon("frame_axes"), "Relative Motion")
+        self.recording_panel = RecordingPanel(self.scene, self.units, lambda: self.sim.recording,
+                                              lambda: self.project.simulation)
+        self.bottom_tabs.addTab(self.recording_panel, icons.icon("history"), "Recording")
         self.bottom_tabs.addTab(self.performance, icons.icon("activity"), "Performance")
         self.dock_bottom = self._dock("Panels", "dock_bottom", self.bottom_tabs, B)
+        self.plot_workspace = PlotWorkspace(self.scene, self.units, lambda: self.sim.recording)
+        self.dock_plots = self._dock("Plot Workspace", "dock_plots", self.plot_workspace, B)
+        self.tabifyDockWidget(self.dock_bottom, self.dock_plots)
+        self.dock_bottom.raise_()
         self.resizeDocks([self.dock_library, self.dock_inspector], [300, 340], Qt.Orientation.Horizontal)
         self.resizeDocks([self.dock_bottom], [190], Qt.Orientation.Vertical)
         self.resizeDocks([self.dock_library, self.dock_outliner], [520, 260], Qt.Orientation.Vertical)
@@ -281,6 +291,16 @@ class MainWindow(QMainWindow):
           tip="Attach a new named frame to the selected object, at its origin")
         A("coord.relative", "Relative &Motion Panel", self.show_relative_motion, icon="activity",
           tip="Position, velocity and acceleration of an object expressed in / relative to any frame")
+        A("plots.workspace", "Plot &Workspace", self.show_plots, icon="chart", shortcut="Ctrl+Shift+P")
+        A("plots.new2d", "New &2D Plot…", lambda: (self.show_plots(), self.plot_workspace.new_plot("2d")),
+          icon="chart")
+        A("plots.new3d", "New &3D Plot…", lambda: (self.show_plots(), self.plot_workspace.new_plot("3d")),
+          icon="cube")
+        A("data.panel", "Data &Recording Panel", self.show_recording_panel, icon="history")
+        A("data.csv", "Export Recorded Data (&CSV)…", self.export_recorded_csv, icon="table")
+        A("data.json", "Export Recorded Data (&JSON)…", self.export_recorded_json, icon="export")
+        A("data.report", "Simulation &Report…", self.generate_report, icon="info")
+        A("data.clear", "Clear Recording", self.sim_clear_recording, icon="trash")
         A("units.dialog", "&Units && Custom Units…", self.open_units, icon="ruler")
         A("units.si", "Reset Display Units to &SI", self.reset_units)
         A("units.inspector", "&Formula Unit Inspector…", self.open_unit_inspector, icon="function",
@@ -391,7 +411,12 @@ class MainWindow(QMainWindow):
         m.addActions([a["coord.frames"], a["coord.add_frame"], a["coord.relative"]])
 
         m = mb.addMenu("Pl&ots")
-        self._planned(m, "2D/3D scientific plotting workspace — Phase 6")
+        m.addActions([a["plots.workspace"], a["plots.new2d"], a["plots.new3d"]])
+        quick = m.addMenu("&Quick Plot of Selection")
+        for key, text in QUICK_PLOTS:
+            quick.addAction(text, lambda k=key: (self.show_plots(), self.plot_workspace.add_quick(k)))
+        m.addSeparator()
+        m.addActions([a["data.panel"], a["data.csv"], a["data.json"], a["data.report"], a["data.clear"]])
 
         m = mb.addMenu("&Units")
         m.addActions([a["units.dialog"], a["units.si"]])
@@ -548,6 +573,15 @@ class MainWindow(QMainWindow):
         self.undo.undoTextChanged.connect(self._update_undo_actions)
         self.undo.redoTextChanged.connect(self._update_undo_actions)
         self.sim.stateChanged.connect(self._on_sim_state)
+        self.trajectories = TrajectoryBuilder()
+        self.viewport.trajectory_provider = self._trajectory_paths
+        self.sim.recordingChanged.connect(self._on_recording_changed)
+        self.plot_workspace.changed.connect(self._mark_dirty)
+        self.recording_panel.intervalChanged.connect(self.sim.set_record_interval)
+        self.recording_panel.exportCsvRequested.connect(self.export_recorded_csv)
+        self.recording_panel.exportJsonRequested.connect(self.export_recorded_json)
+        self.recording_panel.reportRequested.connect(self.generate_report)
+        self.recording_panel.clearRequested.connect(self.sim_clear_recording)
         self.sim.statsUpdated.connect(self._on_sim_stats)
         self.sim.info.connect(lambda m: self.bus.info(m, "simulation"))
         self.sim.warning.connect(lambda m: self.bus.warning(m, "simulation"))
@@ -560,6 +594,8 @@ class MainWindow(QMainWindow):
             lambda: ProcessDocumentationDialog(self.units, self).exec())
         self.inspector.assignProcessRequested.connect(self.assign_process)
         self.inspector.editAssignmentRequested.connect(self.edit_assignment)
+        self.inspector.clearTrajectoryRequested.connect(self.clear_trajectory)
+        self.inspector.exportTrajectoryRequested.connect(self.export_trajectory)
         self.scene.processesChanged.connect(self._mark_dirty_processes)
         self.viewport.status_provider = self._viewport_sim_status
         self._sync_sim_fields()
@@ -672,6 +708,8 @@ class MainWindow(QMainWindow):
         self.units.load_dict({})
         self._apply_view_settings(self.project.view)
         self._sync_sim_fields()
+        self.plot_workspace.clear_plots(emit=False)
+        self.recording_panel.reload_settings()
         self.project_path = None
         self._extra_dirty = False
 
@@ -731,8 +769,9 @@ class MainWindow(QMainWindow):
         self.library_panel.rebuild()
         if data.ui.get("layout"):
             self.restoreState(QByteArray.fromBase64(data.ui["layout"].encode()))
-        for w in data.warnings:
+        for w in data.warnings + self.plot_workspace.load_specs(data.plots):
             self.bus.warning(w, "project")
+        self.recording_panel.reload_settings()
         self._extra_dirty = False
         self.undo.setClean()
         self._update_units_label()
@@ -763,6 +802,7 @@ class MainWindow(QMainWindow):
 
     def _snapshot(self) -> dict:
         self.project.ui["layout"] = bytes(self.saveState().toBase64()).decode()
+        self.project.plots = self.plot_workspace.specs()
         if self.project_path:
             self.project.metadata["path"] = self.project_path
         return ser.project_to_dict(self.scene, self.units, self.project)
@@ -784,6 +824,7 @@ class MainWindow(QMainWindow):
     def _save_to(self, path: str) -> bool:
         try:
             self.project.ui["layout"] = bytes(self.saveState().toBase64()).decode()
+            self.project.plots = self.plot_workspace.specs()
             self.project.metadata.setdefault("name", os.path.splitext(os.path.basename(path))[0])
             ser.save_project(path, self.scene, self.units, self.project)
         except (OSError, TypeError, ValueError) as exc:
@@ -1034,6 +1075,7 @@ class MainWindow(QMainWindow):
             new = dlg.result_settings
             old = self.project.simulation
             self.project.simulation = new
+            self.recording_panel.reload_settings()
             if self.sim.session_active:
                 for attr, setter in (("delta_time", self.sim.set_delta_time),
                                      ("update_rate_hz", self.sim.set_update_rate),
@@ -1082,6 +1124,124 @@ class MainWindow(QMainWindow):
         if not self.sim.session_active or st is None:
             return ""
         return f"Simulation {st.state}  ·  t = {st.time:.4f} s  ·  step {st.steps:,}"
+
+    # ---- recording & trajectories ------------------------------------------------------------------------------
+    def _trajectory_paths(self) -> list:
+        return self.trajectories.build(self.scene, self.sim.recording)
+
+    def _on_recording_changed(self) -> None:
+        self.trajectories.reset()
+        self.viewport.update()
+        self.plot_workspace.refresh(force=True)
+        self.recording_panel.refresh(force=True)
+
+    def show_plots(self) -> None:
+        self.dock_plots.show()
+        self.dock_plots.raise_()
+
+    def show_recording_panel(self) -> None:
+        self.dock_bottom.show()
+        self.dock_bottom.raise_()
+        self.bottom_tabs.setCurrentWidget(self.recording_panel)
+
+    def sim_clear_recording(self) -> None:
+        self.sim.clear_recording()
+
+    def _require_recording(self, title: str):
+        rec = self.sim.recording
+        if rec is None or not rec.n:
+            QMessageBox.information(self, title, "Nothing recorded yet: run the simulation with data recording "
+                                    "enabled (Plots ▸ Data Recording Panel).")
+            return None
+        return rec
+
+    def _object_names(self) -> dict:
+        rec = self.sim.recording
+        base = dict(rec.meta.get("names", {})) if rec is not None else {}
+        return {**base, **{o.id: o.name for o in self.scene.objects.values()}}
+
+    def export_recorded_csv(self) -> None:
+        from ..recording.export import export_csv
+        from ..recording.variables import Evaluator, Variable, VariableError, info, object_quantities
+        rec = self._require_recording("Export CSV")
+        if rec is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export Recorded Data", "recording.csv", "CSV (*.csv)")
+        if not path:
+            return
+        variables = []
+        for oid in [k[0] for k in rec.keys() if len(k) == 2 and k[1] == "origin"]:
+            for q in object_quantities(rec, oid):
+                if q in ("mass", "distance", "displacement", "speed", "momentum", "angular_momentum"):
+                    continue
+                var = Variable(oid, q)
+                comps = ("x", "y", "z") if info(var).vector else ("",)
+                variables += [Variable(oid, q, c) for c in comps]
+        try:
+            n = export_csv(path, Evaluator(rec, self.scene), variables, self.units, self._object_names())
+        except (OSError, VariableError) as exc:
+            QMessageBox.warning(self, "Export CSV", str(exc))
+            return
+        self.bus.info(f"Exported {n} samples × {len(variables) + 1} columns to {path}", "recording")
+
+    def export_recorded_json(self) -> None:
+        from ..recording.export import export_json
+        rec = self._require_recording("Export JSON")
+        if rec is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export Recorded Data", "recording.json", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            export_json(path, rec, self._object_names())
+        except OSError as exc:
+            QMessageBox.warning(self, "Export JSON", str(exc))
+            return
+        self.bus.info(f"Exported the recording ({rec.n} samples, SI units) to {path}", "recording")
+
+    def generate_report(self) -> None:
+        from ..recording.export import generate_report
+        rec = self._require_recording("Simulation Report")
+        if rec is None:
+            return
+        name = self.project.metadata.get("name") or (os.path.splitext(os.path.basename(self.project_path))[0]
+                                                     if self.project_path else "Simulation")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Simulation Report", f"{name} report.html", "HTML (*.html)")
+        if not path:
+            return
+        try:
+            generate_report(path, rec, self.scene, self.units, f"{name} — simulation report",
+                            self.plot_workspace.images())
+        except OSError as exc:
+            QMessageBox.warning(self, "Simulation Report", str(exc))
+            return
+        self.bus.info(f"Report written to {path}", "recording")
+
+    def clear_trajectory(self, ids: list[str] | None = None) -> None:
+        for oid in ids if ids is not None else self.scene.selection:
+            self.trajectories.clear(oid, self.sim.recording)
+        self.viewport.update()
+
+    def export_trajectory(self, oid: str) -> None:
+        from ..recording.export import export_trajectory_csv
+        from ..recording.variables import Evaluator, VariableError
+        rec = self.sim.recording
+        if rec is None or not rec.has((oid, "origin")):
+            QMessageBox.information(self, "Export Trajectory", "No recorded path for this object yet: run the "
+                                    "simulation with data recording enabled (Simulation ▸ Simulation Settings).")
+            return
+        obj = self.scene.get(oid)
+        path, _ = QFileDialog.getSaveFileName(self, "Export Trajectory", f"{obj.name}_trajectory.csv", "CSV (*.csv)")
+        if not path:
+            return
+        point = "position" if obj.trajectory_setting("point") == "origin" else "com"
+        try:
+            n = export_trajectory_csv(path, Evaluator(rec, self.scene), oid, obj.trajectory_setting("frame") or None,
+                                      point, self.units)
+        except (OSError, VariableError) as exc:
+            QMessageBox.warning(self, "Export Trajectory", str(exc))
+            return
+        self.bus.info(f"Exported {n} trajectory points of {obj.name} to {path}", "recording")
 
     def _mark_dirty_processes(self) -> None:
         self._update_title()

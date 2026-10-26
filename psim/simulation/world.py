@@ -117,6 +117,7 @@ class EngineWorld:
         self.written: set[tuple[int, str]] = set()        # ever written by update processes this run
         self.updated_values: dict[tuple[int, str], object] = {}
         self.skips: list[str] = []
+        self.quiet = False      # True while the recorder re-evaluates processes (no duplicate skip reports)
         self.x = self.q = self.v = self.w = None
 
     def set_bodies(self, body_ids: list[str]) -> None:
@@ -153,7 +154,7 @@ class EngineWorld:
             raise FormulaRuntimeError(f"{self.ids[ref]} is not simulated by this process") from None
 
     def report_skip(self, process_id: str, message: str) -> None:
-        if len(self.skips) < 100:
+        if not self.quiet and len(self.skips) < 100:
             self.skips.append(f"{process_id}: {message}")
 
     # ---- World protocol -------------------------------------------------------------------------------

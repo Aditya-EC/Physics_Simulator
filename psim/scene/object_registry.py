@@ -22,7 +22,8 @@ from .geometry import Mesh
 MASS_MODELS = ("solid", "shell", "point", "none")
 
 ALL_OVERLAYS = ("name", "id", "position", "orientation", "velocity", "acceleration", "angular_velocity",
-                "mass", "force", "torque", "custom", "local_axes", "bbox", "com")
+                "angular_acceleration", "mass", "force", "torque", "custom", "local_axes", "bbox", "com",
+                "velocity_arrow", "acceleration_arrow", "force_arrow", "angular_velocity_arrow")
 
 CATEGORIES = (
     "Basic Solids", "Composite Shapes", "Mechanical Components", "Rigid Bodies", "Reference Frames",

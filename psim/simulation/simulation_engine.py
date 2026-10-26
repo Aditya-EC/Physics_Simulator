@@ -74,6 +74,12 @@ class SimulationEngine:
         self.alpha = np.zeros((n, 3))
         self.state = self._apply_prescribed(0.0, state)
         self.finished = False
+        self.sampler = None     # EngineSampler when data recording is attached
+
+    def attach_recording(self, recording, process_outputs: bool = True) -> None:
+        """Record samples into `recording` every recording.interval_steps steps (see psim.recording.sampler)."""
+        from ..recording.sampler import EngineSampler
+        self.sampler = EngineSampler(self, recording, process_outputs)
 
     # ---- process evaluation -----------------------------------------------------------------
     def _apply_prescribed(self, t: float, s: SimState) -> SimState:
@@ -96,7 +102,13 @@ class SimulationEngine:
                 s.v[p.idx] = out["velocity"] + np.cross(s.w[p.idx], com[p.idx])
         return s
 
-    def _deriv(self, t: float, s: SimState) -> tuple[np.ndarray, np.ndarray]:
+    def _deriv(self, t: float, s: SimState, quiet: bool = False) -> tuple[np.ndarray, np.ndarray]:
+        if quiet and self.world is not None:
+            self.world.quiet = True
+            try:
+                return self._deriv(t, s)
+            finally:
+                self.world.quiet = False
         stage = self._apply_prescribed(t, s)
         # write prescribed values back so the integrator stage uses them
         s.x[:], s.v[:], s.q[:], s.w[:] = stage.x, stage.v, stage.q, stage.w
@@ -121,16 +133,22 @@ class SimulationEngine:
             self.finished = True
             return False
         t = self.clock.time
+        step = self.clock.steps
+        old = self.state
         updates = self._run_updates(t, dt)
         new, acc, alpha = integrate(self.settings.integrator, self.state.copy(), t, dt, self._deriv,
                                     self.plan.integrate_translation, self.plan.integrate_rotation)
         self._apply_updates(updates, new)
         new = self._apply_prescribed(t + dt, new)
         self._check_finite(new, t + dt)
+        if self.sampler is not None:
+            self.sampler.after_step(t, step, old, acc, alpha, new, dt)
         self.state, self.acc, self.alpha = new, acc, alpha
         self.clock.advance(dt)
         if self.clock.next_step_dt(self.settings.duration, self.settings.duration_policy) is None:
             self.finished = True
+            if self.sampler is not None:
+                self.sampler.final()
         return True
 
     def _run_updates(self, t: float, dt: float) -> dict:
@@ -230,6 +248,8 @@ class SimulationEngine:
         n = len(bodies.ids)
         self.acc, self.alpha = np.zeros((n, 3)), np.zeros((n, 3))
         self.state = self._apply_prescribed(self.clock.time, state)
+        if self.sampler is not None:
+            self.sampler.refresh_schema()
 
     # ---- output ------------------------------------------------------------------------------------
     def snapshot(self) -> Snapshot:

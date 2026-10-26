@@ -180,6 +180,35 @@ def _frames_demo(scene: Scene, editor: SceneEditor) -> None:
     editor.scene.set_selection([ball.id])
 
 
+def _recording_demo(scene: Scene, editor: SceneEditor) -> None:
+    """Data recording: a projectile with air drag and a two-mass oscillator, with trajectories and arrows."""
+    from ..processes.process_base import TargetFilter
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 14, "width": 8})
+    ground.color = [0.32, 0.34, 0.38]
+    ball = scene.create_object("basic.sphere", name="Projectile", params={"radius": 0.12}, position=[-6.0, -2.0, 0.12])
+    ball.mass_mode, ball.mass_input = "mass", 0.4
+    ball.linear_velocity = [7.0, 0.0, 8.0]
+    ball.color = [0.95, 0.50, 0.20]
+    ball.overlays.update(name=True, velocity=True, velocity_arrow=True)
+    left = scene.create_object("body.point_mass", name="Mass A", position=[-1.0, 2.0, 1.0])
+    right = scene.create_object("body.point_mass", name="Mass B", position=[1.6, 2.0, 1.0])
+    left.mass_input, right.mass_input = 1.0, 2.0
+    left.linear_velocity = [1.0, 0.0, 0.0]     # zero total momentum: the pair oscillates without drifting
+    right.linear_velocity = [-0.5, 0.0, 0.0]
+    editor.add_objects([ground, ball, left, right], text="Recording demo", select=False)
+    for path, value in (("trajectory.enabled", True), ("trajectory.arrows", True), ("trajectory.arrow_spacing", 0.25),
+                        ("trajectory.time_labels", True), ("trajectory.label_spacing", 0.5)):
+        editor.set_property([ball.id], path, value)
+    editor.set_property([left.id], "trajectory.enabled", True)
+    editor.set_property([left.id], "trajectory.color", [0.35, 0.75, 1.0])
+    editor.set_property([right.id], "trajectory.enabled", True)
+    editor.set_property([right.id], "trajectory.color", [0.55, 0.9, 0.45])
+    editor.assign_process("dyn.gravity", TargetFilter(ids=[ball.id]), label="Earth gravity")
+    editor.assign_process("lib.quadratic_drag", TargetFilter(ids=[ball.id]), {"rho": 1.225, "cd": 0.47, "area": 0.045})
+    editor.assign_process("dyn.spring", TargetFilter(ids=[left.id, right.id]),
+                          {"stiffness": 30.0, "rest_length": 2.0, "damping": 0.2})
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
@@ -187,4 +216,5 @@ PROJECT_TEMPLATES = {
     "simulation": ("Simulation Demo", _simulation_demo),
     "formulas": ("Formula Processes Demo", _formula_demo),
     "frames": ("Reference Frames Demo", _frames_demo),
+    "recording": ("Data Recording & Plots Demo", _recording_demo),
 }

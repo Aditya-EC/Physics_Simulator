@@ -175,6 +175,8 @@ def window(qapp, requires_gl, tmp_path):
     w.undo.setClean()
     w._extra_dirty = False
     w.close()
+    w.deleteLater()  # closed windows would otherwise accumulate (and be restyled by every theme change)
+    QTest.qWait(0)
 
 
 def test_gui_simulation_controls(window, qtbot):
@@ -221,3 +223,40 @@ def test_gui_inspector_marks_simulated_values(window, qtbot):
     qtbot.waitUntil(lambda: any(b.text() == "S" for b in w.inspector.findChildren(OriginBadge)), timeout=5000)
     w.sim.reset()
     qtbot.waitUntil(lambda: not any(b.text() == "S" for b in w.inspector.findChildren(OriginBadge)), timeout=5000)
+
+
+def test_session_records_data_and_events(session, qtbot):
+    s, e, ctl, settings, msgs = session
+    ball = _falling_ball(e)
+    settings.record_every_n_steps = 5
+    settings.pacing = PacingMode.REAL_TIME
+    settings.update_rate_hz = 200
+    settings.duration = 5.0
+    changed = []
+    ctl.recordingChanged.connect(lambda: changed.append(1))
+    assert ctl.start()
+    rec = ctl.recording
+    assert rec is not None and changed == [1] and rec.interval_steps == 5
+    qtbot.waitUntil(lambda: rec.n >= 4, timeout=5000)
+    ctl.pause()
+    qtbot.waitUntil(lambda: ctl.state == "paused", timeout=5000)
+    ctl.start()
+    qtbot.waitUntil(lambda: rec.n >= 8, timeout=5000)
+    ctl.stop()
+    steps = rec.steps()
+    assert np.all(np.diff(steps[:-1]) == 5) and steps[-1] >= steps[-2]   # final sample at the stop time
+    t_stop = rec.times()[-1]
+    z = rec.column((ball.id, "origin"))[:, 2]
+    assert z[-1] == pytest.approx(s.world_pose(ball.id)[0][2], abs=1e-12)  # the end state is recorded
+    n = steps[-1]   # semi-implicit Euler: z_n = z0 - g·Δt²·n(n+1)/2
+    assert t_stop == pytest.approx(n * 0.01) and z[-1] == pytest.approx(5 - 9.80665 * 0.01 ** 2 * n * (n + 1) / 2)
+    kinds = [ev.kind for ev in rec.event_list()]
+    assert kinds[0] == "start" and "pause" in kinds and "resume" in kinds and kinds[-1] == "stop"
+    assert ctl.recording is rec                      # kept after Stop for analysis
+    ctl.clear_recording()
+    assert ctl.recording is None and changed == [1, 1]
+    settings.record_enabled = False
+    settings.pacing = PacingMode.AS_FAST_AS_POSSIBLE
+    settings.duration = 0.1
+    assert ctl.start()
+    assert ctl.recording is None

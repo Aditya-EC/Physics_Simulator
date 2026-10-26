@@ -32,6 +32,12 @@ Implemented so far:
   - a strict separation of *expressing* a vector in a frame (rotation only) from motion *relative to*
     a moving frame (transport, Euler, centripetal and Coriolis terms), checked against finite differences
   - derived custom units from unit expressions and a Formula Unit Inspector
+- **Phase 6**, data recording, trajectories and plots:
+  - a data recorder sampling every N simulation steps (independent of Δt and the render rate)
+    with time-consistent values, process outputs, an event log and bounded memory
+  - per-object trajectory markers (global or relative to any frame) and vector-arrow overlays
+  - a plotting workspace with 2D and 3D plots, live updates, synchronized cursors and export
+  - statistics, comparison between objects, CSV/JSON export and an HTML simulation report
 
 ![Main window](docs/screenshot_main.png)
 
@@ -48,6 +54,7 @@ python app.py --template simulation      # start from a built-in project templat
 python app.py examples/simulation_demo.psim   # then press F5 (Start)
 python app.py examples/formula_demo.psim      # formula processes, global parameters, custom outputs
 python app.py examples/frames_demo.psim       # reference frames: open Coordinates ▸ Relative Motion Panel, F5
+python app.py examples/recording_demo.psim    # trajectories and six ready-made plots (Plots ▸ Plot Workspace), F5
 ```
 
 Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`.
@@ -90,10 +97,14 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_developer_gui.py` | developer-mode unlock, process editor (refuses without token, validate with line highlighting, tests, sign & publish), global-parameters dialog with unit conversion |
 | `test_frames.py` | relative position/velocity/acceleration and relative rotation against finite differences in translating and non-uniformly rotating frames (ω ∦ α), points fixed in a frame, representation vs. relative velocity, named-frame validation, attached/translating frames, poses edited in frames, undo, project files, kinematics of children of simulated assemblies, frames and `rel_velocity` in formulas and the engine, unsimulated objects at rest |
 | `test_coordinates_gui.py` | Reference Frames dialog (one undo step, re-attaching and toggling rotation keep the frame in place, duplicate names), inspector poses and vector components in a named frame, Relative Motion panel on a turntable before and during a run |
+| `test_recording.py` | sampling every N steps incl. the final state, recording never changes the simulation, coarse recordings are exact subsets of fine ones, accelerations consistent with sample times (finite differences, prescribed and discrete-update bodies), per-process outputs sum to the total, carried children, custom outputs, decimate/window/stop policies, no duplicated skip warnings |
+| `test_recording_analysis.py` | frame-relative position/velocity/acceleration from recordings against finite differences, Euler angles, net force/torque, kinetic energy, process forces, time-weighted statistics (uneven sampling), object comparison, CSV/JSON/trajectory export, HTML report, consistent snapshots while recording grows |
+| `test_trajectories.py` | path thinning (interval, maximum points, recent history), incremental vs. full builds, clear/preserve, relative paths attached to the frame's current pose, cache invalidation after decimation, arrows/time-label marks, vector arrows, label units, placement and angular acceleration |
+| `test_plots.py` | plot definitions (round trip, validation), series data in display units, axis titles, cursor read-out, plot editor, workspace (live data, synchronized cursors, save/restore, CSV and image export), recording panel, plots saved in projects |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **346 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 315 pass and 31 native-comparison tests are skipped. This was measured on
+Current result: **373 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 342 pass and 31 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -405,6 +416,80 @@ packaging concern.
 - The position is display only, and the tooltip says so: global coordinates are always measured
   from the world origin. Named frames are the way to measure from elsewhere.
 
+## 3e. What Phase 6 implements (recording, trajectories, plots)
+
+**Data recording** (`psim/recording/recording.py`, `sampler.py`; *Plots ▸ Data Recording Panel*).
+- During every run the engine records a sample every **N simulation steps**. N is set
+  independently of Δt and the render rate (e.g. 1000 steps/s, recording every 10 steps), and can
+  be changed while running.
+- Recorded objects are the simulated bodies plus objects carried by a simulated assembly. Each
+  sample holds:
+  - origin, orientation, centre of mass, velocity, angular velocity, acceleration and angular
+    acceleration
+  - custom properties written by update processes
+  - optionally, the contribution of every force/acceleration process ("process outputs")
+- **Time consistency:**
+  - Each sample pairs the state at t_k with the accelerations the processes computed for that
+    state (the integrator's first stage), at no extra cost.
+  - Prescribed bodies use a central difference of their prescribed velocity.
+  - Bodies moved by discrete update rules use Δv/Δt over the step.
+  - The final state is recorded when the run ends or is stopped.
+  - Tests verify that recording never changes the simulation and that a coarse recording is an
+    exact subset of a fine one.
+- **Memory management:** a per-recording memory limit (default 256 MB) with a policy for when it
+  is full:
+  - halve the resolution of the whole run (decimate)
+  - keep recent history
+  - stop recording
+- An **event log** records start, pause, resume, finish, stop, breakpoints, live changes,
+  warnings and errors with simulated time and step.
+- The recording of the last run is kept after Stop (and Reset) until the next run, or until it is
+  cleared.
+
+**Variables** (`variables.py`). Plots, statistics and exports read **recorded data only**.
+- Per object: position, centre of mass, velocity, acceleration, angular velocity and angular
+  acceleration, Euler angles, speed, displacement, distance travelled, momentum, angular
+  momentum, kinetic energy, net force (m·a), net torque (I·α), mass, custom properties, and
+  per-process force/torque/acceleration contributions.
+- Components x/y/z or magnitude can be selected.
+- Kinematic quantities can be measured **relative to any frame** (object, parent, named frame),
+  using the Phase 5 relative-motion formulas, vectorised over samples.
+
+**Trajectory markers** (inspector ▸ *Trajectory*; `psim/rendering/trajectories.py`).
+- Per object: on/off, colour, thickness, opacity, sampling interval, maximum points, complete or
+  recent history, centre of mass or origin, direction arrows, time labels, and keep after
+  stopping. Each path can be cleared and exported to CSV.
+- A path can be recorded in any frame: a relative path is drawn attached to the frame's
+  *current* pose, i.e. as seen by an observer riding the frame.
+- Paths are built incrementally from the recording, so only new samples are processed each frame.
+
+**Overlays.**
+- New per-object options: angular acceleration, vector arrows (velocity, acceleration, force,
+  angular velocity) with per-object scales, label units per quantity, and label placement
+  (above / below / left / right).
+- The force arrow shows the net force m·a while simulating and the applied force otherwise.
+
+**Plot workspace** (*Plots ▸ Plot Workspace*, pyqtgraph).
+- Tabs of **2D** plots (line or scatter, any variable against any variable, multiple series and
+  objects) and **3D** plots (X/Y/Z: trajectories or any three scalars).
+- **Quick plots** of the selection: position, velocity, acceleration, angular velocity, speed or
+  kinetic energy vs time; net force vs displacement; 3D trajectories.
+- Per series: colour, line style and width, marker style and size, legend label.
+- Per plot: title, axis titles (automatic, with display units), axis limits, logarithmic axes
+  (non-positive values are hidden and reported), grid and legend.
+- Zoom and pan (2D), orbit/zoom camera (3D), and live updates while recording.
+- **Synchronized cursors:** dragging the time cursor of one time plot moves all others, with a
+  values read-out. 3D plots mark the same instant.
+- Export to PNG, export of the plotted data to CSV. Plot definitions are saved in the project.
+
+**Analysis and export** (Recording panel).
+- Time-weighted statistics (initial, final, min, max, mean, RMS, standard deviation, times of
+  min/max), shown for every recorded object side by side for comparison.
+- CSV export in display units, JSON export of every raw channel (SI) with metadata and the
+  event log.
+- A self-contained **HTML simulation report**: settings, objects, processes, statistics, all
+  open plots as images, and the event log.
+
 ## 4. Architecture
 
 ```
@@ -423,8 +508,11 @@ psim/
                    undoable SceneEditor, analysis
   rendering/       camera, shaders, GPU resources, renderer, grids/axes, gizmo, picking,
                    overlays, thumbnails, viewport widget, serializable view settings
-  gui/             main window, actions/shortcuts, library, inspector, outliner, panels, dialogs, theme, icons
+  gui/             main window, actions/shortcuts, library, inspector, outliner, panels, dialogs, theme, icons,
+                   plots/ (plot workspace, 2D/3D views, plot editor), recording panel
   project/         serialization, autosave/recovery, project templates
+  recording/       data recorder + engine sampler, variables (incl. frame-relative), statistics, CSV/JSON
+                   export and HTML report, plot definitions
   coordinates/     named reference frames, frame kinematics (representation vs. relative motion),
                    kinematic state of scene objects and frames
   processes/       process definitions, sealed registry, built-in processes, scheduler (plan + diagnostics),
@@ -477,14 +565,20 @@ Key design decisions:
 ## 5. Limitations (honest status)
 
 - **Not implemented yet** (planned phases):
-  - named reference frames as first-class objects and frame-relative
-    velocities/accelerations (Phase 5)
-  - trajectories, plotting workspace and data recorder (Phase 6)
   - rigid-body dynamics, collisions and joints (Phase 7)
   - installer (Phase 8)
-
-  The *Data Inspector* and *Plot Preview* bottom panels are therefore not present yet, and
-  trajectories are not recorded yet (Phase 6).
+- Recording, trajectory and plot limits:
+  - Recorded data is not stored in the project file (plot definitions are). Use the CSV/JSON
+    export to keep data, or re-run the simulation.
+  - A trajectory can be no finer than the recording interval.
+  - A relative trajectory uses the frame's *current* pose, so after Reset it is drawn on the
+    reset frame.
+  - 3D plots scale each axis to a common box; the tick labels show the real values.
+    Synchronized cursors work between time-based 2D plots and mark 3D plots; other 2D plots
+    have no cursor.
+  - Statistics and exports read a consistent snapshot. If the recording is thinned exactly while
+    being read, the read is retried at the next refresh.
+  - The report is HTML (print it to PDF from a browser if needed).
 - Simulation physics limits for this phase:
   - Rotational dynamics uses α = I_w⁻¹·τ without the gyroscopic ω × Iω term, which belongs to
     the Phase 7 rigid-body solver.
@@ -527,4 +621,5 @@ Key design decisions:
 ## 6. Next steps
 
 1. Run the test suite on Windows with a hardware GPU.
-2. Phase 6: data recorder (sampling every N steps), trajectories and the plotting workspace.
+2. Phase 7: rigid-body dynamics (gyroscopic terms), collisions with the ground and between
+   objects, joints and additional solvers.

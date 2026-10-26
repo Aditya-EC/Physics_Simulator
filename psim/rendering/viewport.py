@@ -83,6 +83,7 @@ class Viewport(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.setMinimumSize(320, 240)
+        self.trajectory_provider = None   # callable returning TrajectoryPath list (set by the main window)
         for sig in (scene.objectsAdded, scene.objectsRemoved, scene.objectsChanged, scene.selectionChanged):
             sig.connect(self._scene_changed)
         scene.sceneReset.connect(self._scene_changed)
@@ -184,8 +185,15 @@ class Viewport(QOpenGLWidget):
         self._apply_follow()
         dpr = self.devicePixelRatioF()
         w, h = int(self.width() * dpr), int(self.height() * dpr)
+        paths = []
+        if self.trajectory_provider is not None:
+            try:
+                paths = self.trajectory_provider()
+            except Exception as exc:  # a broken path must not stop rendering
+                log.exception("Trajectory error: %s", exc)
         frame = FrameInput(self.scene, self.view, self.camera, w, h, self.defaultFramebufferObject(),
-                           hover_id=self.hover_id, gizmo=self._gizmo_draw(), ghost=self._ghost, dpr=dpr)
+                           hover_id=self.hover_id, gizmo=self._gizmo_draw(), ghost=self._ghost, dpr=dpr,
+                           trajectories=paths)
         try:
             stats = self.renderer.render(frame)
         except Exception as exc:  # never let a rendering error escape into Qt's event loop
@@ -204,7 +212,7 @@ class Viewport(QOpenGLWidget):
         painter = QPainter(self)
         try:
             overlays.paint_overlays(painter, self.scene, self.view, self.camera, self.units, self.width(),
-                                    self.height(), self._hud_lines(), self._drag_text)
+                                    self.height(), self._hud_lines(), self._drag_text, paths)
             if self._drag_payload is not None:
                 overlays.paint_drop_hint(painter, self.width(), self.height(),
                                          f"Release to place · work plane {self.view.snap.work_plane}"

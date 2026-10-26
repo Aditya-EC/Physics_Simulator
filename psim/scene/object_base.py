@@ -7,6 +7,9 @@ multi-object editing and (later) the process engine use a single access API:
     "params.<key>"                                  geometry parameters
     "custom.<key>"                                  custom properties
     "overlay.<key>"                                 overlay visibility flags
+    "trajectory.<key>"                              trajectory marker settings (TRAJECTORY_PROPERTIES)
+    "label_unit.<quantity>"                         display unit of that quantity in this object's label
+    "arrow_scale.<quantity>"                        length of vector arrows per SI unit (ARROW_QUANTITIES)
 
 Transform convention: `position` / `orientation` are expressed in the parent's
 frame (the global frame for root objects). Scale is a per-object geometry
@@ -71,7 +74,37 @@ STANDARD_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
     P("label_font_size", "Label font size", ValueType.INT, 9, minimum=6, maximum=48),
     P("label_precision", "Label precision", ValueType.INT, 3, minimum=0, maximum=10),
     P("label_background", "Label background", ValueType.BOOL, True),
+    P("label_placement", "Label placement", ValueType.ENUM, "above", choices=("above", "below", "left", "right"),
+      description="Where the information label is drawn relative to the object"),
 ]}
+
+TRAJECTORY_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
+    P("enabled", "Show trajectory", ValueType.BOOL, False),
+    P("color", "Path colour", ValueType.COLOR, [1.0, 0.72, 0.25]),
+    P("width", "Line thickness", ValueType.FLOAT, 2.0, minimum=0.5, maximum=12.0, step=0.5, precision=1),
+    P("opacity", "Opacity", ValueType.FLOAT, 0.9, minimum=0.05, maximum=1.0, step=0.05, precision=2),
+    P("interval", "Sampling interval", ValueType.FLOAT, 0.0, quantity="time", minimum=0.0, maximum=1e6,
+      description="Simulated time between path points; 0 = every recorded sample (the recording interval is "
+                  "the finest possible spacing)"),
+    P("max_points", "Maximum points", ValueType.INT, 5000, minimum=10, maximum=1_000_000,
+      description="Complete history is thinned evenly to this many points; recent history keeps the newest"),
+    P("history", "History", ValueType.ENUM, "complete", choices=("complete", "recent")),
+    P("recent_duration", "Recent history length", ValueType.FLOAT, 5.0, quantity="time", minimum=1e-6, maximum=1e9),
+    P("point", "Tracked point", ValueType.ENUM, "com", choices=("com", "origin"),
+      description="Centre of mass or object origin"),
+    P("frame", "Recorded in frame", ValueType.STRING, "",
+      description="Empty = global. Relative trajectories are drawn attached to the frame's current pose"),
+    P("arrows", "Direction arrows", ValueType.BOOL, False),
+    P("arrow_spacing", "Arrow spacing", ValueType.FLOAT, 1.0, quantity="time", minimum=1e-6, maximum=1e9),
+    P("time_labels", "Time labels", ValueType.BOOL, False),
+    P("label_spacing", "Time label spacing", ValueType.FLOAT, 1.0, quantity="time", minimum=1e-6, maximum=1e9),
+    P("preserve", "Keep after stopping", ValueType.BOOL, True,
+      description="Keep showing the path of the last run after the simulation stops"),
+]}
+
+# vector arrows: quantity -> (label, length per SI unit, quantity of the scale)
+ARROW_QUANTITIES = {"velocity": ("Velocity arrow scale", 0.25), "acceleration": ("Acceleration arrow scale", 0.05),
+                    "force": ("Force arrow scale", 0.02), "angular_velocity": ("Angular velocity arrow scale", 0.25)}
 
 # Physical quantities whose values the simulation will later own (badge "S" at runtime).
 DYNAMIC_STATE = ("position", "orientation_euler", "linear_velocity", "linear_acceleration", "angular_velocity",
@@ -82,6 +115,9 @@ OVERLAY_LABELS = {
     "velocity": "Velocity", "acceleration": "Acceleration", "angular_velocity": "Angular velocity",
     "mass": "Mass", "force": "Force", "torque": "Torque", "custom": "Custom properties",
     "local_axes": "Local axes", "bbox": "Bounding box", "com": "Center of mass",
+    "angular_acceleration": "Angular acceleration", "velocity_arrow": "Velocity arrow",
+    "acceleration_arrow": "Acceleration arrow", "force_arrow": "Force arrow (net while simulating)",
+    "angular_velocity_arrow": "Angular velocity arrow",
 }
 
 _SIMPLE_ATTRS = [k for k in STANDARD_PROPERTIES if k not in ("orientation_euler", "tags")]
@@ -123,7 +159,11 @@ class SceneObject:
     label_font_size: int = 9
     label_precision: int = 3
     label_background: bool = True
+    label_placement: str = "above"
     overlays: dict[str, bool] = field(default_factory=lambda: {"name": False})
+    trajectory: dict[str, Any] = field(default_factory=dict)     # only non-default settings are stored
+    label_units: dict[str, str] = field(default_factory=dict)    # quantity -> unit symbol
+    arrow_scales: dict[str, float] = field(default_factory=dict)  # quantity -> length per SI unit
     custom: dict[str, CustomProperty] = field(default_factory=dict)
 
     _mesh_cache: tuple[tuple, Mesh] | None = field(default=None, repr=False, compare=False)
@@ -251,6 +291,19 @@ class SceneObject:
             if key not in ALL_OVERLAYS:
                 raise PropertyError(f"Unknown overlay '{key}'")
             return PropertyDef(path, OVERLAY_LABELS.get(key, key), ValueType.BOOL, False)
+        if path.startswith("trajectory."):
+            d = TRAJECTORY_PROPERTIES.get(path[11:])
+            if d is None:
+                raise PropertyError(f"Unknown trajectory setting '{path[11:]}'")
+            return d
+        if path.startswith("label_unit."):
+            return PropertyDef(path, f"Label unit ({path[11:]})", ValueType.STRING, "")
+        if path.startswith("arrow_scale."):
+            q = path[12:]
+            if q not in ARROW_QUANTITIES:
+                raise PropertyError(f"Unknown arrow quantity '{q}'")
+            return PropertyDef(path, ARROW_QUANTITIES[q][0], ValueType.FLOAT, ARROW_QUANTITIES[q][1], minimum=0.0,
+                               maximum=1e9, precision=6)
         if path == "orientation":
             return PropertyDef("orientation", "Quaternion", ValueType.STRING)
         d = STANDARD_PROPERTIES.get(path)
@@ -265,6 +318,12 @@ class SceneObject:
             return copy.deepcopy(self.custom[path[7:]].value)
         if path.startswith("overlay."):
             return bool(self.overlays.get(path[8:], False))
+        if path.startswith("trajectory."):
+            return copy.deepcopy(self.trajectory_setting(path[11:]))
+        if path.startswith("label_unit."):
+            return self.label_units.get(path[11:], "")
+        if path.startswith("arrow_scale."):
+            return self.arrow_scale(path[12:])
         if path == "orientation_euler":
             return self.euler()
         if path == "orientation":
@@ -294,6 +353,24 @@ class SceneObject:
             self.property_def(path)
             self.overlays[path[8:]] = bool(value)
             return
+        if path.startswith("trajectory."):
+            d = self.property_def(path)
+            v = d.coerce(value)
+            if v == d.default:
+                self.trajectory.pop(d.key, None)
+            else:
+                self.trajectory[d.key] = v
+            return
+        if path.startswith("label_unit."):
+            v = str(value or "").strip()
+            if v:
+                self.label_units[path[11:]] = v
+            else:
+                self.label_units.pop(path[11:], None)
+            return
+        if path.startswith("arrow_scale."):
+            self.arrow_scales[path[12:]] = self.property_def(path).coerce(value)
+            return
         if path == "orientation":
             self.set_orientation(value)
             return
@@ -319,6 +396,14 @@ class SceneObject:
     def origin_of(self, path: str) -> Origin:
         return self.property_def(path).origin
 
+    # ---- display settings -------------------------------------------------------------
+    def trajectory_setting(self, key: str):
+        d = TRAJECTORY_PROPERTIES[key]
+        return self.trajectory.get(key, d.default)
+
+    def arrow_scale(self, quantity: str) -> float:
+        return float(self.arrow_scales.get(quantity, ARROW_QUANTITIES[quantity][1]))
+
     # ---- custom properties ----------------------------------------------------------
     def add_custom(self, prop: CustomProperty) -> None:
         if prop.key in self.custom:
@@ -334,6 +419,12 @@ class SceneObject:
              "params": copy.deepcopy(self.params), "orientation": list(self.orientation),
              "overlays": {k: v for k, v in self.overlays.items() if v},
              "custom": [cp.to_dict() for cp in self.custom.values()]}
+        if self.trajectory:
+            d["trajectory"] = copy.deepcopy(self.trajectory)
+        if self.label_units:
+            d["label_units"] = dict(self.label_units)
+        if self.arrow_scales:
+            d["arrow_scales"] = dict(self.arrow_scales)
         for k in _SIMPLE_ATTRS:
             d[k] = copy.deepcopy(getattr(self, k))
         return d
@@ -355,6 +446,13 @@ class SceneObject:
                 raise PropertyError("invalid orientation quaternion")
             obj.set_orientation(q)
             obj.overlays = {str(k): bool(v) for k, v in dict(data.get("overlays", {})).items() if k in ALL_OVERLAYS}
+            for k, v in dict(data.get("trajectory", {})).items():
+                if k in TRAJECTORY_PROPERTIES:
+                    obj.set(f"trajectory.{k}", v)
+            obj.label_units = {str(k): str(v) for k, v in dict(data.get("label_units", {})).items() if v}
+            for k, v in dict(data.get("arrow_scales", {})).items():
+                if k in ARROW_QUANTITIES:
+                    obj.set(f"arrow_scale.{k}", v)
             obj.custom = {}
             for cd in data.get("custom", []):
                 obj.add_custom(CustomProperty.from_dict(cd))

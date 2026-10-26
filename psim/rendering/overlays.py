@@ -19,8 +19,18 @@ def qcolor(rgb, alpha: float = 1.0) -> QColor:
     return c
 
 
-def fmt_value(value, quantity: str | None, units: UnitRegistry, precision: int) -> str:
-    unit = units.preferred_unit(quantity) if quantity else None
+def label_unit(obj: SceneObject | None, quantity: str | None, units: UnitRegistry) -> str | None:
+    """The object's own display unit for a quantity in labels (if valid), else the project unit."""
+    if not quantity:
+        return None
+    sym = obj.label_units.get(quantity) if obj is not None else None
+    if sym and units.has_unit(sym) and sym in units.units_for(quantity):
+        return sym
+    return units.preferred_unit(quantity)
+
+
+def fmt_value(value, quantity: str | None, units: UnitRegistry, precision: int, obj: SceneObject | None = None) -> str:
+    unit = label_unit(obj, quantity, units)
     if isinstance(value, (list, tuple, np.ndarray)):
         vals = units.from_si(np.asarray(value, float), unit) if unit else np.asarray(value, float)
         body = "(" + ", ".join(f"{v:.{precision}f}" for v in vals) + ")"
@@ -41,32 +51,37 @@ def object_label_lines(scene: Scene, obj: SceneObject, units: UnitRegistry) -> l
         lines.append(obj.id)
     p, q = scene.world_pose(obj.id)
     if ov.get("position") and "position" in allowed:
-        lines.append("p = " + fmt_value(p, "length", units, prec))
+        lines.append("p = " + fmt_value(p, "length", units, prec, obj))
     if ov.get("orientation") and "orientation" in allowed:
-        lines.append("θ = " + fmt_value(numerics.quat_to_euler(q), "angle", units, prec))
+        lines.append("θ = " + fmt_value(numerics.quat_to_euler(q), "angle", units, prec, obj))
     runtime = scene.runtime.get(obj.id, {})
     for key, sym, attr, qty in (("velocity", "v", "linear_velocity", "velocity"),
                                 ("acceleration", "a", "linear_acceleration", "acceleration"),
                                 ("angular_velocity", "ω", "angular_velocity", "angular_velocity"),
+                                ("angular_acceleration", "α", "angular_acceleration", "angular_acceleration"),
                                 ("force", "F", "force", "force"), ("torque", "τ", "torque", "torque")):
         if ov.get(key) and key in allowed:
-            # while simulating, show the current total acceleration rather than the input property
-            value = runtime["acceleration"] if key == "acceleration" and "acceleration" in runtime else getattr(obj, attr)
-            lines.append(f"{sym} = " + fmt_value(value, qty, units, prec))
+            # while simulating, show the current total accelerations rather than the input properties
+            value = runtime.get(key) if key in ("acceleration", "angular_acceleration") else None
+            if value is None:
+                value = getattr(obj, attr)
+            lines.append(f"{sym} = " + fmt_value(value, qty, units, prec, obj))
     if ov.get("mass") and "mass" in allowed and obj.typedef.physical:
         m = obj.mass()
-        lines.append("m = " + (fmt_value(m, "mass", units, prec) if m is not None else "—"))
+        lines.append("m = " + (fmt_value(m, "mass", units, prec, obj) if m is not None else "—"))
     if ov.get("custom") and "custom" in allowed:
         for cp in obj.custom.values():
             d = cp.definition
-            val = fmt_value(cp.value, d.quantity, units, d.precision) if d.vtype.value in ("float", "int", "vec2", "vec3") \
+            val = fmt_value(cp.value, d.quantity, units, d.precision, obj) \
+                if d.vtype.value in ("float", "int", "vec2", "vec3") \
                 else str(cp.value)
             lines.append(f"{d.label} = {val}")
     return lines
 
 
 def paint_overlays(p: QPainter, scene: Scene, view: ViewSettings, cam: OrbitCamera, units: UnitRegistry,
-                   width: float, height: float, hud_lines: list[str], drag_text: str = "") -> None:
+                   width: float, height: float, hud_lines: list[str], drag_text: str = "",
+                   trajectories: list | None = None) -> None:
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
     base_font = QFont(p.font())
@@ -100,6 +115,10 @@ def paint_overlays(p: QPainter, scene: Scene, view: ViewSettings, cam: OrbitCame
                 p.setPen(qcolor(col))
                 p.drawText(QRectF(x - 10, y - 10, 20, 20), Qt.AlignmentFlag.AlignCenter, name)
 
+    # ---- trajectory arrows and time labels -------------------------------------------------------------
+    if trajectories:
+        _paint_trajectory_marks(p, trajectories, cam, units, width, height, small)
+
     # ---- named reference frames ------------------------------------------------------------------------
     if view.environment.show_labels:
         _paint_frame_labels(p, scene, cam, width, height, small)
@@ -120,7 +139,13 @@ def paint_overlays(p: QPainter, scene: Scene, view: ViewSettings, cam: OrbitCame
             top = np.array(wp, float)
             lo, hi = scene.world_bounds([obj.id]) or (wp, wp)
             top[2] = hi[2]
-            xy, ok = cam.project(top[None, :], width, height)
+            placement = obj.label_placement
+            anchor = np.array(wp, float)
+            if placement == "below":
+                anchor[2] = lo[2]
+            elif placement == "above":
+                anchor = top
+            xy, ok = cam.project(anchor[None, :], width, height)
             if not ok[0]:
                 continue
             f = QFont(base_font)
@@ -129,7 +154,16 @@ def paint_overlays(p: QPainter, scene: Scene, view: ViewSettings, cam: OrbitCame
             fm = QFontMetricsF(f)
             lh = fm.height()
             tw = max(fm.horizontalAdvance(t) for t in lines)
-            box = QRectF(xy[0][0] - tw / 2 - 6, xy[0][1] - 12 - lh * len(lines) - 6, tw + 12, lh * len(lines) + 8)
+            bw, bh = tw + 12, lh * len(lines) + 8
+            x0, y0 = xy[0]
+            if placement == "below":
+                box = QRectF(x0 - bw / 2, y0 + 12, bw, bh)
+            elif placement == "left":
+                box = QRectF(x0 - bw - 18, y0 - bh / 2, bw, bh)
+            elif placement == "right":
+                box = QRectF(x0 + 18, y0 - bh / 2, bw, bh)
+            else:
+                box = QRectF(x0 - bw / 2, y0 - 12 - bh + 2, bw, bh)
             if obj.label_background:
                 p.setPen(QPen(QColor(255, 255, 255, 28), 1))
                 p.setBrush(QColor(18, 20, 24, 190))
@@ -177,6 +211,46 @@ def _paint_com_symbol(p: QPainter, scene: Scene, obj: SceneObject, cam: OrbitCam
     for k, col in enumerate((QColor(245, 245, 245), QColor(25, 25, 25), QColor(245, 245, 245), QColor(25, 25, 25))):
         p.setBrush(col)
         p.drawPie(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r), k * 90 * 16, 90 * 16)
+
+
+def _paint_trajectory_marks(p: QPainter, paths: list, cam: OrbitCamera, units: UnitRegistry, w: float, h: float,
+                            font: QFont) -> None:
+    from .trajectories import marks
+    tu = units.preferred_unit("time")
+    p.setFont(font)
+    for path in paths:
+        if len(path.points) < 2:
+            continue
+        color = qcolor(path.color, min(1.0, path.opacity + 0.1))
+        if path.arrows:
+            idx = marks(path, path.arrow_spacing)
+            nxt = [min(i + 1, len(path.points) - 1) if i + 1 < len(path.points) else i - 1 for i in idx]
+            xy, ok = cam.project(np.vstack([path.points[idx], path.points[nxt]]), w, h)
+            p.setPen(QPen(color, max(1.5, path.width)))
+            k = len(idx)
+            for j, i in enumerate(idx):
+                if not (ok[j] and ok[k + j]):
+                    continue
+                a, b = np.asarray(xy[j], float), np.asarray(xy[k + j], float)
+                d = b - a if nxt[j] > i else a - b
+                n = float(np.hypot(*d))
+                if n < 1e-6:
+                    continue
+                d /= n
+                nrm = np.array([-d[1], d[0]])
+                tip = a + d * 5
+                for s in (1, -1):
+                    back = tip - d * 9 + nrm * 5 * s
+                    p.drawLine(QPointF(*tip), QPointF(*back))
+        if path.time_labels:
+            idx = marks(path, path.label_spacing)
+            xy, ok = cam.project(path.points[idx], w, h)
+            p.setPen(color)
+            for (x, y), vis, i in zip(xy, ok, idx):
+                if vis and 0 <= x <= w and 0 <= y <= h:
+                    p.setBrush(color)
+                    p.drawEllipse(QPointF(x, y), 2.5, 2.5)
+                    p.drawText(QPointF(x + 5, y - 4), f"{units.from_si(float(path.times[i]), tu):.4g} {tu}")
 
 
 def _paint_frame_labels(p: QPainter, scene: Scene, cam: OrbitCamera, w: float, h: float, font: QFont) -> None:

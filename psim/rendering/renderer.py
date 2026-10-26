@@ -23,6 +23,7 @@ from . import shaders
 from .camera import OrbitCamera
 from .gizmo import HOVER_COLOR, Handle
 from .gl_resources import GpuCache, LineBuffer, MeshBuffer, ShaderProgram, ShadowMap
+from .vector_arrows import ARROW_COLORS, arrow_lines, arrow_vectors
 from .view_settings import ViewSettings
 
 
@@ -51,6 +52,7 @@ class FrameInput:
     default_fbo: int
     hover_id: str | None = None
     gizmo: GizmoDraw | None = None
+    trajectories: list = field(default_factory=list)   # TrajectoryPath, built from the recording
     ghost: GhostDraw | None = None
     dpr: float = 1.0
 
@@ -243,6 +245,13 @@ class Renderer:
                                 fade_radius=fade * 1.15)
                     stats.draw_calls += 1
 
+        # ---- trajectories (depth-tested, drawn before transparent surfaces) ---------------------------------
+        for path in f.trajectories:
+            a, c = path.segments()
+            if len(a):
+                self._lines(a, c, viewproj, w, h, path.width * f.dpr)
+                stats.draw_calls += 1
+
         # ---- transparent surfaces (back to front) --------------------------------------------------------
         if transparent:
             mp.use()
@@ -278,6 +287,10 @@ class Renderer:
             if ov.get("bbox"):
                 lo_, hi_ = o.mesh().bounds()
                 a, c = axes_geo.box_lines(models[o.id], lo_, hi_, (0.95, 0.80, 0.30))
+                pts.append(a)
+                cols.append(c)
+            for _q, start, vec in arrow_vectors(scene, o):
+                a, c = arrow_lines(start, vec, cam.forward(), ARROW_COLORS[_q])
                 pts.append(a)
                 cols.append(c)
             if ov.get("com") and o.typedef.physical:

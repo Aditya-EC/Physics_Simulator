@@ -25,6 +25,7 @@ from ..simulation.runner import RunState, RunStats, SimulationRunner
 from ..simulation.settings import PacingMode, SimulationSettings
 from ..simulation.simulation_engine import SimulationEngine, SimulationError, Snapshot
 from ..simulation.state import capture_bodies
+from ..recording.recording import Recording
 from ..simulation.world import EngineWorld, capture_frames, capture_static, global_values
 
 
@@ -35,6 +36,7 @@ class SimulationController(QObject):
     info = Signal(str)
     warning = Signal(str)
     error = Signal(str)
+    recordingChanged = Signal()       # a new recording was started or the recording was cleared
 
     def __init__(self, scene: Scene, editor: SceneEditor, settings_getter, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +56,10 @@ class SimulationController(QObject):
         self._reported: set[str] = set()
         self._state = "idle"
         self.last_stats: RunStats | None = None
+        self.recording: Recording | None = None   # data of the current or last run (kept after Stop)
+        self.warning.connect(self._log_warning)
+        self.error.connect(self._log_error)
+        self.info.connect(self._log_info)
         scene.objectsChanged.connect(self._on_objects_changed)
         scene.processesChanged.connect(self._on_processes_changed)
         scene.globalsChanged.connect(self._on_processes_changed)
@@ -82,8 +88,46 @@ class SimulationController(QObject):
 
     def _set_state(self, st: str) -> None:
         if st != self._state:
-            self._state = st
+            prev, self._state = self._state, st
+            kind = {"running": "resume" if prev == "paused" else "start", "paused": "pause",
+                    "finished": "finished", "idle": "stop", "error": "error"}.get(st)
+            if kind:
+                self._log(kind, f"{prev} → {st}")
             self.stateChanged.emit(st)
+
+    # ---- data recording ------------------------------------------------------------------------------------
+    def _log(self, kind: str, message: str) -> None:
+        rec = self.recording
+        if rec is None:
+            return
+        eng = self.runner.engine
+        t, step = (eng.clock.time, eng.clock.steps) if eng is not None else (0.0, 0)
+        rec.log(t, step, kind, message)
+
+    def _log_warning(self, message: str) -> None:
+        if self.session_active:
+            self._log("warning", message)
+
+    def _log_error(self, message: str) -> None:
+        if self.session_active:
+            self._log("error", message)
+
+    def _log_info(self, message: str) -> None:
+        if self.session_active and message.startswith(("Applied", "Breakpoint")):
+            self._log("change" if message.startswith("Applied") else "breakpoint", message)
+
+    def set_record_interval(self, steps: int) -> None:
+        self.settings.record_every_n_steps = max(1, int(steps))
+        if self.recording is not None and self.session_active:
+            self.recording.interval_steps = self.settings.record_every_n_steps
+            self._log("change", f"Recording interval set to {self.settings.record_every_n_steps} steps")
+
+    def clear_recording(self) -> None:
+        if self.session_active:
+            self.warning.emit("The recording of a running simulation cannot be cleared; stop it first")
+            return
+        self.recording = None
+        self.recordingChanged.emit()
 
     def validate(self) -> ExecutionPlan:
         return build_plan(self.scene, self.scene.assignments)
@@ -122,6 +166,15 @@ class SimulationController(QObject):
         except SimulationError as exc:
             self.error.emit(str(exc))
             return False
+        recording_on = self.settings.record_enabled
+        if recording_on:
+            rec = Recording(int(self.settings.record_max_mb * 2 ** 20), self.settings.record_overflow,
+                            self.settings.record_every_n_steps)
+            rec.meta["settings"] = self.settings.to_dict()
+            rec.meta["names"] = {o.id: o.name for o in self.scene.objects.values()}
+            rec.meta["types"] = {o.id: o.type_id for o in self.scene.objects.values()}
+            engine.attach_recording(rec, self.settings.record_process_outputs)
+            self.recording = rec
         self._initial = self.scene.snapshot(plan.body_ids)
         self._reported = set()
         self._body_ids = list(plan.body_ids)
@@ -129,6 +182,8 @@ class SimulationController(QObject):
         self.scene.runtime = {oid: {} for oid in plan.body_ids}  # accelerations unknown until the first snapshot
         self.scene.simulating = True
         self.runner.start(engine, paused=paused)
+        if recording_on:
+            self.recordingChanged.emit()
         self._set_state("paused" if paused else "running")
         s = self.settings
         mode = "as fast as possible" if s.pacing == PacingMode.AS_FAST_AS_POSSIBLE else f"{s.update_rate_hz:g} Hz"
@@ -154,6 +209,8 @@ class SimulationController(QObject):
             return
         self.runner.stop()
         if self.runner.engine is not None:
+            if self.runner.engine.sampler is not None:   # the worker has stopped: record the end state
+                self.runner.engine.sampler.final()
             self._apply_snapshot(self.runner.engine.snapshot())
         before = self._initial
         t = self.runner.engine.clock.time if self.runner.engine else 0.0

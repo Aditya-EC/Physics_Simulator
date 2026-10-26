@@ -21,7 +21,7 @@ from ..coordinates.scene_kinematics import reference_choices
 from ..properties.property_system import Origin, PropertyError, ValueType
 from ..scene.editing import SceneEditor
 from ..scene.materials import PHYSICAL_MATERIALS
-from ..scene.object_base import DYNAMIC_STATE, OVERLAY_LABELS, SceneObject
+from ..scene.object_base import ARROW_QUANTITIES, DYNAMIC_STATE, OVERLAY_LABELS, SceneObject
 from ..scene.scene_manager import Scene, SceneError
 from ..units.unit_registry import UnitRegistry
 from . import icons
@@ -29,6 +29,7 @@ from .dialogs.custom_property_dialog import CustomPropertyDialog
 from .widgets.inputs import ColorButton, IntField, NumberField, UnitCombo, VectorField
 from .widgets.section import Section
 
+LABEL_UNIT_QUANTITIES = ("length", "velocity", "acceleration", "angle", "angular_velocity", "force", "mass")
 INITIAL_TIP = "Initial value (user-controlled). During a simulation this quantity will be updated by processes."
 
 
@@ -37,6 +38,8 @@ class PropertiesPanel(QWidget):
     statusMessage = Signal(str)
     assignProcessRequested = Signal(list)   # object ids
     editAssignmentRequested = Signal(str)   # assignment uid
+    clearTrajectoryRequested = Signal(list)  # object ids
+    exportTrajectoryRequested = Signal(str)  # object id
 
     def __init__(self, scene: Scene, editor: SceneEditor, units: UnitRegistry, parent=None) -> None:
         super().__init__(parent)
@@ -173,6 +176,8 @@ class PropertiesPanel(QWidget):
             self._build_coordinates(o)
             self._build_appearance(objs)
             self._build_display(objs)
+            if o.typedef.physical or o.type_id.startswith("group."):
+                self._build_trajectory(objs)
             self._build_custom(objs)
             self._build_processes(o)
         else:
@@ -191,6 +196,8 @@ class PropertiesPanel(QWidget):
                 self._add_prop(sec, "density", objs, origin=Origin.USER)
             self._build_appearance(objs)
             self._build_display(objs)
+            if all(o.typedef.physical or o.type_id.startswith("group.") for o in objs):
+                self._build_trajectory(objs)
             self._build_custom(objs)
         self._body_lay.addStretch(1)
         self.scroll.setWidget(body)
@@ -623,9 +630,66 @@ class PropertiesPanel(QWidget):
             self._refreshers.append(lambda cb=cb, p=path: _set_blocked(cb, cb.setChecked, primary.get(p)))
             self._refreshers[-1]()
             gl.addWidget(cb, k // 2, k % 2)
-        sec.add_widget(grid, search="overlay labels name id position velocity mass axes bounding box com")
-        for path in ("label_color", "label_font_size", "label_precision", "label_background"):
+        sec.add_widget(grid, search="overlay labels name id position velocity mass axes bounding box com arrows")
+        for path in ("label_color", "label_font_size", "label_precision", "label_background", "label_placement"):
             self._add_prop(sec, path, objs)
+        if len(objs) == 1:
+            self._label_units(sec, primary)
+        for q in ARROW_QUANTITIES:
+            if f"{q}_arrow" in supported:
+                self._add_prop(sec, f"arrow_scale.{q}", objs, tooltip=f"Arrow length per SI unit of {q.replace('_', ' ')}"
+                               " (e.g. 0.25 m per m/s)")
+
+    def _label_units(self, sec: Section, o: SceneObject) -> None:
+        """Per-object display units of the values in this object's label."""
+        row = QWidget()
+        lay = QGridLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setHorizontalSpacing(6)
+        for k, q in enumerate(LABEL_UNIT_QUANTITIES):
+            combo = QComboBox()
+            combo.addItem(f"project ({self.units.preferred_unit(q)})", "")
+            for sym in self.units.units_for(q):
+                combo.addItem(sym, sym)
+            combo.setCurrentIndex(max(combo.findData(o.label_units.get(q, "")), 0))
+            combo.setToolTip(f"Unit of {q.replace('_', ' ')} in this object's label")
+            combo.activated.connect(lambda _i, c=combo, q=q: self._commit([o], f"label_unit.{q}", c.currentData()))
+            lay.addWidget(QLabel(q.replace("_", " ").capitalize()), k, 0)
+            lay.addWidget(combo, k, 1)
+        sec.add_row("Label units", row, search="label display units")
+
+    def _build_trajectory(self, objs: list[SceneObject]) -> None:
+        sec = self._section("trajectory", "Trajectory")
+        for key in ("enabled", "color", "width", "opacity", "point", "history", "recent_duration", "interval",
+                    "max_points", "arrows", "arrow_spacing", "time_labels", "label_spacing", "preserve"):
+            self._add_prop(sec, f"trajectory.{key}", objs)
+        o = objs[-1]
+        if len(objs) == 1:
+            combo = QComboBox()
+            for text, ref in reference_choices(self.scene, exclude=o.id):
+                combo.addItem(text, ref or "")
+            current = o.trajectory_setting("frame")
+            if current and combo.findData(current) < 0:
+                combo.addItem(f"⚠ missing {current}", current)
+            combo.setCurrentIndex(max(combo.findData(current), 0))
+            combo.setToolTip("Frame in which the path is recorded. A relative path is drawn attached to the frame's "
+                             "current pose (what an observer riding the frame sees)")
+            combo.activated.connect(lambda _i: self._commit([o], "trajectory.frame", combo.currentData()))
+            sec.add_row("Recorded in frame", combo, search="trajectory frame relative")
+        buttons = QWidget()
+        bl = QHBoxLayout(buttons)
+        bl.setContentsMargins(0, 0, 0, 0)
+        clear = QPushButton("Clear")
+        clear.setToolTip("Hide the path drawn so far (new samples keep being drawn)")
+        clear.clicked.connect(lambda: self.clearTrajectoryRequested.emit([x.id for x in objs]))
+        export = QPushButton("Export…")
+        export.setToolTip("Save the recorded path (in the selected frame) as CSV")
+        export.setEnabled(len(objs) == 1)
+        export.clicked.connect(lambda: self.exportTrajectoryRequested.emit(o.id))
+        bl.addWidget(clear)
+        bl.addWidget(export)
+        bl.addStretch(1)
+        sec.add_widget(buttons, search="trajectory clear export")
 
     def _build_custom(self, objs: list[SceneObject]) -> None:
         sec = self._section("custom", "Custom Properties")
