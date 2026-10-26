@@ -20,6 +20,9 @@ struct ShapeSet {
     const double* half_len = nullptr;     // capsule core half length (local Z)
     const double* restitution = nullptr;
     const double* friction = nullptr;
+    const double* sweep = nullptr;        // optional: how far each shape's surface can move this step (CCD)
+    const double* center0 = nullptr;      // optional: start-of-step centres and rotations (speculative pairs)
+    const double* rot0 = nullptr;
 };
 
 struct BodySet {
@@ -28,6 +31,7 @@ struct BodySet {
     const double* com = nullptr;          // (n, 3)
     const double* v = nullptr;
     const double* w = nullptr;
+    const double* com0 = nullptr;         // optional: start-of-step centres of mass (speculative pairs)
 };
 
 struct ContactOutput {
@@ -43,7 +47,8 @@ struct ContactOutput {
 std::vector<std::pair<int64_t, int64_t>> candidate_pairs(const ShapeSet& s, double margin);
 
 // Broadphase + narrowphase + rows (see contact_kernel.py for the layout). `excluded` holds body pairs.
+// With s.sweep and dt > 0, pairs that could tunnel get speculative contacts (see contact_kernel.py).
 void contact_rows(const ShapeSet& s, const BodySet& b, const int64_t* excluded, int64_t n_excluded, double margin,
-                  double restitution_threshold, ContactOutput& out);
+                  double restitution_threshold, ContactOutput& out, double dt = 0.0);
 
 }  // namespace psim

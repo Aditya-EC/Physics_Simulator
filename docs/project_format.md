@@ -102,7 +102,7 @@ reported by validation, and measurements of missing objects are removed.
  "max_catch_up_steps": 10, "integrator": "semi_implicit_euler" | "explicit_euler" | "midpoint" |
  "velocity_verlet" | "rk4" | "dopri5", "adaptive_tolerance": 1e-8, "gyroscopic": true,
  "physics_enabled": true, "solver_iterations": 20, "position_iterations": 8, "baumgarte": 1.0,
- "contact_slop": 0.002, "restitution_threshold": 0.2,
+ "contact_slop": 0.002, "restitution_threshold": 0.2, "continuous_collision": true,
  "record_enabled": true, "record_every_n_steps": 5, "record_max_mb": 256.0,
  "record_overflow": "decimate" | "window" | "stop", "record_process_outputs": true,
  "breakpoints": [1.5, 3.0],

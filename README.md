@@ -143,11 +143,11 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport) |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
-| `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind), sort-and-sweep keeps every overlapping pair, input validation |
+| `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair, input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **503 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 458 pass and 45 native-comparison tests are skipped. This was measured on
+Current result: **513 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 462 pass and 51 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -564,6 +564,8 @@ administrators. Even so, a determined local administrator can change anything.
   `psim/physics/contact_kernel.py`) is followed by narrowphase pairs: sphere–{sphere, box, capsule, plane},
   capsule–{capsule, box, plane} and box–{box, plane}. Box–box uses the 15-axis separating-axis
   test with face clipping (up to 8 contact points) and closest points for edge–edge contacts.
+- Pairs fast enough to tunnel get speculative contacts (continuous collision detection; can be
+  switched off in the settings).
 - Each contact gives a non-penetration row with restitution (impacts slower than the restitution
   threshold do not bounce) and two Coulomb friction rows bounded by μ·λₙ.
 - Contacts are logged as *contact* events in the recording.
@@ -802,8 +804,10 @@ Key design decisions:
     Real time at Δt = 5 ms therefore reaches a few hundred boxes.
   - The broadphase is a sort-and-sweep along one axis. Scenes spread mainly along another axis do
     more pair tests than a grid or tree would.
-  - There is no continuous collision detection. Very fast, thin objects can pass through each
-    other when they move more than their thickness in one step; reduce Δt.
+  - Continuous collision detection uses speculative contacts. A pair that could pass through each
+    other within one step is tested at the start of the step, with shapes grown by how far they can
+    move, and may close the gap but not cross it. A fast bounce therefore happens up to one step's
+    gap before the surface, and fast rotation is bounded conservatively (|ω| × reach).
   - Collision shapes are sphere, box, capsule and plane. Other meshes collide as their bounding
     box (marked approximate), and there are no convex-hull or triangle-mesh colliders.
   - Capsule–box contacts sample the capsule core and are approximate for deep edge contacts.
@@ -870,4 +874,4 @@ Key design decisions:
 
 1. Run the test suite on Windows with a hardware GPU.
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
-3. Physics: continuous collision detection, convex-hull colliders, and joint rows in C++.
+3. Physics: convex-hull colliders and joint rows in C++.

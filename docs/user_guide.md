@@ -148,7 +148,9 @@ parameters, Δt, the rate and the duration.
 ## 6. Rigid bodies, collisions and joints
 
 - Gravity plus a collider are enough for objects to fall, bounce (restitution), slide and stick
-  (Coulomb friction), and stack.
+  (Coulomb friction), and stack. Fast objects do not pass through thin ones: continuous collision
+  detection catches pairs that would cross within one step (*Simulation Settings ▸ Collisions and
+  joints*).
 - **Physics ▸ Joints** connects two bodies, or a body and the world:
   - **fixed**
   - **ball**

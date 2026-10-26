@@ -97,3 +97,76 @@ def test_invalid_input_is_rejected():
     args[2] = args[2][:-1]
     with pytest.raises(ValueError, match="same number of shapes"):
         numerics.contact_rows(*args)
+
+
+@native
+@pytest.mark.parametrize("seed", range(6))
+def test_native_speculative_contacts_match_the_reference(seed):
+    args = list(_scene(seed, spread=2.5))
+    rng = np.random.default_rng(100 + seed)
+    sweep = np.where(rng.random(len(args[0])) < 0.5, rng.uniform(0.2, 1.0, len(args[0])), 0.0)
+    sweep[0] = 0.0
+    shift = rng.normal(scale=0.1, size=args[2].shape)
+    shift[0] = 0.0
+    start = dict(center0=args[2] - shift, rot0=args[3], com0=args[11] - rng.normal(scale=0.1, size=args[11].shape))
+    ref = reference(*args, sweep=sweep, dt=0.01, **start)
+    nat = numerics.contact_rows(*args, sweep=sweep, dt=0.01, **start)
+    assert (ref["depth"] < 0).any()                             # some speculative contacts with a gap
+    for key in ("pairs", "shape_a", "shape_b", "row", "ia", "ib", "parent", "mode"):
+        np.testing.assert_array_equal(nat[key], ref[key], err_msg=key)
+    for key in ("point", "normal", "depth", "J", "rhs", "lo", "hi", "mu", "err"):
+        np.testing.assert_allclose(nat[key], ref[key], rtol=1e-9, atol=1e-11, err_msg=key)
+
+
+def _shoot(scene, ccd: bool, speed: float, restitution: float = 0.0, thin: float = 0.02):
+    from psim.processes.process_base import TargetFilter
+    from psim.recording.recording import Recording
+    from test_recording import make_engine, run
+    s, e = scene
+    wall = e.add_new("basic.cuboid", position=[1.0, 0, 0], params={"length": thin, "width": 2, "height": 2})
+    e.set_property([wall.id], "physics.collider", "box")
+    e.set_property([wall.id], "physics.restitution", restitution)
+    ball = e.add_new("basic.sphere", position=[-1.0, 0, 0], params={"radius": 0.05})
+    e.set_property([ball.id], "physics.collider", "sphere")
+    e.set_property([ball.id], "physics.restitution", restitution)
+    e.set_property([ball.id], "linear_velocity", [speed, 0, 0])
+    e.assign_process("kin.free_motion", TargetFilter(ids=[ball.id]))
+    rec = Recording()
+    eng = make_engine(scene, rec, delta_time=0.005, duration=0.1, continuous_collision=ccd)
+    run(eng)
+    return rec.column((ball.id, "com"))[:, 0], rec.column((ball.id, "v"))[:, 0]
+
+
+def test_without_ccd_a_fast_ball_tunnels_through_a_thin_wall(scene):
+    x, v = _shoot(scene, ccd=False, speed=100.0)              # 0.5 m per step through a 2 cm wall
+    assert x[-1] > 1.5 and v[-1] == pytest.approx(100.0)
+
+
+def test_ccd_stops_a_fast_ball_at_a_thin_wall(scene):
+    x, v = _shoot(scene, ccd=True, speed=100.0)
+    assert x.max() <= 1.0 - 0.01 - 0.05 + 0.003               # never past the wall's front face
+    assert abs(v[-1]) < 1e-6                                  # inelastic: comes to rest against it
+
+
+def test_ccd_keeps_restitution_of_fast_impacts(scene):
+    x, v = _shoot(scene, ccd=True, speed=100.0, restitution=0.8)
+    assert x.max() <= 1.0 - 0.06 + 0.003
+    assert v[-1] == pytest.approx(-80.0, rel=1e-6)            # e·v back, despite meeting mid-step
+
+
+def test_ccd_fast_box_against_a_thin_plate(scene):
+    from psim.processes.process_base import TargetFilter
+    from psim.recording.recording import Recording
+    from test_recording import make_engine, run
+    s, e = scene
+    plate = e.add_new("basic.cuboid", position=[0, 0, 0], params={"length": 3, "width": 3, "height": 0.01})
+    e.set_property([plate.id], "physics.collider", "box")
+    box = e.add_new("body.rigid_box", position=[0, 0, 2.0], params={"length": 0.2, "width": 0.2, "height": 0.2})
+    e.set_property([box.id], "linear_velocity", [0, 0, -60.0])
+    for o in (plate, box):                                    # inelastic: it must stop on the plate, not in it
+        e.set_property([o.id], "physics.restitution", 0.0)
+    e.assign_process("dyn.gravity", TargetFilter(ids=[box.id]))
+    rec = Recording()
+    run(make_engine(scene, rec, delta_time=0.005, duration=0.5))
+    z = rec.column((box.id, "com"))[:, 2]
+    assert z.min() > 0.005 + 0.1 - 0.01 and z[-1] == pytest.approx(0.105, abs=0.005)   # resting on the plate

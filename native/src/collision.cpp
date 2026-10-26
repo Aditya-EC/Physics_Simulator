@@ -352,15 +352,29 @@ double bounding_radius(const Shape& s) {
     return std::numeric_limits<double>::infinity();
 }
 
-Shape shape_at(const ShapeSet& s, int64_t i) {
+Shape shape_at(const ShapeSet& s, int64_t i, bool start = false) {
     Shape sh;
+    const double* center = start && s.center0 ? s.center0 : s.center;
+    const double* rot = start && s.rot0 ? s.rot0 : s.rot;
     sh.kind = s.kind[i];
-    sh.c = {s.center[3 * i], s.center[3 * i + 1], s.center[3 * i + 2]};
-    for (int k = 0; k < 9; ++k) sh.r[k] = s.rot[9 * i + k];
+    sh.c = {center[3 * i], center[3 * i + 1], center[3 * i + 2]};
+    for (int k = 0; k < 9; ++k) sh.r[k] = rot[9 * i + k];
     sh.radius = s.radius[i];
     sh.half = {s.half[3 * i], s.half[3 * i + 1], s.half[3 * i + 2]};
     sh.half_len = s.half_len[i];
     return sh;
+}
+
+double thickness(const Shape& s) {
+    if (s.kind == kSphere || s.kind == kCapsule) return 2.0 * s.radius;
+    if (s.kind == kBox) return 2.0 * std::min(s.half.x, std::min(s.half.y, s.half.z));
+    return std::numeric_limits<double>::infinity();
+}
+
+Shape inflated(Shape s, double m) {
+    if (s.kind == kSphere || s.kind == kCapsule) s.radius += m;
+    if (s.kind == kBox) s.half = s.half + Vec3{m, m, m};
+    return s;
 }
 
 void friction_basis(const Vec3& n, Vec3& t1, Vec3& t2) {
@@ -384,7 +398,7 @@ std::vector<std::pair<int64_t, int64_t>> candidate_pairs(const ShapeSet& s, doub
             planes.push_back(i);
         } else {
             finite.push_back(i);
-            rad[i] = bounding_radius(shapes[i]);
+            rad[i] = bounding_radius(shapes[i]) + (s.sweep ? s.sweep[i] : 0.0);   // swept bounds (CCD)
         }
     }
     for (int64_t p : planes)
@@ -408,7 +422,7 @@ std::vector<std::pair<int64_t, int64_t>> candidate_pairs(const ShapeSet& s, doub
 }
 
 void contact_rows(const ShapeSet& s, const BodySet& bodies, const int64_t* excluded, int64_t n_excluded,
-                  double margin, double restitution_threshold, ContactOutput& out) {
+                  double margin, double restitution_threshold, ContactOutput& out, double dt) {
     std::set<std::pair<int64_t, int64_t>> excl;
     for (int64_t k = 0; k < n_excluded; ++k) {
         excl.insert({excluded[2 * k], excluded[2 * k + 1]});
@@ -437,21 +451,35 @@ void contact_rows(const ShapeSet& s, const BodySet& bodies, const int64_t* exclu
         const int64_t p = pq.first, q = pq.second;
         const int64_t a = s.body[p], b = s.body[q];
         if (a == b || !(bodies.dynamic[a] || bodies.dynamic[b]) || excl.count({a, b})) continue;
-        const Contacts found = collide(shape_at(s, p), shape_at(s, q));
+        const Shape sp = shape_at(s, p), sq = shape_at(s, q);
+        const double swp = s.sweep ? s.sweep[p] : 0.0, swq = s.sweep ? s.sweep[q] : 0.0;
+        const double m = swp + swq;
+        const bool speculative = dt > 0 && m > 0.5 * std::min(thickness(sp), thickness(sq));
+        const Contacts found = speculative
+            ? collide(inflated(shape_at(s, p, true), swp), inflated(shape_at(s, q, true), swq))
+            : collide(sp, sq);
         if (found.empty()) continue;
         out.pairs.push_back(p);
         out.pairs.push_back(q);
         const double e = std::max(s.restitution[p], s.restitution[q]);
         const double mu = std::sqrt(std::max(s.friction[p], 0.0) * std::max(s.friction[q], 0.0));
-        const Vec3 ca = vec(bodies.com, a), cb = vec(bodies.com, b);
+        const double* com = speculative && bodies.com0 ? bodies.com0 : bodies.com;
+        const Vec3 ca = vec(com, a), cb = vec(com, b);
         const Vec3 va = vec(bodies.v, a), vb = vec(bodies.v, b), wa = vec(bodies.w, a), wb = vec(bodies.w, b);
         for (const Contact& c : found) {
             const Vec3& n = c.normal;
             const Vec3 ra = c.point - ca, rb = c.point - cb;
             const double vn0 = dot((vb + cross(wb, rb)) - (va + cross(wa, ra)), n);
-            const double target = vn0 < -restitution_threshold ? -e * vn0 : 0.0;
-            const int64_t k = add_row(a, b, -n, -cross(ra, n), n, cross(rb, n), target, 0.0, kInf, -1, 0.0,
-                                      -c.depth, 1);
+            const double depth = speculative ? c.depth - m : c.depth;   // < 0: still separated by a gap
+            const double gap = std::max(-depth, 0.0);
+            double target;
+            if (vn0 < -restitution_threshold && gap + vn0 * dt <= 0.0)
+                target = -e * vn0;                                         // they meet within this step: bounce
+            else
+                target = gap > 0.0 ? -gap / dt : 0.0;                      // may close the gap, not cross it
+            // position error at the end of the step (speculative pairs were measured at its start)
+            const double err = speculative ? -depth + vn0 * dt : -depth;
+            const int64_t k = add_row(a, b, -n, -cross(ra, n), n, cross(rb, n), target, 0.0, kInf, -1, 0.0, err, 1);
             if (mu > 0) {
                 Vec3 t1, t2;
                 friction_basis(n, t1, t2);
@@ -466,7 +494,7 @@ void contact_rows(const ShapeSet& s, const BodySet& bodies, const int64_t* exclu
                 dst.push_back(x->y);
                 dst.push_back(x->z);
             }
-            out.depth.push_back(c.depth);
+            out.depth.push_back(depth);
             out.row.push_back(k);
         }
     }

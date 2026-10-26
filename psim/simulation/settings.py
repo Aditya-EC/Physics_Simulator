@@ -59,6 +59,7 @@ class SimulationSettings:
     baumgarte: float = 1.0            # fraction of penetration / joint drift corrected per step
     contact_slop: float = 0.002       # allowed penetration before position correction [m]
     restitution_threshold: float = 0.2  # impacts slower than this do not bounce [m/s]
+    continuous_collision: bool = True   # speculative contacts so fast, thin objects cannot pass through each other
     breakpoints: list = field(default_factory=list)  # simulated times at which the run pauses
     stop_conditions: list = field(default_factory=list)  # {name, expression, action, enabled} (conditions.py)
     min_delta_time: float = 1e-9

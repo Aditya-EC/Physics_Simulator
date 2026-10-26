@@ -172,7 +172,8 @@ class SimulationEngine:
             self.physics = PhysicsSystem(setup, self.bodies, self.plan.integrate_translation,
                                          self.plan.integrate_rotation,
                                          PhysicsSettings(s.solver_iterations, s.position_iterations, s.baumgarte,
-                                                         s.contact_slop, s.restitution_threshold))
+                                                         s.contact_slop, s.restitution_threshold,
+                                                         s.continuous_collision))
 
     def _gyro_setup(self) -> None:
         """Rows that get the gyroscopic term: integrated rotation and a non-zero inertia tensor."""

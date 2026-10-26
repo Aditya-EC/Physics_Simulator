@@ -38,6 +38,7 @@ class PhysicsSettings:
                                          # the correction never adds velocity, so a full correction is safe)
     slop: float = 0.002                  # allowed penetration (m) before position correction
     restitution_threshold: float = 0.2   # m/s: slower impacts do not bounce (avoids jitter at rest)
+    continuous: bool = True              # speculative contacts for pairs that could tunnel in one step
 
 
 def _quat_matrices(q: np.ndarray) -> np.ndarray:
@@ -186,6 +187,8 @@ class PhysicsSystem:
         self.col_half_len = np.array([c.shape.half_length for c in cols], float)
         self.col_restitution = np.array([c.restitution for c in cols], float)
         self.col_friction = np.array([c.friction for c in cols], float)
+        self.col_bound = np.array([0.0 if c.shape.kind == "plane" else c.shape.bounding_radius() for c in cols],
+                                  float)
         self.excluded_index = np.array([sorted(self.index[k] for k in pair) for pair in connected
                                         if all(k in self.index for k in pair) and len(pair) == 2],
                                        np.int64).reshape(-1, 2)
@@ -243,7 +246,7 @@ class PhysicsSystem:
         st = self.settings
         origin, com, R, v, w, inv_i = self._gather(s)
         rows = _Rows()
-        contacts = self._contacts(rows, origin, com, R, v, w, dt)
+        contacts = self._contacts(rows, origin, com, R, v, w, dt, start)
         mid = self._midpoint(start, s, dt) if start is not None and self.setup.joints else None
         self._joints(rows, (origin, com, R), mid, dt)
         n_eng = len(s.v)
@@ -300,7 +303,7 @@ class PhysicsSystem:
         return out
 
     # ---- contacts ------------------------------------------------------------------------------------------------
-    def _contacts(self, rows: _Rows, origin, com, R, v, w, dt) -> list:
+    def _contacts(self, rows: _Rows, origin, com, R, v, w, dt, start=None) -> list:
         """Contacts of all colliders (numerics.contact_rows: C++ or the NumPy kernel) and their rows."""
         st = self.settings
         entries = self.setup.colliders
@@ -311,9 +314,19 @@ class PhysicsSystem:
         rot = np.einsum("nij,njk->nik", R[b], self.col_rel_rot)
         center = origin[b] + np.einsum("nij,nj->ni", R[b], self.col_rel_pos) + np.einsum("nij,nj->ni", rot,
                                                                                          self.col_center)
+        sweep = center0 = rot0 = com0 = None
+        if st.continuous and dt > 0:   # how far each shape's surface can move this step: (|v| + |ω|·reach)·Δt
+            reach = np.linalg.norm(center - com[b], axis=1) + self.col_bound
+            sweep = (np.linalg.norm(v[b], axis=1) + np.linalg.norm(w[b], axis=1) * reach) * dt
+            if start is not None:      # speculative pairs are tested where the step began
+                origin0, com0, R0, *_ = self._gather(start)
+                rot0 = np.einsum("nij,njk->nik", R0[b], self.col_rel_rot)
+                center0 = origin0[b] + np.einsum("nij,nj->ni", R0[b], self.col_rel_pos) + \
+                    np.einsum("nij,nj->ni", rot0, self.col_center)
         d = numerics.contact_rows(self.col_kind, b, center, rot, self.col_radius, self.col_half, self.col_half_len,
                                   self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
-                                  self.excluded_index, com, v, w, st.slop, st.restitution_threshold)
+                                  self.excluded_index, com, v, w, st.slop, st.restitution_threshold, sweep, dt,
+                                  center0, rot0, com0)
         rows.extend(d)
         touching = set()
         for p, q in d["pairs"].tolist():

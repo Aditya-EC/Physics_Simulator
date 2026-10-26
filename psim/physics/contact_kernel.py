@@ -8,6 +8,15 @@ to, centre, rotation (row-major 3×3), radius, half extents, capsule half length
 Per solver body: dynamic flag, centre of mass, velocity, angular velocity. ``excluded`` lists body pairs
 that never collide (connected by a joint). Planes are static half-spaces (normal = local +Z).
 
+Speculative contacts (continuous collision detection): ``sweep`` gives, per shape, how far its surface can
+move during the step. When the combined sweep of a pair exceeds half the thickness of the thinner shape —
+the only case in which it could pass through in one step — the pair is tested at the *start* of the step
+(``center0``/``rot0``/``com0``: the solver runs after integration, and the end-of-step positions may already
+be past a thin obstacle) with shapes inflated by that amount. A contact found this way has a real gap
+g ≥ 0, and the step ends at x₀ + v·Δt: its row lets the bodies approach by at most g (rhs = −g/Δt), or,
+when they would meet within the step faster than the restitution threshold, asks for the bounce velocity.
+Slow pairs take the ordinary path, at the end-of-step positions, unchanged.
+
 Output dict:
   pairs:    (P, 2) shape pairs that touch, in order
   contacts: shape_a, shape_b, point (C, 3), normal (C, 3) from a into b, depth, row (its normal row)
@@ -47,10 +56,11 @@ def bounding_radius(kind: int, radius: float, half, half_len: float) -> float:
     return math.inf
 
 
-def candidate_pairs(kind, center, radius, half, half_len, margin: float) -> list[tuple[int, int]]:
-    """Pairs (i < j) whose bounding spheres overlap (planes overlap everything), in (i, j) order."""
+def candidate_pairs(kind, center, radius, half, half_len, margin: float, sweep=None) -> list[tuple[int, int]]:
+    """Pairs (i < j) whose bounding spheres, grown by their sweep, overlap (planes overlap everything)."""
     n = len(kind)
-    rad = [bounding_radius(int(kind[i]), float(radius[i]), half[i], float(half_len[i])) for i in range(n)]
+    rad = [bounding_radius(int(kind[i]), float(radius[i]), half[i], float(half_len[i]))
+           + (float(sweep[i]) if sweep is not None else 0.0) for i in range(n)]
     out = []
     for i in range(n):
         for j in range(i + 1, n):
@@ -64,8 +74,26 @@ def candidate_pairs(kind, center, radius, half, half_len, margin: float) -> list
     return out
 
 
+def thickness(kind: int, radius: float, half) -> float:
+    """Smallest extent through the shape (an object thinner than its step can tunnel)."""
+    if kind in (0, 2):
+        return 2.0 * radius
+    if kind == 1:
+        return 2.0 * float(min(half))
+    return math.inf
+
+
+def inflated(s: WorldShape, m: float) -> WorldShape:
+    if s.kind in ("sphere", "capsule"):
+        return WorldShape(s.kind, s.center, s.rot, s.radius + m, s.half, s.half_length)
+    if s.kind == "box":
+        return WorldShape(s.kind, s.center, s.rot, s.radius, s.half + m, s.half_length)
+    return s
+
+
 def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded,
-                 com, v, w, margin: float, restitution_threshold: float) -> dict:
+                 com, v, w, margin: float, restitution_threshold: float, sweep=None, dt: float = 0.0,
+                 center0=None, rot0=None, com0=None) -> dict:
     kind = np.asarray(kind, np.int64)
     body = np.asarray(body, np.int64)
     center = np.asarray(center, float).reshape(-1, 3)
@@ -74,8 +102,17 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
     com, v, w = (np.asarray(x, float).reshape(-1, 3) for x in (com, v, w))
     excl = {(int(a), int(b)) for a, b in np.asarray(excluded, np.int64).reshape(-1, 2)}
     excl |= {(b, a) for a, b in excl}
+    sweep = np.zeros(len(kind)) if sweep is None else np.asarray(sweep, float)
     shapes = [WorldShape(KINDS[int(kind[i])], center[i], rot[i], float(radius[i]), half[i], float(half_len[i]))
               for i in range(len(kind))]
+    if center0 is None:
+        shapes0, com0 = shapes, com
+    else:
+        center0 = np.asarray(center0, float).reshape(-1, 3)
+        rot0 = np.asarray(rot0, float).reshape(-1, 3, 3)
+        com0 = np.asarray(com0, float).reshape(-1, 3)
+        shapes0 = [WorldShape(KINDS[int(kind[i])], center0[i], rot0[i], float(radius[i]), half[i],
+                              float(half_len[i])) for i in range(len(kind))]
     rows = {k: [] for k in ("ia", "ib", "J", "rhs", "lo", "hi", "parent", "mu", "err", "mode")}
     con = {k: [] for k in ("shape_a", "shape_b", "point", "normal", "depth", "row")}
     pairs = []
@@ -86,11 +123,17 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
             rows[k].append(x)
         return len(rows["ia"]) - 1
 
-    for p, q in candidate_pairs(kind, center, radius, half, half_len, margin):
+    for p, q in candidate_pairs(kind, center, radius, half, half_len, margin, sweep):
         a, b = int(body[p]), int(body[q])
         if a == b or not (dynamic[a] or dynamic[b]) or (a, b) in excl:
             continue
-        found = collide(shapes[p], shapes[q])
+        m = float(sweep[p] + sweep[q])
+        speculative = dt > 0 and m > 0.5 * min(thickness(int(kind[p]), float(radius[p]), half[p]),
+                                                thickness(int(kind[q]), float(radius[q]), half[q]))
+        if speculative:
+            found = collide(inflated(shapes0[p], float(sweep[p])), inflated(shapes0[q], float(sweep[q])))
+        else:
+            found = collide(shapes[p], shapes[q])
         if not found:
             continue
         pairs.append((p, q))
@@ -98,17 +141,25 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
         mu = math.sqrt(max(float(friction[p]), 0.0) * max(float(friction[q]), 0.0))
         for c in found:
             n = c.normal
-            ra, rb = c.point - com[a], c.point - com[b]
+            cc = com0 if speculative else com
+            ra, rb = c.point - cc[a], c.point - cc[b]
             vn0 = float(((v[b] + _cross(w[b], rb)) - (v[a] + _cross(w[a], ra))) @ n)
-            target = -e * vn0 if vn0 < -restitution_threshold else 0.0
+            depth = c.depth - m if speculative else c.depth      # < 0: still separated by a gap
+            gap = max(-depth, 0.0)
+            if vn0 < -restitution_threshold and gap + vn0 * dt <= 0.0:
+                target = -e * vn0                                  # they meet within this step: bounce
+            else:
+                target = -gap / dt if gap > 0.0 else 0.0           # may close the gap, not cross it
+            # position error at the end of the step (speculative pairs were measured at its start)
+            err = -depth + vn0 * dt if speculative else -depth
             k = add_row(a, b, np.concatenate([-n, -_cross(ra, n), n, _cross(rb, n)]), target, 0.0, INF, -1, 0.0,
-                        -c.depth, 1)
+                        err, 1)
             if mu > 0:
                 for t in friction_basis(n):
                     add_row(a, b, np.concatenate([-t, -_cross(ra, t), t, _cross(rb, t)]), 0.0, -INF, INF, k, mu,
                             0.0, 2)
             for key, x in zip(("shape_a", "shape_b", "point", "normal", "depth", "row"),
-                              (p, q, c.point, n, c.depth, k)):
+                              (p, q, c.point, n, depth, k)):
                 con[key].append(x)
     m, c = len(rows["ia"]), len(con["row"])
     return {"pairs": np.array(pairs, np.int64).reshape(-1, 2),

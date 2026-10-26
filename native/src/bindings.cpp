@@ -292,7 +292,9 @@ PYBIND11_MODULE(_psim_native, m) {
     m.def("contact_rows", [](const IArr& kind, const IArr& body, const DArr& center, const DArr& rot,
                              const DArr& radius, const DArr& half, const DArr& half_len, const DArr& restitution,
                              const DArr& friction, const BArr& dynamic, const IArr& excluded, const DArr& com,
-                             const DArr& v, const DArr& w, double margin, double restitution_threshold) {
+                             const DArr& v, const DArr& w, double margin, double restitution_threshold,
+                             const py::object& sweep, double dt, const py::object& center0,
+                             const py::object& rot0, const py::object& com0) {
         const int64_t n = kind.size(), nb = dynamic.size();
         if (body.size() != n || center.size() != 3 * n || rot.size() != 9 * n || radius.size() != n ||
             half.size() != 3 * n || half_len.size() != n || restitution.size() != n || friction.size() != n)
@@ -303,13 +305,30 @@ PYBIND11_MODULE(_psim_native, m) {
             if (kind.data()[i] < 0 || kind.data()[i] > 3) throw std::invalid_argument("unknown shape kind");
             if (body.data()[i] < 0 || body.data()[i] >= nb) throw std::invalid_argument("shape refers to a missing body");
         }
+        DArr sweep_arr;
+        const double* sweep_ptr = nullptr;
+        if (!sweep.is_none()) {
+            sweep_arr = DArr::ensure(sweep);
+            if (!sweep_arr || sweep_arr.size() != n) throw std::invalid_argument("sweep needs one value per shape");
+            sweep_ptr = sweep_arr.data();
+        }
+        DArr c0, r0, m0;
+        const bool start = !center0.is_none();
+        if (start) {
+            c0 = DArr::ensure(center0);
+            r0 = DArr::ensure(rot0);
+            m0 = DArr::ensure(com0);
+            if (!c0 || !r0 || !m0 || c0.size() != 3 * n || r0.size() != 9 * n || m0.size() != 3 * nb)
+                throw std::invalid_argument("start-of-step arrays must match the shapes and bodies");
+        }
         ShapeSet s{n, kind.data(), body.data(), center.data(), rot.data(), radius.data(), half.data(),
-                   half_len.data(), restitution.data(), friction.data()};
-        BodySet b{nb, dynamic.data(), com.data(), v.data(), w.data()};
+                   half_len.data(), restitution.data(), friction.data(), sweep_ptr,
+                   start ? c0.data() : nullptr, start ? r0.data() : nullptr};
+        BodySet b{nb, dynamic.data(), com.data(), v.data(), w.data(), start ? m0.data() : nullptr};
         ContactOutput out;
         {
             py::gil_scoped_release release;   // pure C++ on copies of the inputs' pointers
-            contact_rows(s, b, excluded.data(), excluded.size() / 2, margin, restitution_threshold, out);
+            contact_rows(s, b, excluded.data(), excluded.size() / 2, margin, restitution_threshold, out, dt);
         }
         py::dict d;
         d["pairs"] = to_array(out.pairs, 2);
@@ -332,7 +351,9 @@ PYBIND11_MODULE(_psim_native, m) {
         return d;
     }, py::arg("kind"), py::arg("body"), py::arg("center"), py::arg("rot"), py::arg("radius"), py::arg("half"),
        py::arg("half_len"), py::arg("restitution"), py::arg("friction"), py::arg("dynamic"), py::arg("excluded"),
-       py::arg("com"), py::arg("v"), py::arg("w"), py::arg("margin"), py::arg("restitution_threshold"));
+       py::arg("com"), py::arg("v"), py::arg("w"), py::arg("margin"), py::arg("restitution_threshold"),
+       py::arg("sweep") = py::none(), py::arg("dt") = 0.0, py::arg("center0") = py::none(),
+       py::arg("rot0") = py::none(), py::arg("com0") = py::none());
 
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);
