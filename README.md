@@ -41,7 +41,8 @@ Implemented so far:
 - **Phase 7**, advanced physics:
   - rigid-body dynamics with the gyroscopic term (Euler's equations), plus midpoint, velocity
     Verlet and adaptive Dormand–Prince 5(4) integrators
-  - collision detection (sphere, box, capsule, plane colliders kept separate from the visual mesh)
+  - collision detection (sphere, box, capsule, plane and convex-hull colliders kept separate from the
+    visual mesh)
     and response with restitution and Coulomb friction, resting contact and stacking
   - fixed, ball, revolute, prismatic and distance (rod/rope) joints with limits and motors, solved by
     a C++ projected Gauss–Seidel core with block solves and split-impulse position correction
@@ -143,11 +144,12 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport) |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
+| `test_hulls.py` | convex hulls (exact box/prism hulls, flat inputs, reduction of detailed meshes, packing), a cylinder on its side rolling at v = ω·r, a cone standing on its base, stacked cylinders at rest, C++ hull contacts ≡ NumPy reference |
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair, input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **513 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 462 pass and 51 native-comparison tests are skipped. This was measured on
+Current result: **533 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 470 pass and 63 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -549,11 +551,15 @@ administrators. Even so, a determined local administrator can change anything.
   origin, not its centre of mass.
 
 **Collision geometry** (inspector ▸ *Collision & Joints*; `psim/physics/colliders.py`).
-- Collision shapes are separate from the visual mesh: sphere, box, capsule and plane (an infinite
-  static half-space), each with an optional radius, half extents, core length and offset.
+- Collision shapes are separate from the visual mesh: sphere, box, capsule, plane (an infinite
+  static half-space) and convex hull, each with an optional radius, half extents, core length and
+  offset.
 - `auto` uses the exact shape where the type has one: sphere, cube/cuboid, rigid box, capsule,
-  plane/disk and point mass. Other types get the mesh bounding box, marked *approximate* in the
-  inspector and the diagnostics.
+  plane/disk and point mass. Every other type gets the **convex hull of its mesh**
+  (`psim/physics/hull.py`): exact for cylinders, cones, prisms, pyramids and wedges. It is marked
+  *approximate* in the inspector and the diagnostics when the mesh is not convex (a torus collides
+  as its filled hull) or has more than 100 vertices (curved meshes such as an ellipsoid are reduced
+  to their support points in 64 directions). `box` remains available as a cheaper bounding box.
 - **Mass alone never makes an object collide.** Only the rigid-body types default to `auto`; every
   other object needs an explicit collider.
 - Per-object restitution (the larger value of a pair is used) and friction coefficient (geometric
@@ -564,6 +570,12 @@ administrators. Even so, a determined local administrator can change anything.
   `psim/physics/contact_kernel.py`) is followed by narrowphase pairs: sphere–{sphere, box, capsule, plane},
   capsule–{capsule, box, plane} and box–{box, plane}. Box–box uses the 15-axis separating-axis
   test with face clipping (up to 8 contact points) and closest points for edge–edge contacts.
+- Convex hulls collide with every shape. Hull–hull and hull–box use a polyhedral separating-axis
+  test (face normals, and only the edge pairs whose Gauss-map arcs intersect), clip the incident
+  face against the reference face for face contacts and reduce the manifold to at most 4
+  well-spread points. Sphere–hull uses the closest feature, capsule–hull samples the capsule core,
+  and hull–plane tests the hull's vertices. A fast hull gets speculative contacts through its
+  bounding box.
 - Pairs fast enough to tunnel get speculative contacts (continuous collision detection; can be
   switched off in the settings).
 - Each contact gives a non-penetration row with restitution (impacts slower than the restitution
@@ -808,8 +820,10 @@ Key design decisions:
     other within one step is tested at the start of the step, with shapes grown by how far they can
     move, and may close the gap but not cross it. A fast bounce therefore happens up to one step's
     gap before the surface, and fast rotation is bounded conservatively (|ω| × reach).
-  - Collision shapes are sphere, box, capsule and plane. Other meshes collide as their bounding
-    box (marked approximate), and there are no convex-hull or triangle-mesh colliders.
+  - Collision shapes are sphere, box, capsule, plane and convex hull. Concave meshes collide as
+    their convex hull (marked approximate); there is no convex decomposition and no triangle-mesh
+    collider. Hulls of meshes with more than 100 vertices are reduced to 64 support points, so a
+    curved surface is faceted (an ellipsoid rolls slightly unevenly).
   - Capsule–box contacts sample the capsule core and are approximate for deep edge contacts.
   - Friction is isotropic Coulomb friction with one coefficient (no separate static coefficient,
     no rolling resistance).
@@ -874,4 +888,4 @@ Key design decisions:
 
 1. Run the test suite on Windows with a hardware GPU.
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
-3. Physics: convex-hull colliders and joint rows in C++.
+3. Physics: joint rows in C++; convex decomposition of concave meshes.

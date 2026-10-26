@@ -23,7 +23,8 @@ from types import SimpleNamespace
 import numpy as np
 
 from .. import numerics
-from .contact_kernel import KINDS
+from .contact_kernel import COLLIDER_CODES
+from .hull import box_hull, pack_hulls
 from .setup import PhysicsSetup
 
 INF = 1e30
@@ -176,7 +177,16 @@ class PhysicsSystem:
         self.excluded = connected
         # collider data that does not change during the run (placed in the world every step)
         cols = setup.colliders
-        self.col_kind = np.array([KINDS.index(c.shape.kind) for c in cols], np.int64)
+        self.col_kind = np.array([COLLIDER_CODES[c.shape.kind] for c in cols], np.int64)
+        # hull table: convex colliders, plus boxes when hulls are present (hull–box pairs use the box as a hull)
+        self.col_hull_id = np.full(len(cols), -1, np.int64)
+        hull_list = []
+        if any(c.shape.kind == "convex" for c in cols):
+            for i, c in enumerate(cols):
+                if c.shape.kind in ("convex", "box"):
+                    self.col_hull_id[i] = len(hull_list)
+                    hull_list.append(c.shape.hull if c.shape.kind == "convex" else box_hull(c.shape.half_extents))
+        self.hulls = pack_hulls(hull_list) if hull_list else None
         self.col_body = np.array([self.index[c.body] for c in cols], np.int64)
         self.col_rel_pos = np.array([c.rel_pos for c in cols], float).reshape(-1, 3)
         self.col_rel_rot = np.array([c.rel_rot for c in cols], float).reshape(-1, 3, 3)
@@ -326,7 +336,7 @@ class PhysicsSystem:
         d = numerics.contact_rows(self.col_kind, b, center, rot, self.col_radius, self.col_half, self.col_half_len,
                                   self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
                                   self.excluded_index, com, v, w, st.slop, st.restitution_threshold, sweep, dt,
-                                  center0, rot0, com0)
+                                  center0, rot0, com0, self.col_hull_id, self.hulls)
         rows.extend(d)
         touching = set()
         for p, q in d["pairs"].tolist():

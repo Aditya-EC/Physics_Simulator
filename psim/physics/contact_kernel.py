@@ -3,10 +3,11 @@
 This is the NumPy reference of the native routine ``contact_rows`` (native/src/collision.cpp): the same
 broadphase pair order, narrowphase and row layout, so both backends feed the solver identically.
 
-Inputs (per shape, in world space): kind (0 sphere, 1 box, 2 capsule, 3 plane), the solver body it belongs
-to, centre, rotation (row-major 3×3), radius, half extents, capsule half length, restitution, friction.
+Inputs (per shape, in world space): kind (0 sphere, 1 box, 2 capsule, 3 plane, 4 convex hull), the solver
+body it belongs to, centre, rotation (row-major 3×3), radius, half extents, capsule half length, restitution, friction.
 Per solver body: dynamic flag, centre of mass, velocity, angular velocity. ``excluded`` lists body pairs
-that never collide (connected by a joint). Planes are static half-spaces (normal = local +Z).
+that never collide (connected by a joint). Planes are static half-spaces (normal = local +Z). Hull shapes
+name their hull in ``hull_id``; ``hulls`` holds the hulls in local coordinates, packed by ``hull.pack_hulls``.
 
 Speculative contacts (continuous collision detection): ``sweep`` gives, per shape, how far its surface can
 move during the step. When the combined sweep of a pair exceeds half the thickness of the thinner shape —
@@ -30,8 +31,10 @@ import math
 import numpy as np
 
 from .collision import WorldShape, collide
+from .hull import unpack_hulls
 
-KINDS = ("sphere", "box", "capsule", "plane")
+KINDS = ("sphere", "box", "capsule", "plane", "hull")
+COLLIDER_CODES = {"sphere": 0, "box": 1, "capsule": 2, "plane": 3, "convex": 4}
 INF = 1e30
 
 
@@ -49,7 +52,7 @@ def friction_basis(n: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def bounding_radius(kind: int, radius: float, half, half_len: float) -> float:
     if kind == 0:
         return radius
-    if kind == 1:
+    if kind in (1, 4):          # boxes, and hulls through their bounding box
         return math.sqrt(float(half @ half))
     if kind == 2:
         return radius + half_len
@@ -78,7 +81,7 @@ def thickness(kind: int, radius: float, half) -> float:
     """Smallest extent through the shape (an object thinner than its step can tunnel)."""
     if kind in (0, 2):
         return 2.0 * radius
-    if kind == 1:
+    if kind in (1, 4):
         return 2.0 * float(min(half))
     return math.inf
 
@@ -86,14 +89,14 @@ def thickness(kind: int, radius: float, half) -> float:
 def inflated(s: WorldShape, m: float) -> WorldShape:
     if s.kind in ("sphere", "capsule"):
         return WorldShape(s.kind, s.center, s.rot, s.radius + m, s.half, s.half_length)
-    if s.kind == "box":
-        return WorldShape(s.kind, s.center, s.rot, s.radius, s.half + m, s.half_length)
+    if s.kind in ("box", "hull"):   # a fast hull is tested speculatively through its bounding box
+        return WorldShape("box", s.center, s.rot, s.radius, s.half + m, s.half_length)
     return s
 
 
 def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded,
                  com, v, w, margin: float, restitution_threshold: float, sweep=None, dt: float = 0.0,
-                 center0=None, rot0=None, com0=None) -> dict:
+                 center0=None, rot0=None, com0=None, hull_id=None, hulls=None) -> dict:
     kind = np.asarray(kind, np.int64)
     body = np.asarray(body, np.int64)
     center = np.asarray(center, float).reshape(-1, 3)
@@ -103,8 +106,13 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
     excl = {(int(a), int(b)) for a, b in np.asarray(excluded, np.int64).reshape(-1, 2)}
     excl |= {(b, a) for a, b in excl}
     sweep = np.zeros(len(kind)) if sweep is None else np.asarray(sweep, float)
-    shapes = [WorldShape(KINDS[int(kind[i])], center[i], rot[i], float(radius[i]), half[i], float(half_len[i]))
-              for i in range(len(kind))]
+    hull_list = unpack_hulls(hulls) if hulls is not None else []
+    hid = np.full(len(kind), -1, np.int64) if hull_id is None else np.asarray(hull_id, np.int64)
+
+    def hull_of(i):
+        return hull_list[hid[i]] if kind[i] == 4 else None
+    shapes = [WorldShape(KINDS[int(kind[i])], center[i], rot[i], float(radius[i]), half[i], float(half_len[i]),
+                         hull_of(i)) for i in range(len(kind))]
     if center0 is None:
         shapes0, com0 = shapes, com
     else:
@@ -112,7 +120,7 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
         rot0 = np.asarray(rot0, float).reshape(-1, 3, 3)
         com0 = np.asarray(com0, float).reshape(-1, 3)
         shapes0 = [WorldShape(KINDS[int(kind[i])], center0[i], rot0[i], float(radius[i]), half[i],
-                              float(half_len[i])) for i in range(len(kind))]
+                              float(half_len[i]), hull_of(i)) for i in range(len(kind))]
     rows = {k: [] for k in ("ia", "ib", "J", "rhs", "lo", "hi", "parent", "mu", "err", "mode")}
     con = {k: [] for k in ("shape_a", "shape_b", "point", "normal", "depth", "row")}
     pairs = []
@@ -164,7 +172,8 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
     m, c = len(rows["ia"]), len(con["row"])
     return {"pairs": np.array(pairs, np.int64).reshape(-1, 2),
             "shape_a": np.array(con["shape_a"], np.int64), "shape_b": np.array(con["shape_b"], np.int64),
-            "point": np.array(con["point"], float).reshape(c, 3), "normal": np.array(con["normal"], float).reshape(c, 3),
+            "point": np.array(con["point"], float).reshape(c, 3),
+            "normal": np.array(con["normal"], float).reshape(c, 3),
             "depth": np.array(con["depth"], float), "row": np.array(con["row"], np.int64),
             "ia": np.array(rows["ia"], np.int64), "ib": np.array(rows["ib"], np.int64),
             "J": np.array(rows["J"], float).reshape(m, 12), "rhs": np.array(rows["rhs"], float),

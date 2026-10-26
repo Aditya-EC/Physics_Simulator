@@ -41,6 +41,9 @@ def shape_lines(shape: ColliderShape, position, rotation: np.ndarray, plane_size
         w = c + corners @ r.T
         edges = [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)]
         return np.array([w[i] for e in edges for i in e])
+    if shape.kind == "convex":
+        w = c + shape.hull.verts @ r.T
+        return np.array([w[i] for e in shape.hull.edges for i in e])
     if shape.kind == "capsule":
         rad, hl = shape.radius, shape.half_length
         top, bottom = c + ez * hl, c - ez * hl

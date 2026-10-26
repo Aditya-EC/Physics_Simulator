@@ -105,9 +105,9 @@ TRAJECTORY_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
 
 PHYSICS_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
     P("collider", "Collision shape", ValueType.ENUM, "none",
-      choices=("none", "auto", "sphere", "box", "capsule", "plane"),
+      choices=("none", "auto", "sphere", "box", "capsule", "plane", "convex"),
       description="Collision geometry (separate from the visual mesh). 'auto' uses the exact shape where the "
-                  "type has one, else the mesh bounding box. Rigid-body types default to 'auto'"),
+                  "type has one, else the convex hull of the mesh. Rigid-body types default to 'auto'"),
     P("radius", "Collider radius", ValueType.FLOAT, 0.0, quantity="length", minimum=0.0, maximum=1e6,
       description="0 = fitted to the mesh"),
     P("length", "Capsule core length", ValueType.FLOAT, 0.0, quantity="length", minimum=0.0, maximum=1e6,

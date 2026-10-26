@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <set>
+#include <stdexcept>
 #include <utility>
 
 #include "psim/vecmath.hpp"
@@ -22,6 +23,8 @@ struct Shape {
     double radius;
     Vec3 half;
     double half_len;
+    const HullSet* hs = nullptr;    // hull data (kHull, or a box paired with a hull)
+    int64_t hid = -1;
 
     Vec3 col(int k) const { return {r[k], r[3 + k], r[6 + k]}; }
     Vec3 to_local(const Vec3& p) const {        // Rᵀ (p − c)
@@ -322,6 +325,229 @@ Contacts box_box(const Shape& b1, const Shape& b2) {
     return out;
 }
 
+// ---- convex hulls (mirror psim/physics/collision.py) -------------------------------------------------------
+
+struct WorldHull {
+    const HullSet* hs;
+    int64_t v0, nv, f0, nf, e0, ne;
+    std::vector<Vec3> v, n;
+    std::vector<double> d;
+
+    explicit WorldHull(const Shape& s) : hs(s.hs) {
+        const int64_t h = s.hid;
+        v0 = hs->vert_off[h];
+        nv = hs->vert_off[h + 1] - v0;
+        f0 = hs->face_off[h];
+        nf = hs->face_off[h + 1] - f0;
+        e0 = hs->edge_off[h];
+        ne = hs->edge_off[h + 1] - e0;
+        v.reserve(nv);
+        for (int64_t i = 0; i < nv; ++i) {
+            const double* p = hs->verts + 3 * (v0 + i);
+            v.push_back(s.c + s.to_world_dir({p[0], p[1], p[2]}));
+        }
+        for (int64_t f = 0; f < nf; ++f) {
+            const double* p = hs->normals + 3 * (f0 + f);
+            const Vec3 nw = s.to_world_dir({p[0], p[1], p[2]});
+            n.push_back(nw);
+            d.push_back(hs->offsets[f0 + f] + dot(nw, s.c));
+        }
+    }
+    int64_t face_size(int64_t f) const { return hs->face_vert_off[f0 + f + 1] - hs->face_vert_off[f0 + f]; }
+    const Vec3& face_vert(int64_t f, int64_t k) const { return v[hs->face_verts[hs->face_vert_off[f0 + f] + k]]; }
+    int64_t edge(int64_t e, int k) const { return hs->edges[2 * (e0 + e) + k]; }
+    int64_t edge_face(int64_t e, int k) const { return hs->edge_faces[2 * (e0 + e) + k]; }
+    Vec3 mean() const {
+        Vec3 m{0, 0, 0};
+        for (const Vec3& p : v) m += p;
+        return m / static_cast<double>(v.size());
+    }
+};
+
+double norm2(const Vec3& a) { return dot(a, a); }
+
+// At most 4 well-spread points (deepest, farthest from it, largest triangle, largest enlargement).
+std::vector<size_t> reduce_manifold(const std::vector<Vec3>& p, const std::vector<double>& depth) {
+    const size_t n = p.size();
+    std::vector<size_t> out;
+    if (n <= 4) {
+        for (size_t i = 0; i < n; ++i) out.push_back(i);
+        return out;
+    }
+    size_t i0 = 0, i1 = 0, i2 = 0, i3 = 0;
+    for (size_t i = 1; i < n; ++i)
+        if (depth[i] > depth[i0]) i0 = i;
+    double best = -1;
+    for (size_t i = 0; i < n; ++i) {
+        const double d = norm2(p[i] - p[i0]);
+        if (d > best) best = d, i1 = i;
+    }
+    best = -1;
+    for (size_t i = 0; i < n; ++i) {
+        const double a = norm(cross(p[i1] - p[i0], p[i] - p[i0]));
+        if (a > best) best = a, i2 = i;
+    }
+    const double tri = best;
+    best = -1;
+    for (size_t i = 0; i < n; ++i) {
+        const double sc = norm(cross(p[i0] - p[i], p[i1] - p[i])) + norm(cross(p[i1] - p[i], p[i2] - p[i])) +
+                          norm(cross(p[i2] - p[i], p[i0] - p[i]));
+        if (sc > best) best = sc, i3 = i;
+    }
+    out = {i0, i1, i2};
+    if (best > tri * (1 + 1e-9) && i3 != i0 && i3 != i1 && i3 != i2) out.push_back(i3);
+    std::sort(out.begin(), out.end());  // in clipping order, independent of near-ties in the picks
+    return out;
+}
+
+Contacts reduced_contacts(const std::vector<Vec3>& pts, const std::vector<double>& depths, const Vec3& normal) {
+    Contacts out;
+    for (size_t k : reduce_manifold(pts, depths)) out.push_back({pts[k], normal, depths[k]});
+    return out;
+}
+
+Contacts hull_hull(const Shape& a, const Shape& b) {
+    const WorldHull A(a), B(b);
+    double sep_a = -std::numeric_limits<double>::infinity(), sep_b = sep_a;
+    int64_t fa = 0, fb = 0;
+    for (int64_t f = 0; f < A.nf; ++f) {
+        double mn = std::numeric_limits<double>::infinity();
+        for (const Vec3& p : B.v) mn = std::min(mn, dot(p, A.n[f]));
+        if (mn - A.d[f] > sep_a) sep_a = mn - A.d[f], fa = f;
+    }
+    if (sep_a > 0) return {};
+    for (int64_t f = 0; f < B.nf; ++f) {
+        double mn = std::numeric_limits<double>::infinity();
+        for (const Vec3& p : A.v) mn = std::min(mn, dot(p, B.n[f]));
+        if (mn - B.d[f] > sep_b) sep_b = mn - B.d[f], fb = f;
+    }
+    if (sep_b > 0) return {};
+    double best_e = -std::numeric_limits<double>::infinity();
+    int64_t ie = -1, je = -1;
+    Vec3 n_e{0, 0, 1};
+    bool any = false;
+    const Vec3 cen = A.mean();
+    for (int64_t i = 0; i < A.ne; ++i) {
+        const Vec3 an = A.n[A.edge_face(i, 0)], bn = A.n[A.edge_face(i, 1)];
+        const Vec3 bxa = cross(bn, an);
+        const Vec3 p0 = A.v[A.edge(i, 0)], da = A.v[A.edge(i, 1)] - p0;
+        for (int64_t j = 0; j < B.ne; ++j) {
+            const Vec3 cn = -B.n[B.edge_face(j, 0)], dn = -B.n[B.edge_face(j, 1)];
+            const Vec3 dxc = cross(dn, cn);
+            const double cba = dot(cn, bxa), dba = dot(dn, bxa), adc = dot(an, dxc), bdc = dot(bn, dxc);
+            if (!(cba * dba < 0 && adc * bdc < 0 && cba * bdc > 0)) continue;
+            const Vec3 q0 = B.v[B.edge(j, 0)], db = B.v[B.edge(j, 1)] - q0;
+            Vec3 n = cross(da, db);
+            const double ln = norm(n);
+            if (!(ln > 1e-6 * norm(da) * norm(db))) continue;
+            n = n / ln;
+            if (dot(n, p0 - cen) < 0) n = -n;
+            const double sep = dot(n, q0 - p0);
+            if (!any || sep > best_e) {
+                any = true;
+                best_e = sep, ie = i, je = j, n_e = n;
+            }
+        }
+    }
+    if (any && best_e > 0) return {};
+    if (ie >= 0 && best_e > 0.95 * std::max(sep_a, sep_b) + 1e-4) {
+        Vec3 c1, c2;
+        closest_points_segments(A.v[A.edge(ie, 0)], A.v[A.edge(ie, 1)], B.v[B.edge(je, 0)], B.v[B.edge(je, 1)],
+                                c1, c2);
+        return {{(c1 + c2) * 0.5, n_e, -best_e}};
+    }
+    const bool flip = sep_b > 0.95 * sep_a + 1e-4;
+    const WorldHull& R = flip ? B : A;
+    const WorldHull& I = flip ? A : B;
+    const int64_t rf = flip ? fb : fa;
+    const Vec3 ref_n = R.n[rf];
+    const double ref_d = R.d[rf];
+    int64_t inc = 0;
+    for (int64_t f = 1; f < I.nf; ++f)
+        if (dot(I.n[f], ref_n) < dot(I.n[inc], ref_n)) inc = f;
+    std::vector<Vec3> poly;
+    for (int64_t k = 0; k < I.face_size(inc); ++k) poly.push_back(I.face_vert(inc, k));
+    const int64_t m = R.face_size(rf);
+    for (int64_t k = 0; k < m; ++k) {
+        const Vec3 e = R.face_vert(rf, (k + 1) % m) - R.face_vert(rf, k);
+        const Vec3 side = cross(e, ref_n);
+        poly = clip(poly, side, dot(side, R.face_vert(rf, k)));
+        if (poly.empty()) return {};
+    }
+    std::vector<Vec3> pts;
+    std::vector<double> depths;
+    for (const Vec3& p : poly) {
+        const double depth = ref_d - dot(ref_n, p);
+        if (depth > 0) {
+            pts.push_back(p + ref_n * (depth / 2));
+            depths.push_back(depth);
+        }
+    }
+    return reduced_contacts(pts, depths, flip ? -ref_n : ref_n);
+}
+
+Contacts hull_plane(const Shape& h, const Shape& plane, bool hull_is_a) {
+    const WorldHull H(h);
+    const Vec3 n = plane.col(2);
+    std::vector<Vec3> pts;
+    std::vector<double> depths;
+    for (const Vec3& p : H.v) {
+        const double d = dot(p - plane.c, n);
+        if (d < 0) {
+            pts.push_back(p - n * d);
+            depths.push_back(-d);
+        }
+    }
+    return reduced_contacts(pts, depths, hull_is_a ? -n : n);
+}
+
+Contacts sphere_hull(const Vec3& c, double r, const Shape& h) {
+    const WorldHull H(h);
+    int64_t k = 0;
+    std::vector<double> s(static_cast<size_t>(H.nf));
+    for (int64_t f = 0; f < H.nf; ++f) {
+        s[f] = dot(H.n[f], c) - H.d[f];
+        if (s[f] > s[k]) k = f;
+    }
+    if (s[k] <= 0) return {{c - H.n[k] * s[k], H.n[k], r - s[k]}};
+    double best = std::numeric_limits<double>::infinity();
+    Vec3 q{0, 0, 0};
+    for (int64_t f = 0; f < H.nf; ++f) {
+        if (s[f] <= 0) continue;
+        const Vec3 p = c - H.n[f] * s[f];
+        const int64_t m = H.face_size(f);
+        bool inside = true;
+        for (int64_t i = 0; i < m && inside; ++i) {
+            const Vec3& a = H.face_vert(f, i);
+            if (dot(cross(H.face_vert(f, (i + 1) % m) - a, H.n[f]), p - a) > 0) inside = false;
+        }
+        if (inside && s[f] < best) best = s[f], q = p;
+    }
+    for (int64_t e = 0; e < H.ne; ++e) {
+        const Vec3 p = closest_point_segment(c, H.v[H.edge(e, 0)], H.v[H.edge(e, 1)]);
+        const double dist = norm(c - p);
+        if (dist < best) best = dist, q = p;
+    }
+    if (best >= r) return {};
+    return {{q, (c - q) / best, r - best}};
+}
+
+Contacts capsule_hull(const Shape& cap, const Shape& h) {
+    Vec3 a, b;
+    cap.segment(a, b);
+    const Vec3 samples[3] = {a, b, closest_point_segment(WorldHull(h).mean(), a, b)};
+    Contacts out;
+    for (const Vec3& p : samples) {
+        for (const Contact& c : sphere_hull(p, cap.radius, h)) {
+            bool fresh = true;
+            for (const Contact& o : out)
+                if (norm(c.point - o.point) <= 1e-6) fresh = false;
+            if (fresh) out.push_back(c);
+        }
+    }
+    return out;
+}
+
 Contacts flipped(Contacts v) {
     for (Contact& c : v) c.normal = -c.normal;
     return v;
@@ -333,9 +559,18 @@ Contacts collide(const Shape& a, const Shape& b) {
     if (kb == kPlane) {
         if (ka == kSphere) return sphere_plane(a.c, a.radius, b, true);
         if (ka == kBox) return box_plane(a, b, true);
+        if (ka == kHull) return hull_plane(a, b, true);
         return capsule_plane(a, b, true);
     }
     if (ka == kPlane) return flipped(collide(b, a));
+    if (ka == kHull) {
+        if (kb == kHull || kb == kBox) {
+            if (!a.hs || !b.hs) throw std::invalid_argument("hull pair without hull data");
+            return hull_hull(a, b);
+        }
+        if (kb == kSphere) return sphere_hull(b.c, b.radius, a);
+        return capsule_hull(b, a);
+    }
     if (ka == kSphere && kb == kSphere) return sphere_sphere(a.c, a.radius, b.c, b.radius);
     if (ka == kBox && kb == kSphere) return sphere_box(b.c, b.radius, a);
     if (ka == kCapsule && kb == kSphere) return capsule_sphere(a, b.c, b.radius);
@@ -347,7 +582,7 @@ Contacts collide(const Shape& a, const Shape& b) {
 
 double bounding_radius(const Shape& s) {
     if (s.kind == kSphere) return s.radius;
-    if (s.kind == kBox) return norm(s.half);
+    if (s.kind == kBox || s.kind == kHull) return norm(s.half);
     if (s.kind == kCapsule) return s.radius + s.half_len;
     return std::numeric_limits<double>::infinity();
 }
@@ -362,18 +597,26 @@ Shape shape_at(const ShapeSet& s, int64_t i, bool start = false) {
     sh.radius = s.radius[i];
     sh.half = {s.half[3 * i], s.half[3 * i + 1], s.half[3 * i + 2]};
     sh.half_len = s.half_len[i];
+    if (s.hull_id && s.hulls && s.hull_id[i] >= 0) {
+        sh.hs = s.hulls;
+        sh.hid = s.hull_id[i];
+    }
     return sh;
 }
 
 double thickness(const Shape& s) {
     if (s.kind == kSphere || s.kind == kCapsule) return 2.0 * s.radius;
-    if (s.kind == kBox) return 2.0 * std::min(s.half.x, std::min(s.half.y, s.half.z));
+    if (s.kind == kBox || s.kind == kHull) return 2.0 * std::min(s.half.x, std::min(s.half.y, s.half.z));
     return std::numeric_limits<double>::infinity();
 }
 
 Shape inflated(Shape s, double m) {
     if (s.kind == kSphere || s.kind == kCapsule) s.radius += m;
-    if (s.kind == kBox) s.half = s.half + Vec3{m, m, m};
+    if (s.kind == kBox || s.kind == kHull) {   // a fast hull is tested speculatively through its bounding box
+        s.kind = kBox;
+        s.hs = nullptr;
+        s.half = s.half + Vec3{m, m, m};
+    }
     return s;
 }
 

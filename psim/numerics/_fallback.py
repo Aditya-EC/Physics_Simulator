@@ -457,8 +457,9 @@ def pgs_solve(ia, ib, J, rhs, lo, hi, parent, mu, block, inv_m, inv_i, v, w, ite
 
 
 def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded, com, v,
-                 w, margin, restitution_threshold, sweep=None, dt=0.0, center0=None, rot0=None, com0=None):
+                 w, margin, restitution_threshold, sweep=None, dt=0.0, center0=None, rot0=None, com0=None,
+                 hull_id=None, hulls=None):
     """Broadphase, narrowphase and contact constraint rows (see psim/physics/contact_kernel.py)."""
     from ..physics.contact_kernel import contact_rows as kernel   # the physics package builds on numerics
     return kernel(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded, com,
-                  v, w, margin, restitution_threshold, sweep, dt, center0, rot0, com0)
+                  v, w, margin, restitution_threshold, sweep, dt, center0, rot0, com0, hull_id, hulls)

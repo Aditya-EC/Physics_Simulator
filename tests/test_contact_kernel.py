@@ -58,7 +58,8 @@ def test_every_pair_kind_is_exercised():
         d = numerics.contact_rows(*args)
         for p, q in d["pairs"]:
             seen.add(tuple(sorted((KINDS[args[0][p]], KINDS[args[0][q]]))))
-    expected = {tuple(sorted((a, b))) for a in KINDS for b in KINDS if not (a == b == "plane")}
+    basic = KINDS[:4]                                          # hull pairs: tests/test_hulls.py
+    expected = {tuple(sorted((a, b))) for a in basic for b in basic if not (a == b == "plane")}
     assert seen == expected
 
 

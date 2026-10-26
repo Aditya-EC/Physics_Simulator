@@ -26,7 +26,10 @@ def test_colliders_are_explicit_and_separate_from_the_mesh(scene):
     cyl = e.add_new("basic.cylinder", params={"radius": 0.3, "height": 1.0})
     e.set_property([cyl.id], "physics.collider", "auto")
     c = collider_for(s.get(cyl.id))
-    assert c.kind == "box" and c.approximate and "bounding box" in c.describe()
+    assert c.kind == "convex" and not c.approximate and "convex hull" in c.describe()   # the faceted mesh is exact
+    e.set_property([cyl.id], "physics.collider", "box")
+    c = collider_for(s.get(cyl.id))
+    assert c.kind == "box" and np.allclose(c.half_extents, [0.3, 0.3, 0.5], atol=1e-6)
     e.set_property([cyl.id], "physics.collider", "capsule")
     e.set_property([cyl.id], "physics.radius", 0.3)
     e.set_property([cyl.id], "physics.length", 0.4)

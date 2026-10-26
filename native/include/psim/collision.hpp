@@ -7,7 +7,22 @@
 
 namespace psim {
 
-enum ShapeKind : int64_t { kSphere = 0, kBox = 1, kCapsule = 2, kPlane = 3 };
+enum ShapeKind : int64_t { kSphere = 0, kBox = 1, kCapsule = 2, kPlane = 3, kHull = 4 };
+
+// Convex hulls, flattened (see psim/physics/hull.py pack_hulls). Offsets have one more entry than items.
+struct HullSet {
+    int64_t n = 0;
+    const double* verts = nullptr;        // (V, 3) relative to the collider centre
+    const int64_t* vert_off = nullptr;
+    const double* normals = nullptr;      // (F, 3) outward
+    const double* offsets = nullptr;      // (F,)  n·x <= d inside
+    const int64_t* face_off = nullptr;
+    const int64_t* face_verts = nullptr;  // vertex indices (local to the hull), counter-clockwise
+    const int64_t* face_vert_off = nullptr;   // per global face index
+    const int64_t* edges = nullptr;       // (E, 2) local vertex indices
+    const int64_t* edge_faces = nullptr;  // (E, 2) local face indices (face with a→b, face with b→a)
+    const int64_t* edge_off = nullptr;
+};
 
 struct ShapeSet {
     int64_t n = 0;
@@ -23,6 +38,8 @@ struct ShapeSet {
     const double* sweep = nullptr;        // optional: how far each shape's surface can move this step (CCD)
     const double* center0 = nullptr;      // optional: start-of-step centres and rotations (speculative pairs)
     const double* rot0 = nullptr;
+    const int64_t* hull_id = nullptr;     // index into hulls for kind kHull (and boxes paired with hulls), or -1
+    const HullSet* hulls = nullptr;
 };
 
 struct BodySet {

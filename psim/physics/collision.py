@@ -4,10 +4,12 @@ Every contact has a world point, a unit normal pointing from shape A into shape 
 (B must move along +n to separate) and a penetration depth (> 0 when overlapping).
 
 Pairs supported: sphere–{sphere, box, capsule, plane}, capsule–{capsule, box, plane},
-box–{box, plane}. Box–box uses the separating-axis test (15 axes) with face
-clipping for face contacts (up to 8 points) and closest points for edge–edge.
-Capsule–box samples the capsule core (ends and the point closest to the box) and is
-approximate for deep edge contacts.
+box–{box, plane}, and convex hulls with everything. Box–box uses the separating-axis test
+(15 axes) with face clipping for face contacts (up to 8 points) and closest points for edge–edge.
+Hull–hull (and hull–box) uses the polyhedral separating-axis test: face normals of both hulls
+and Gauss-map-pruned edge pairs, then face clipping reduced to at most 4 well-spread points, or
+the closest points of the two edges. Capsule–box and capsule–hull sample the capsule core (ends
+and the point closest to the other shape) and are approximate for deep edge contacts.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .colliders import ColliderShape
+from .hull import Hull, box_hull
 
 
 def _cross(a, b) -> np.ndarray:
@@ -31,11 +34,19 @@ class WorldShape:
     radius: float = 0.0
     half: np.ndarray | None = None
     half_length: float = 0.0
+    hull: Hull | None = None
 
     @staticmethod
     def place(shape: ColliderShape, origin: np.ndarray, rot: np.ndarray) -> "WorldShape":
         return WorldShape(shape.kind, origin + rot @ shape.center, rot, shape.radius, shape.half_extents,
-                          shape.half_length)
+                          shape.half_length, shape.hull)
+
+    def world_hull(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Vertices, face normals and face offsets of a hull (or box) in world space."""
+        h = self.hull if self.kind == "hull" else box_hull(self.half)
+        verts = self.center + h.verts @ self.rot.T
+        normals = h.normals @ self.rot.T
+        return verts, normals, h.offsets + normals @ self.center
 
     def segment(self) -> tuple[np.ndarray, np.ndarray]:
         axis = self.rot[:, 2] * self.half_length
@@ -44,7 +55,7 @@ class WorldShape:
     def bounding_radius(self) -> float:
         if self.kind == "sphere":
             return self.radius
-        if self.kind == "box":
+        if self.kind in ("box", "hull"):
             return float(np.linalg.norm(self.half))
         if self.kind == "capsule":
             return self.radius + self.half_length
@@ -295,6 +306,164 @@ def box_box(b1: WorldShape, b2: WorldShape) -> list[Contact]:
     return out[:8]
 
 
+# ---- convex hulls -------------------------------------------------------------------------------------------------
+
+def _as_hull(s: WorldShape) -> Hull:
+    return s.hull if s.kind == "hull" else box_hull(s.half)
+
+
+def reduce_manifold(points: list[np.ndarray], depths: list[float]) -> list[int]:
+    """At most 4 well-spread contact points: the deepest, the farthest from it, the one spanning the largest
+    triangle, and the one enlarging that triangle most (first index wins ties), in their original order."""
+    n = len(points)
+    if n <= 4:
+        return list(range(n))
+    p = np.asarray(points)
+    i0 = int(np.argmax(depths))
+    i1 = int(np.argmax(np.einsum("ij,ij->i", p - p[i0], p - p[i0])))
+    area = np.linalg.norm(np.cross(p[i1] - p[i0], p - p[i0]), axis=1)
+    i2 = int(np.argmax(area))
+    tri = float(area[i2])
+    score = (np.linalg.norm(np.cross(p[i0] - p, p[i1] - p), axis=1)
+             + np.linalg.norm(np.cross(p[i1] - p, p[i2] - p), axis=1)
+             + np.linalg.norm(np.cross(p[i2] - p, p[i0] - p), axis=1))
+    i3 = int(np.argmax(score))
+    out = [i0, i1, i2]
+    if score[i3] > tri * (1 + 1e-9) and i3 not in out:
+        out.append(i3)
+    return sorted(out)                         # in clipping order, independent of near-ties in the picks
+
+
+def _clip_face(poly: list[np.ndarray], ref: list[np.ndarray], nr: np.ndarray) -> list[np.ndarray]:
+    """Clip a polygon against the side planes of a reference face (counter-clockwise around nr)."""
+    m = len(ref)
+    for k in range(m):
+        e = ref[(k + 1) % m] - ref[k]
+        side = _cross(e, nr)
+        poly = _clip(poly, side, float(side @ ref[k]))
+        if not poly:
+            return []
+    return poly
+
+
+def hull_hull(a: WorldShape, b: WorldShape) -> list[Contact]:
+    """Normal from hull a into hull b (boxes are treated as hulls)."""
+    ha, hb = _as_hull(a), _as_hull(b)
+    va, na, da = a.world_hull()
+    vb, nb, db = b.world_hull()
+    sa = (vb @ na.T).min(axis=0) - da          # separation along each face of a
+    fa = int(np.argmax(sa))
+    if sa[fa] > 0:
+        return []
+    sb = (va @ nb.T).min(axis=0) - db
+    fb = int(np.argmax(sb))
+    if sb[fb] > 0:
+        return []
+    # edge pairs that form a face of the Minkowski difference (Gauss-map arcs intersect)
+    ea0, ea1 = va[ha.edges[:, 0]], va[ha.edges[:, 1]]
+    eb0, eb1 = vb[hb.edges[:, 0]], vb[hb.edges[:, 1]]
+    a_n, b_n = na[ha.edge_faces[:, 0]], na[ha.edge_faces[:, 1]]
+    c_n, d_n = -nb[hb.edge_faces[:, 0]], -nb[hb.edge_faces[:, 1]]
+    bxa = np.cross(b_n, a_n)
+    dxc = np.cross(d_n, c_n)
+    cba = c_n @ bxa.T                          # (EB, EA)
+    dba = d_n @ bxa.T
+    adc = (a_n @ dxc.T).T                      # (EB, EA)
+    bdc = (b_n @ dxc.T).T
+    ok = (cba * dba < 0) & (adc * bdc < 0) & (cba * bdc > 0)
+    best_e, ie, je = -np.inf, -1, -1
+    if ok.any():
+        da_ = ea1 - ea0
+        db_ = eb1 - eb0
+        cen = va.mean(axis=0)
+        jj, ii = np.nonzero(ok)                                     # ok is (edges of b, edges of a)
+        order = np.lexsort((jj, ii))                                # i-major, as in the C++ loops
+        ii, jj = ii[order], jj[order]
+        n = np.cross(da_[ii], db_[jj])
+        ln = np.linalg.norm(n, axis=1)
+        keep = ln > 1e-6 * np.linalg.norm(da_[ii], axis=1) * np.linalg.norm(db_[jj], axis=1)
+        ii, jj, n, ln = ii[keep], jj[keep], n[keep], ln[keep]
+        if len(ii):
+            n = n / ln[:, None]
+            flip = np.einsum("ij,ij->i", n, ea0[ii] - cen) < 0
+            n[flip] = -n[flip]
+            sep = np.einsum("ij,ij->i", n, eb0[jj] - ea0[ii])
+            k = int(np.argmax(sep))
+            if sep[k] > 0:
+                return []
+            best_e, ie, je, n_e = float(sep[k]), int(ii[k]), int(jj[k]), n[k]
+    sep_a, sep_b = float(sa[fa]), float(sb[fb])
+    if ie >= 0 and best_e > 0.95 * max(sep_a, sep_b) + 1e-4:
+        c1, c2 = closest_points_segments(ea0[ie], ea1[ie], eb0[je], eb1[je])
+        return [_contact((c1 + c2) / 2, n_e, -best_e)]
+    if sep_b > 0.95 * sep_a + 1e-4:
+        ref_v, ref_n, ref_d, ref_face, inc_v, inc_n, inc_h, flip = vb, nb[fb], db[fb], hb.faces[fb], va, na, ha, True
+    else:
+        ref_v, ref_n, ref_d, ref_face, inc_v, inc_n, inc_h, flip = va, na[fa], da[fa], ha.faces[fa], vb, nb, hb, False
+    inc = int(np.argmin(inc_n @ ref_n))
+    poly = _clip_face([inc_v[i] for i in inc_h.faces[inc]], [ref_v[i] for i in ref_face], ref_n)
+    pts, depths = [], []
+    for p in poly:
+        depth = ref_d - float(ref_n @ p)
+        if depth > 0:
+            pts.append(p + ref_n * depth / 2)
+            depths.append(depth)
+    normal = -ref_n if flip else ref_n
+    return [_contact(pts[k], normal, depths[k]) for k in reduce_manifold(pts, depths)]
+
+
+def hull_plane(h: WorldShape, plane: WorldShape, hull_is_a: bool) -> list[Contact]:
+    n = plane.rot[:, 2]
+    verts, _, _ = h.world_hull()
+    dist = (verts - plane.center) @ n
+    pts = [v - n * d for v, d in zip(verts, dist) if d < 0]
+    depths = [-float(d) for d in dist if d < 0]
+    normal = -n if hull_is_a else n
+    return [_contact(pts[k], normal, depths[k]) for k in reduce_manifold(pts, depths)]
+
+
+def sphere_hull(c, r, h: WorldShape) -> list[Contact]:
+    """Normal from the hull into the sphere."""
+    hh = _as_hull(h)
+    verts, normals, offsets = h.world_hull()
+    s = normals @ c - offsets
+    k = int(np.argmax(s))
+    if s[k] <= 0:                               # centre inside: push out through the nearest face
+        return [_contact(c - normals[k] * s[k], normals[k], r - s[k])]
+    best, q = np.inf, None
+    for f in range(len(hh.faces)):              # projection inside a face polygon
+        if s[f] <= 0:
+            continue
+        p = c - normals[f] * s[f]
+        poly = [verts[i] for i in hh.faces[f]]
+        inside = all(float(_cross(poly[(i + 1) % len(poly)] - poly[i], normals[f]) @ (p - poly[i])) <= 0
+                     for i in range(len(poly)))
+        if inside and s[f] < best:
+            best, q = float(s[f]), p
+    for e0, e1 in hh.edges:                     # otherwise an edge (or vertex) is closest
+        p = closest_point_segment(c, verts[e0], verts[e1])
+        dist = float(np.linalg.norm(c - p))
+        if dist < best:
+            best, q = dist, p
+    if best >= r:
+        return []
+    d = c - q
+    return [_contact(q, d / best, r - best)]
+
+
+def capsule_hull(cap: WorldShape, h: WorldShape) -> list[Contact]:
+    """Normal from the hull into the capsule (samples the capsule core, like capsule_box)."""
+    a, b = cap.segment()
+    verts, _, _ = h.world_hull()
+    samples = [a, b, closest_point_segment(verts.mean(axis=0), a, b)]
+    out: list[Contact] = []
+    for p in samples:
+        for c in sphere_hull(p, cap.radius, h):
+            if all(np.linalg.norm(c.point - o.point) > 1e-6 for o in out):
+                out.append(c)
+    return out
+
+
 def collide(a: WorldShape, b: WorldShape) -> list[Contact]:
     """Contacts between two shapes with normals from a into b."""
     ka, kb = a.kind, b.kind
@@ -305,9 +474,17 @@ def collide(a: WorldShape, b: WorldShape) -> list[Contact]:
             return sphere_plane(a.center, a.radius, b, True)
         if ka == "box":
             return box_plane(a, b, True)
+        if ka == "hull":
+            return hull_plane(a, b, True)
         return capsule_plane(a, b, True)
     if ka == "plane":
         return [Contact(c.point, -c.normal, c.depth) for c in collide(b, a)]
+    if ka == "hull":
+        if kb in ("hull", "box"):
+            return hull_hull(a, b)
+        if kb == "sphere":
+            return sphere_hull(b.center, b.radius, a)
+        return capsule_hull(b, a)
     if ka == "sphere" and kb == "sphere":
         return sphere_sphere(a.center, a.radius, b.center, b.radius)
     if ka == "box" and kb == "sphere":

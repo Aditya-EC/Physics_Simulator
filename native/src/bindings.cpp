@@ -294,15 +294,58 @@ PYBIND11_MODULE(_psim_native, m) {
                              const DArr& friction, const BArr& dynamic, const IArr& excluded, const DArr& com,
                              const DArr& v, const DArr& w, double margin, double restitution_threshold,
                              const py::object& sweep, double dt, const py::object& center0,
-                             const py::object& rot0, const py::object& com0) {
+                             const py::object& rot0, const py::object& com0, const py::object& hull_id,
+                             const py::object& hulls) {
         const int64_t n = kind.size(), nb = dynamic.size();
         if (body.size() != n || center.size() != 3 * n || rot.size() != 9 * n || radius.size() != n ||
             half.size() != 3 * n || half_len.size() != n || restitution.size() != n || friction.size() != n)
             throw std::invalid_argument("shape arrays must all describe the same number of shapes");
         if (com.size() != 3 * nb || v.size() != 3 * nb || w.size() != 3 * nb || excluded.size() % 2 != 0)
             throw std::invalid_argument("body arrays must describe the same number of bodies");
+        IArr hid_arr;
+        HullSet hs;
+        std::vector<py::object> keep;   // arrays referenced by `hs` stay alive for the call
+        const int64_t* hid_ptr = nullptr;
+        if (!hulls.is_none()) {
+            if (hull_id.is_none()) throw std::invalid_argument("hulls need hull_id");
+            hid_arr = IArr::ensure(hull_id);
+            if (!hid_arr || hid_arr.size() != n) throw std::invalid_argument("hull_id needs one value per shape");
+            hid_ptr = hid_arr.data();
+            py::dict hd = hulls.cast<py::dict>();
+            auto darr = [&](const char* k, py::ssize_t width) {
+                DArr a = DArr::ensure(hd[k]);
+                if (!a || a.size() % width != 0) throw std::invalid_argument(std::string("bad hull array ") + k);
+                keep.push_back(a);
+                return a.data();
+            };
+            auto iarr = [&](const char* k, py::ssize_t width, py::ssize_t& count) {
+                IArr a = IArr::ensure(hd[k]);
+                if (!a || a.size() % width != 0) throw std::invalid_argument(std::string("bad hull array ") + k);
+                count = a.size() / width;
+                keep.push_back(a);
+                return a.data();
+            };
+            py::ssize_t nvo, nfo, nfv, nfvo, ne, nef, neo;
+            hs.verts = darr("verts", 3);
+            hs.normals = darr("normals", 3);
+            hs.offsets = darr("offsets", 1);
+            hs.vert_off = iarr("vert_off", 1, nvo);
+            hs.face_off = iarr("face_off", 1, nfo);
+            hs.face_verts = iarr("face_verts", 1, nfv);
+            hs.face_vert_off = iarr("face_vert_off", 1, nfvo);
+            hs.edges = iarr("edges", 2, ne);
+            hs.edge_faces = iarr("edge_faces", 2, nef);
+            hs.edge_off = iarr("edge_off", 1, neo);
+            hs.n = nvo - 1;
+            if (hs.n < 0 || nfo != nvo || neo != nvo || ne != nef ||
+                nfvo != hs.face_off[hs.n] + 1 || hs.face_vert_off[nfvo - 1] != nfv || hs.edge_off[hs.n] != ne)
+                throw std::invalid_argument("inconsistent hull arrays");
+        }
         for (int64_t i = 0; i < n; ++i) {
-            if (kind.data()[i] < 0 || kind.data()[i] > 3) throw std::invalid_argument("unknown shape kind");
+            if (kind.data()[i] < 0 || kind.data()[i] > 4) throw std::invalid_argument("unknown shape kind");
+            if (kind.data()[i] == 4 && (!hid_ptr || hid_ptr[i] < 0 || hid_ptr[i] >= hs.n))
+                throw std::invalid_argument("a hull shape needs valid hull data");
+            if (hid_ptr && (hid_ptr[i] < -1 || hid_ptr[i] >= hs.n)) throw std::invalid_argument("bad hull_id");
             if (body.data()[i] < 0 || body.data()[i] >= nb) throw std::invalid_argument("shape refers to a missing body");
         }
         DArr sweep_arr;
@@ -323,7 +366,7 @@ PYBIND11_MODULE(_psim_native, m) {
         }
         ShapeSet s{n, kind.data(), body.data(), center.data(), rot.data(), radius.data(), half.data(),
                    half_len.data(), restitution.data(), friction.data(), sweep_ptr,
-                   start ? c0.data() : nullptr, start ? r0.data() : nullptr};
+                   start ? c0.data() : nullptr, start ? r0.data() : nullptr, hid_ptr, hid_ptr ? &hs : nullptr};
         BodySet b{nb, dynamic.data(), com.data(), v.data(), w.data(), start ? m0.data() : nullptr};
         ContactOutput out;
         {
@@ -353,7 +396,8 @@ PYBIND11_MODULE(_psim_native, m) {
        py::arg("half_len"), py::arg("restitution"), py::arg("friction"), py::arg("dynamic"), py::arg("excluded"),
        py::arg("com"), py::arg("v"), py::arg("w"), py::arg("margin"), py::arg("restitution_threshold"),
        py::arg("sweep") = py::none(), py::arg("dt") = 0.0, py::arg("center0") = py::none(),
-       py::arg("rot0") = py::none(), py::arg("com0") = py::none());
+       py::arg("rot0") = py::none(), py::arg("com0") = py::none(), py::arg("hull_id") = py::none(),
+       py::arg("hulls") = py::none());
 
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);
