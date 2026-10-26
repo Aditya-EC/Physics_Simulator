@@ -143,10 +143,11 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
+| `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind), sort-and-sweep keeps every overlapping pair, input validation |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **485 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 454 pass and 31 native-comparison tests are skipped. This was measured on
+Current result: **501 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 456 pass and 45 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -559,7 +560,8 @@ administrators. Even so, a determined local administrator can change anything.
   mean).
 
 **Collision detection and response** (`psim/physics/collision.py`, `system.py`).
-- A bounding-sphere broadphase is followed by narrowphase pairs: sphere–{sphere, box, capsule, plane},
+- A sort-and-sweep broadphase on bounding spheres (C++, `native/src/collision.cpp`; NumPy reference
+  `psim/physics/contact_kernel.py`) is followed by narrowphase pairs: sphere–{sphere, box, capsule, plane},
   capsule–{capsule, box, plane} and box–{box, plane}. Box–box uses the 15-axis separating-axis
   test with face clipping (up to 8 contact points) and closest points for edge–edge contacts.
 - Each contact gives a non-penetration row with restitution (impacts slower than the restitution
@@ -709,6 +711,7 @@ native/                    C++17 numerical core + pybind11 bindings + C++ tests
   include/psim/transforms.hpp  poses, TRS, look-at, perspective / orthographic
   src/mesh_ops.cpp             ray casting, normals, feature edges, solid & shell mass properties
   src/constraints.cpp          projected Gauss–Seidel constraint solver (block rows, impulse directions)
+  src/collision.cpp            broadphase, narrowphase and contact rows (mirrors psim/physics/collision.py)
 psim/
   numerics/        facade: native module or NumPy fallback with an identical API
   core/            persistent ID allocator
@@ -791,10 +794,14 @@ Key design decisions:
   - Batch runs execute one project per process; parameter sweeps are scripted by calling
     `psim-batch` repeatedly.
 - Rigid-body physics limits (Phase 7):
-  - Constraint rows are built in Python. Only the solver runs in C++. The physics demo (10 bodies,
-    7 colliders, 5 joints) takes about 2.3 ms per step on this machine, so real-time Δt = 5 ms
-    is reached for scenes of this size but not for hundreds of bodies.
-  - The broadphase tests all pairs of bounding spheres (O(n²)).
+  - Collision detection, contact rows and the solver run in C++. Joint rows and some
+    per-step bookkeeping are still NumPy. Measured on this machine:
+    - the physics demo (10 bodies, 7 colliders, 5 joints): about 1.3 ms per step
+    - a pile of 64 boxes: 2.8 ms per step
+    - a pile of 216 boxes: 6.3 ms per step
+    Real time at Δt = 5 ms therefore reaches a few hundred boxes.
+  - The broadphase is a sort-and-sweep along one axis. Scenes spread mainly along another axis do
+    more pair tests than a grid or tree would.
   - There is no continuous collision detection. Very fast, thin objects can pass through each
     other when they move more than their thickness in one step; reduce Δt.
   - Collision shapes are sphere, box, capsule and plane. Other meshes collide as their bounding
@@ -863,5 +870,4 @@ Key design decisions:
 
 1. Run the test suite on Windows with a hardware GPU.
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
-3. Physics performance: build constraint rows in C++, add a spatial broadphase and continuous
-   collision detection, and add convex-hull colliders.
+3. Physics: continuous collision detection, convex-hull colliders, and joint rows in C++.

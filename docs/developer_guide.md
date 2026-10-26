@@ -109,8 +109,9 @@ routine needs:
   prescribed motion, constraints (collisions and joints), recording and stop conditions.
 - **Headless:** `psim-batch project.psim --summary-json out.json` reports the same stage profile.
   Run it under `python -m cProfile -s cumtime -m psim.batch …` for function-level detail.
-- Known hot spot: collision and joint *row building* is Python (about 2 ms per step for ten
-  bodies). The solver itself is C++.
+- Collision detection, contact rows and the solver are C++. The remaining Python work per step is
+  joint rows and array bookkeeping: about 1.3 ms per step for the ten-body physics demo, and
+  6.3 ms for 216 stacked boxes.
 
 ## Packaging and distribution
 

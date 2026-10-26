@@ -28,6 +28,8 @@ if os.environ.get("PSIM_FORCE_PYTHON_NUMERICS") != "1":
 FALLBACK = _fallback
 
 quat_normalize = _impl.quat_normalize
+# an older native build without the collision pipeline falls back to the NumPy kernel for it alone
+contact_rows = getattr(_impl, "contact_rows", _fallback.contact_rows)
 quat_multiply = _impl.quat_multiply
 quat_conjugate = _impl.quat_conjugate
 quat_from_axis_angle = _impl.quat_from_axis_angle

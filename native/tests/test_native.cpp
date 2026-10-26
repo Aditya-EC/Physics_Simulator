@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "psim/collision.hpp"
 #include "psim/constraints.hpp"
 #include "psim/integrators.hpp"
 #include "psim/mesh_ops.hpp"
@@ -125,7 +126,39 @@ static void test_pgs_contact() {
     CHECK_NEAR(lambda[0], 0.0, 1e-12);
 }
 
+static void test_contacts() {
+    // a unit box resting 1 mm into the ground plane, and a sphere 1 mm into the box's top face
+    const int64_t kind[3] = {kPlane, kBox, kSphere}, body[3] = {0, 1, 2};
+    const double center[9] = {0, 0, 0, 0, 0, 0.499, 0, 0, 1.198};
+    double rot[27] = {0};
+    for (int s = 0; s < 3; ++s) rot[9 * s] = rot[9 * s + 4] = rot[9 * s + 8] = 1.0;
+    const double radius[3] = {0, 0, 0.2}, half[9] = {0, 0, 0, 0.5, 0.5, 0.5, 0, 0, 0};
+    const double half_len[3] = {0, 0, 0}, rest[3] = {0, 0, 0}, fric[3] = {0.5, 0.5, 0.0};
+    const uint8_t dynamic[3] = {0, 1, 1};
+    const double com[9] = {0, 0, 0, 0, 0, 0.499, 0, 0, 1.198}, v[9] = {0}, w[9] = {0};
+    ShapeSet s{3, kind, body, center, rot, radius, half, half_len, rest, fric};
+    BodySet b{3, dynamic, com, v, w};
+    ContactOutput out;
+    contact_rows(s, b, nullptr, 0, 0.002, 0.2, out);
+    CHECK_NEAR(static_cast<double>(out.pairs.size()), 4.0, 0.0);      // plane–box and box–sphere
+    CHECK_NEAR(static_cast<double>(out.depth.size()), 5.0, 0.0);      // 4 box corners + 1 sphere point
+    for (int k = 0; k < 4; ++k) {
+        CHECK_NEAR(out.depth[k], 0.001, 1e-12);
+        CHECK_NEAR(out.normal[3 * k + 2], 1.0, 1e-12);                // from the plane (A) into the box (B)
+    }
+    CHECK_NEAR(out.depth[4], 0.001, 1e-12);
+    CHECK_NEAR(out.normal[3 * 4 + 2], 1.0, 1e-12);                    // from the box into the sphere
+    // rows: box–plane contacts have friction (2 rows each); the frictionless sphere contact has none
+    CHECK_NEAR(static_cast<double>(out.ia.size()), 4 * 3 + 1, 0.0);
+    // the same bodies joined by an excluded pair do not collide
+    const int64_t excl[2] = {1, 2};
+    ContactOutput out2;
+    contact_rows(s, b, excl, 1, 0.002, 0.2, out2);
+    CHECK_NEAR(static_cast<double>(out2.depth.size()), 4.0, 0.0);
+}
+
 int main() {
+    test_contacts();
     test_pgs_contact();
     test_integrators();
     test_euler_roundtrip();

@@ -23,7 +23,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from .. import numerics
-from .collision import WorldShape, broadphase, collide
+from .contact_kernel import KINDS
 from .setup import PhysicsSetup
 
 INF = 1e30
@@ -38,6 +38,16 @@ class PhysicsSettings:
                                          # the correction never adds velocity, so a full correction is safe)
     slop: float = 0.002                  # allowed penetration (m) before position correction
     restitution_threshold: float = 0.2   # m/s: slower impacts do not bounce (avoids jitter at rest)
+
+
+def _quat_matrices(q: np.ndarray) -> np.ndarray:
+    """(n, 4) unit quaternions (w, x, y, z) → (n, 3, 3) rotation matrices (vectorised)."""
+    q = np.asarray(q, float)
+    q = q / np.linalg.norm(q, axis=1, keepdims=True)
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    return np.stack([np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], -1),
+                     np.stack([2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], -1),
+                     np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], -1)], 1)
 
 
 def _cross(a, b) -> np.ndarray:
@@ -101,6 +111,24 @@ class _Rows:
         self.mode.append(mode)
         return len(self.ia) - 1
 
+    def extend(self, d: dict) -> None:
+        """Append the scalar rows produced by numerics.contact_rows (they come first, so parents need no offset)."""
+        if self.ia:
+            raise ValueError("contact rows must be added before any other rows")
+        m = len(d["ia"])
+        self.ia += d["ia"].tolist()
+        self.ib += d["ib"].tolist()
+        self.J += list(d["J"])
+        self.B += list(d["J"])
+        self.rhs += d["rhs"].tolist()
+        self.lo += d["lo"].tolist()
+        self.hi += d["hi"].tolist()
+        self.parent += d["parent"].tolist()
+        self.mu += d["mu"].tolist()
+        self.err += d["err"].tolist()
+        self.mode += ["ineq" if x == 1 else "none" for x in d["mode"].tolist()]
+        self.block += [1] * m
+
     def arrays(self):
         m = len(self.ia)
         return (np.array(self.ia, np.int64), np.array(self.ib, np.int64),
@@ -131,11 +159,36 @@ class PhysicsSystem:
                     self.inv_mass[i] = bodies.inv_mass[e]
                 if self.dynamic[i] and rot[e]:
                     self.inv_inertia_local[i] = bodies.inv_inertia_local[e]
+        # static bodies never move: their poses are computed once
+        self._sim_rows = np.flatnonzero(self.engine_rows >= 0)
+        self._static_R = np.tile(E3, (n, 1, 1))
+        self._static_origin = np.zeros((n, 3))
+        for i, k in enumerate(self.keys):
+            if self.engine_rows[i] < 0:
+                p, q = setup.bodies[k].pose
+                self._static_R[i] = _quat_matrices(np.asarray(q, float)[None, :])[0]
+                self._static_origin[i] = p
         connected = set()
         for je in setup.joints:
             if not je.joint.collide_connected:
                 connected.add(frozenset((je.body_a, je.body_b or "@world")))
         self.excluded = connected
+        # collider data that does not change during the run (placed in the world every step)
+        cols = setup.colliders
+        self.col_kind = np.array([KINDS.index(c.shape.kind) for c in cols], np.int64)
+        self.col_body = np.array([self.index[c.body] for c in cols], np.int64)
+        self.col_rel_pos = np.array([c.rel_pos for c in cols], float).reshape(-1, 3)
+        self.col_rel_rot = np.array([c.rel_rot for c in cols], float).reshape(-1, 3, 3)
+        self.col_center = np.array([c.shape.center for c in cols], float).reshape(-1, 3)
+        self.col_radius = np.array([c.shape.radius for c in cols], float)
+        self.col_half = np.array([c.shape.half_extents if c.shape.half_extents is not None else np.zeros(3)
+                                  for c in cols], float).reshape(-1, 3)
+        self.col_half_len = np.array([c.shape.half_length for c in cols], float)
+        self.col_restitution = np.array([c.restitution for c in cols], float)
+        self.col_friction = np.array([c.friction for c in cols], float)
+        self.excluded_index = np.array([sorted(self.index[k] for k in pair) for pair in connected
+                                        if all(k in self.index for k in pair) and len(pair) == 2],
+                                       np.int64).reshape(-1, 2)
         self.touching: set[frozenset] = set()
         self.new_contacts: list[tuple[str, str]] = []   # newly touching collider pairs (for the event log)
         self.last_contacts: list = []                   # (source a, source b, point, normal, depth, impulse)
@@ -143,22 +196,16 @@ class PhysicsSystem:
 
     # ---- state -------------------------------------------------------------------------------------------------
     def _gather(self, s):
+        """Origins, centres of mass, rotations, velocities and world inverse inertias of all solver bodies."""
+        origin, com, R = self._static_origin.copy(), self._static_origin.copy(), self._static_R.copy()
         n = len(self.keys)
-        origin, com = np.zeros((n, 3)), np.zeros((n, 3))
-        R = np.tile(E3, (n, 1, 1))
         v, w = np.zeros((n, 3)), np.zeros((n, 3))
-        for i, k in enumerate(self.keys):
-            e = self.engine_rows[i]
-            if e >= 0:
-                R[i] = np.asarray(numerics.quat_to_matrix(s.q[e]), float)
-                com[i] = s.x[e]
-                origin[i] = s.x[e] - R[i] @ self.com_local[i]
-                v[i], w[i] = s.v[e], s.w[e]
-            else:
-                p, q = self.setup.bodies[k].pose
-                R[i] = np.asarray(numerics.quat_to_matrix(q), float)
-                origin[i] = p
-                com[i] = p
+        sim, e = self._sim_rows, self.engine_rows[self._sim_rows]
+        if len(sim):
+            R[sim] = _quat_matrices(s.q[e])
+            com[sim] = s.x[e]
+            origin[sim] = s.x[e] - np.einsum("nij,nj->ni", R[sim], self.com_local[sim])
+            v[sim], w[sim] = s.v[e], s.w[e]
         inv_i = np.einsum("nij,njk,nlk->nil", R, self.inv_inertia_local, R)
         return origin, com, R, v, w, inv_i
 
@@ -215,82 +262,69 @@ class PhysicsSystem:
         # position pass on pseudo-velocities: remaining error after the Δv·Δt displacement
         jd = self._row_velocities(ia, ib, J, dv, dw)
         err = np.array(rows.err) + jd * dt
+        mode = np.array(rows.mode)
+        eq, ineq = mode == "eq", mode == "ineq"
         rhs_p = np.zeros(len(err))
+        rhs_p[eq] = -st.baumgarte * err[eq] / dt
+        rhs_p[ineq] = st.baumgarte * np.maximum(-err[ineq] - st.slop, 0.0) / dt
         lo_p, hi_p = lo.copy(), hi.copy()
+        other = ~(eq | ineq)              # friction and motors do not correct positions
+        lo_p[other], hi_p[other] = 0.0, 0.0
         par_p = np.full(len(err), -1, np.int64)
-        for r, mode in enumerate(rows.mode):
-            if mode == "eq":
-                rhs_p[r] = -st.baumgarte * err[r] / dt
-            elif mode == "ineq":
-                rhs_p[r] = st.baumgarte * max(-err[r] - st.slop, 0.0) / dt
-            else:  # friction and motors do not correct positions
-                lo_p[r], hi_p[r] = 0.0, 0.0
         vp, wp = np.zeros_like(v), np.zeros_like(w)
         if np.any(rhs_p):
             numerics.pgs_solve(ia, ib, J, rhs_p, lo_p, hi_p, par_p, np.zeros(len(err)), block, self.inv_mass, inv_i,
                                vp, wp, st.position_iterations)
-        for i in np.flatnonzero(self.dynamic):
-            e = self.engine_rows[i]
-            s.v[e] += dv[i]
-            s.w[e] += dw[i]
-            s.x[e] += (dv[i] + vp[i]) * dt
-            spin = dw[i] + wp[i]
-            if np.any(spin):
-                q = np.ascontiguousarray(s.q[e:e + 1].copy())
-                numerics.quat_integrate(q, np.ascontiguousarray(spin[None, :]), dt)
-                s.q[e] = q[0]
-            dv_eng[e], dw_eng[e] = dv[i], dw[i]
+        dyn = np.flatnonzero(self.dynamic)
+        e = self.engine_rows[dyn]
+        s.v[e] += dv[dyn]
+        s.w[e] += dw[dyn]
+        s.x[e] += (dv[dyn] + vp[dyn]) * dt
+        spin = dw[dyn] + wp[dyn]
+        turning = np.any(spin != 0.0, axis=1)
+        if turning.any():
+            q = np.ascontiguousarray(s.q[e[turning]])
+            numerics.quat_integrate(q, np.ascontiguousarray(spin[turning]), dt)
+            s.q[e[turning]] = q
+        dv_eng[e], dw_eng[e] = dv[dyn], dw[dyn]
         self.last_contacts = [(c[0], c[1], c[2], c[3], c[4], float(lam[c[5]])) for c in contacts]
         return dv_eng, dw_eng
 
     @staticmethod
     def _row_velocities(ia, ib, J, v, w) -> np.ndarray:
+        """J·[v_a, w_a, v_b, w_b] for every row (index −1 = the fixed world)."""
         out = np.zeros(len(ia))
-        for r in range(len(ia)):
-            if ia[r] >= 0:
-                out[r] += J[r, :3] @ v[ia[r]] + J[r, 3:6] @ w[ia[r]]
-            if ib[r] >= 0:
-                out[r] += J[r, 6:9] @ v[ib[r]] + J[r, 9:] @ w[ib[r]]
+        a, b = ia >= 0, ib >= 0
+        out[a] += np.einsum("ij,ij->i", J[a, :3], v[ia[a]]) + np.einsum("ij,ij->i", J[a, 3:6], w[ia[a]])
+        out[b] += np.einsum("ij,ij->i", J[b, 6:9], v[ib[b]]) + np.einsum("ij,ij->i", J[b, 9:], w[ib[b]])
         return out
 
     # ---- contacts ------------------------------------------------------------------------------------------------
     def _contacts(self, rows: _Rows, origin, com, R, v, w, dt) -> list:
+        """Contacts of all colliders (numerics.contact_rows: C++ or the NumPy kernel) and their rows."""
         st = self.settings
         entries = self.setup.colliders
-        shapes = []
-        for c in entries:
-            i = self.index[c.body]
-            shapes.append(WorldShape.place(c.shape, origin[i] + R[i] @ c.rel_pos, R[i] @ c.rel_rot))
-        out, touching = [], set()
-        for p, q in broadphase(shapes, margin=st.slop):
-            ca, cb = entries[p], entries[q]
-            a, b = self.index[ca.body], self.index[cb.body]
-            if a == b or not (self.dynamic[a] or self.dynamic[b]):
-                continue
-            if frozenset((ca.body, cb.body)) in self.excluded:
-                continue
-            found = collide(shapes[p], shapes[q])
-            if not found:
-                continue
-            pair = frozenset((ca.source, cb.source))
+        if not entries:
+            self.touching = set()
+            return []
+        b = self.col_body
+        rot = np.einsum("nij,njk->nik", R[b], self.col_rel_rot)
+        center = origin[b] + np.einsum("nij,nj->ni", R[b], self.col_rel_pos) + np.einsum("nij,nj->ni", rot,
+                                                                                         self.col_center)
+        d = numerics.contact_rows(self.col_kind, b, center, rot, self.col_radius, self.col_half, self.col_half_len,
+                                  self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
+                                  self.excluded_index, com, v, w, st.slop, st.restitution_threshold)
+        rows.extend(d)
+        touching = set()
+        for p, q in d["pairs"].tolist():
+            pair = frozenset((entries[p].source, entries[q].source))
             touching.add(pair)
             if pair not in self.touching:
-                self.new_contacts.append((ca.source, cb.source))
-            e = max(ca.restitution, cb.restitution)
-            mu = math.sqrt(max(ca.friction, 0.0) * max(cb.friction, 0.0))
-            for c in found:
-                n = c.normal
-                ra, rb = c.point - com[a], c.point - com[b]
-                vn0 = float(((v[b] + _cross(w[b], rb)) - (v[a] + _cross(w[a], ra))) @ n)
-                target = -e * vn0 if vn0 < -st.restitution_threshold else 0.0
-                k = rows.add(a, b, -n, -_cross(ra, n), n, _cross(rb, n), rhs=target, lo=0.0, hi=INF,
-                             err=-c.depth, mode="ineq")
-                if mu > 0:
-                    for t in _perp(n):
-                        rows.add(a, b, -t, -_cross(ra, t), t, _cross(rb, t), parent=k, mu=mu, mode="none")
-                out.append((ca.source, cb.source, c.point, n, c.depth, k))
+                self.new_contacts.append((entries[p].source, entries[q].source))
         self.touching = touching
-        return out
+        return [(entries[p].source, entries[q].source, d["point"][k], d["normal"][k], float(d["depth"][k]), int(r))
+                for k, (p, q, r) in enumerate(zip(d["shape_a"].tolist(), d["shape_b"].tolist(),
+                                                  d["row"].tolist()))]
 
     # ---- joints ----------------------------------------------------------------------------------------------------
     def _joint_geometry(self, je, a: int, b: int, origin, com, R) -> SimpleNamespace:

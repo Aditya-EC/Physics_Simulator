@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "psim/collision.hpp"
 #include "psim/constraints.hpp"
 #include "psim/integrators.hpp"
 #include "psim/mesh_ops.hpp"
@@ -105,6 +106,14 @@ double* writable(InPlace& a, py::ssize_t cols, const char* name) {
         throw std::invalid_argument(std::string(name) + " must have shape (N, " + std::to_string(cols) + ")");
     if (!a.writeable()) throw std::invalid_argument(std::string(name) + " must be writable");
     return a.mutable_data();
+}
+
+template <typename T>
+py::array_t<T> to_array(const std::vector<T>& v, py::ssize_t cols = 0) {
+    py::array_t<T> out = cols > 0 ? py::array_t<T>({static_cast<py::ssize_t>(v.size()) / cols, cols})
+                                  : py::array_t<T>(static_cast<py::ssize_t>(v.size()));
+    if (!v.empty()) std::copy(v.begin(), v.end(), out.mutable_data());
+    return out;
 }
 
 }  // namespace
@@ -277,6 +286,53 @@ PYBIND11_MODULE(_psim_native, m) {
        py::arg("mu"), py::arg("block"), py::arg("inv_m"), py::arg("inv_i"), py::arg("v").noconvert(),
        py::arg("w").noconvert(),
        py::arg("iterations"), py::arg("B") = py::none());
+
+    using IArr = py::array_t<int64_t, py::array::c_style | py::array::forcecast>;
+    using BArr = py::array_t<uint8_t, py::array::c_style | py::array::forcecast>;
+    m.def("contact_rows", [](const IArr& kind, const IArr& body, const DArr& center, const DArr& rot,
+                             const DArr& radius, const DArr& half, const DArr& half_len, const DArr& restitution,
+                             const DArr& friction, const BArr& dynamic, const IArr& excluded, const DArr& com,
+                             const DArr& v, const DArr& w, double margin, double restitution_threshold) {
+        const int64_t n = kind.size(), nb = dynamic.size();
+        if (body.size() != n || center.size() != 3 * n || rot.size() != 9 * n || radius.size() != n ||
+            half.size() != 3 * n || half_len.size() != n || restitution.size() != n || friction.size() != n)
+            throw std::invalid_argument("shape arrays must all describe the same number of shapes");
+        if (com.size() != 3 * nb || v.size() != 3 * nb || w.size() != 3 * nb || excluded.size() % 2 != 0)
+            throw std::invalid_argument("body arrays must describe the same number of bodies");
+        for (int64_t i = 0; i < n; ++i) {
+            if (kind.data()[i] < 0 || kind.data()[i] > 3) throw std::invalid_argument("unknown shape kind");
+            if (body.data()[i] < 0 || body.data()[i] >= nb) throw std::invalid_argument("shape refers to a missing body");
+        }
+        ShapeSet s{n, kind.data(), body.data(), center.data(), rot.data(), radius.data(), half.data(),
+                   half_len.data(), restitution.data(), friction.data()};
+        BodySet b{nb, dynamic.data(), com.data(), v.data(), w.data()};
+        ContactOutput out;
+        {
+            py::gil_scoped_release release;   // pure C++ on copies of the inputs' pointers
+            contact_rows(s, b, excluded.data(), excluded.size() / 2, margin, restitution_threshold, out);
+        }
+        py::dict d;
+        d["pairs"] = to_array(out.pairs, 2);
+        d["shape_a"] = to_array(out.shape_a);
+        d["shape_b"] = to_array(out.shape_b);
+        d["point"] = to_array(out.point, 3);
+        d["normal"] = to_array(out.normal, 3);
+        d["depth"] = to_array(out.depth);
+        d["row"] = to_array(out.row);
+        d["ia"] = to_array(out.ia);
+        d["ib"] = to_array(out.ib);
+        d["J"] = to_array(out.J, 12);
+        d["rhs"] = to_array(out.rhs);
+        d["lo"] = to_array(out.lo);
+        d["hi"] = to_array(out.hi);
+        d["parent"] = to_array(out.parent);
+        d["mu"] = to_array(out.mu);
+        d["err"] = to_array(out.err);
+        d["mode"] = to_array(out.mode);
+        return d;
+    }, py::arg("kind"), py::arg("body"), py::arg("center"), py::arg("rot"), py::arg("radius"), py::arg("half"),
+       py::arg("half_len"), py::arg("restitution"), py::arg("friction"), py::arg("dynamic"), py::arg("excluded"),
+       py::arg("com"), py::arg("v"), py::arg("w"), py::arg("margin"), py::arg("restitution_threshold"));
 
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);
