@@ -463,3 +463,11 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
     from ..physics.contact_kernel import contact_rows as kernel   # the physics package builds on numerics
     return kernel(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded, com,
                   v, w, margin, restitution_threshold, sweep, dt, center0, rot0, com0, hull_id, hulls)
+
+
+def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot, flags, lower, upper, motor_speed,
+               motor_max, length, origin, com, R, dt, slop, mid_origin=None, mid_com=None, mid_R=None):
+    """Joint constraint rows (see psim/physics/joint_kernel.py)."""
+    from ..physics.joint_kernel import joint_rows as kernel
+    return kernel(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot, flags, lower, upper,
+                  motor_speed, motor_max, length, origin, com, R, dt, slop, mid_origin, mid_com, mid_R)

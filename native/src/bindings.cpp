@@ -12,6 +12,7 @@
 #include "psim/collision.hpp"
 #include "psim/constraints.hpp"
 #include "psim/integrators.hpp"
+#include "psim/joints.hpp"
 #include "psim/mesh_ops.hpp"
 #include "psim/transforms.hpp"
 
@@ -398,6 +399,64 @@ PYBIND11_MODULE(_psim_native, m) {
        py::arg("sweep") = py::none(), py::arg("dt") = 0.0, py::arg("center0") = py::none(),
        py::arg("rot0") = py::none(), py::arg("com0") = py::none(), py::arg("hull_id") = py::none(),
        py::arg("hulls") = py::none());
+
+    m.def("joint_rows", [](const IArr& kind, const IArr& body_a, const IArr& body_b, const DArr& anchor_a,
+                           const DArr& anchor_b, const DArr& axis_a, const DArr& axis_b, const DArr& ref_rot,
+                           const IArr& flags, const DArr& lower, const DArr& upper, const DArr& motor_speed,
+                           const DArr& motor_max, const DArr& length, const DArr& origin, const DArr& com,
+                           const DArr& rot, double dt, double slop, const py::object& mid_origin,
+                           const py::object& mid_com, const py::object& mid_rot) {
+        const int64_t n = kind.size(), nb = origin.size() / 3;
+        if (body_a.size() != n || body_b.size() != n || anchor_a.size() != 3 * n || anchor_b.size() != 3 * n ||
+            axis_a.size() != 3 * n || axis_b.size() != 3 * n || ref_rot.size() != 9 * n || flags.size() != n ||
+            lower.size() != n || upper.size() != n || motor_speed.size() != n || motor_max.size() != n ||
+            length.size() != n)
+            throw std::invalid_argument("joint arrays must all describe the same number of joints");
+        if (origin.size() != 3 * nb || com.size() != 3 * nb || rot.size() != 9 * nb)
+            throw std::invalid_argument("body arrays must describe the same number of bodies");
+        if (!(dt > 0)) throw std::invalid_argument("dt must be positive");
+        for (int64_t k = 0; k < n; ++k) {
+            if (kind.data()[k] < 0 || kind.data()[k] > 4) throw std::invalid_argument("unknown joint kind");
+            if (body_a.data()[k] < 0 || body_a.data()[k] >= nb || body_b.data()[k] < -1 || body_b.data()[k] >= nb)
+                throw std::invalid_argument("joint refers to a missing body");
+        }
+        DArr mo, mc, mr;
+        BodyConfig mid;
+        const bool has_mid = !mid_origin.is_none();
+        if (has_mid) {
+            mo = DArr::ensure(mid_origin);
+            mc = DArr::ensure(mid_com);
+            mr = DArr::ensure(mid_rot);
+            if (!mo || !mc || !mr || mo.size() != 3 * nb || mc.size() != 3 * nb || mr.size() != 9 * nb)
+                throw std::invalid_argument("midpoint arrays must match the bodies");
+            mid = {mo.data(), mc.data(), mr.data()};
+        }
+        JointSet js{n, kind.data(), body_a.data(), body_b.data(), anchor_a.data(), anchor_b.data(), axis_a.data(),
+                    axis_b.data(), ref_rot.data(), flags.data(), lower.data(), upper.data(), motor_speed.data(),
+                    motor_max.data(), length.data()};
+        const BodyConfig end{origin.data(), com.data(), rot.data()};
+        JointOutput out;
+        {
+            py::gil_scoped_release release;
+            joint_rows(js, end, has_mid ? &mid : nullptr, dt, slop, out);
+        }
+        py::dict d;
+        d["ia"] = to_array(out.ia);
+        d["ib"] = to_array(out.ib);
+        d["J"] = to_array(out.J, 12);
+        d["B"] = to_array(out.B, 12);
+        d["rhs"] = to_array(out.rhs);
+        d["lo"] = to_array(out.lo);
+        d["hi"] = to_array(out.hi);
+        d["err"] = to_array(out.err);
+        d["mode"] = to_array(out.mode);
+        d["block"] = to_array(out.block);
+        return d;
+    }, py::arg("kind"), py::arg("body_a"), py::arg("body_b"), py::arg("anchor_a"), py::arg("anchor_b"),
+       py::arg("axis_a"), py::arg("axis_b"), py::arg("ref_rot"), py::arg("flags"), py::arg("lower"), py::arg("upper"),
+       py::arg("motor_speed"), py::arg("motor_max"), py::arg("length"), py::arg("origin"), py::arg("com"),
+       py::arg("rot"), py::arg("dt"), py::arg("slop"), py::arg("mid_origin") = py::none(),
+       py::arg("mid_com") = py::none(), py::arg("mid_rot") = py::none());
 
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);

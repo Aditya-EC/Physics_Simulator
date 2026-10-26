@@ -145,11 +145,12 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport) |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
 | `test_hulls.py` | convex hulls (exact box/prism hulls, flat inputs, reduction of detailed meshes, packing), a cylinder on its side rolling at v = ω·r, a cone standing on its base, stacked cylinders at rest, C++ hull contacts ≡ NumPy reference |
+| `test_joint_kernel.py` | C++ joint rows ≡ NumPy reference for random joints of every type (limits near both ends, motors, ropes, world anchors, with and without the midpoint Jacobian), row counts and blocks per joint type, slack and taut ropes, rotation vectors, input validation |
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair, input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **533 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 470 pass and 63 native-comparison tests are skipped. This was measured on
+Current result: **544 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 472 pass and 72 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -582,7 +583,8 @@ administrators. Even so, a determined local administrator can change anything.
   threshold do not bounce) and two Coulomb friction rows bounded by μ·λₙ.
 - Contacts are logged as *contact* events in the recording.
 
-**Joints** (*Physics ▸ Joints…*; `psim/physics/joints.py`).
+**Joints** (*Physics ▸ Joints…*; `psim/physics/joints.py`; rows in `native/src/joints.cpp`, NumPy
+reference `psim/physics/joint_kernel.py`).
 - Types:
   - **fixed** — all six degrees of freedom
   - **ball** — the anchors coincide
@@ -808,12 +810,15 @@ Key design decisions:
   - Batch runs execute one project per process; parameter sweeps are scripted by calling
     `psim-batch` repeatedly.
 - Rigid-body physics limits (Phase 7):
-  - Collision detection, contact rows and the solver run in C++. Joint rows and some
-    per-step bookkeeping are still NumPy. Measured on this machine:
-    - the physics demo (10 bodies, 7 colliders, 5 joints): about 1.3 ms per step
-    - a pile of 64 boxes: 2.8 ms per step
-    - a pile of 216 boxes: 6.3 ms per step
-    Real time at Δt = 5 ms therefore reaches a few hundred boxes.
+  - Collision detection, contact rows, joint rows and the solver run in C++. The per-step
+    bookkeeping around them (gathering poses, applying results) is vectorised NumPy. Measured on
+    this machine:
+    - the physics demo (10 bodies, 7 colliders, 5 joints): about 0.8 ms per step
+    - a chain of 40 links (ball, hinge and rod joints): 0.8 ms per step
+    - a pile of 64 boxes: 1.6 ms per step
+    - a pile of 216 boxes: 4.8 ms per step
+    Real time at Δt = 5 ms therefore reaches a few hundred boxes. The NumPy fallback is about
+    15–30× slower (13 ms per step for the physics demo).
   - The broadphase is a sort-and-sweep along one axis. Scenes spread mainly along another axis do
     more pair tests than a grid or tree would.
   - Continuous collision detection uses speculative contacts. A pair that could pass through each
@@ -888,4 +893,4 @@ Key design decisions:
 
 1. Run the test suite on Windows with a hardware GPU.
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
-3. Physics: joint rows in C++; convex decomposition of concave meshes.
+3. Physics: convex decomposition of concave meshes; a spatial grid broadphase for very large scenes.
