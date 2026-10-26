@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PSim Studio
+GenericName=Physics Simulation Studio
+Comment=Build 3D scenes and simulate them
+Exec=psim-studio %f
+Icon=psim-studio
+Terminal=false
+Categories=Education;Science;Physics;
+MimeType=application/x-psim-project;
+Keywords=physics;simulation;3D;mechanics;

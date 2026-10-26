@@ -60,6 +60,7 @@ class SimulationSettings:
     contact_slop: float = 0.002       # allowed penetration before position correction [m]
     restitution_threshold: float = 0.2  # impacts slower than this do not bounce [m/s]
     breakpoints: list = field(default_factory=list)  # simulated times at which the run pauses
+    stop_conditions: list = field(default_factory=list)  # {name, expression, action, enabled} (conditions.py)
     min_delta_time: float = 1e-9
     max_delta_time: float = 10.0
     min_update_rate_hz: float = 0.1
@@ -95,6 +96,11 @@ class SimulationSettings:
             errors.append(f"Unknown integrator '{self.integrator}'")
         if any(not (isinstance(b, (int, float)) and math.isfinite(b) and b > 0) for b in self.breakpoints):
             errors.append("Breakpoints must be positive simulated times")
+        from .conditions import ConditionError, validate_conditions
+        try:
+            validate_conditions(self.stop_conditions)
+        except ConditionError as exc:
+            errors.append(str(exc))
         return errors
 
     def check(self) -> None:
@@ -139,6 +145,9 @@ class SimulationSettings:
                     v = str(v)
                 elif k == "breakpoints":
                     v = sorted(float(b) for b in v)
+                elif k == "stop_conditions":
+                    from .conditions import validate_conditions
+                    v = validate_conditions(v)
                 elif isinstance(getattr(s, k), bool):
                     v = bool(v)
                 elif isinstance(getattr(s, k), str):

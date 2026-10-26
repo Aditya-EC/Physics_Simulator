@@ -140,6 +140,22 @@ class JointsCommand(QUndoCommand):
         self.scene.apply_joints(self.before)
 
 
+class MeasurementsCommand(QUndoCommand):
+    def __init__(self, scene: Scene, before: list[dict], after: list[dict], text: str) -> None:
+        super().__init__(text)
+        self.scene, self.before, self.after = scene, before, after
+        self._first = True
+
+    def redo(self) -> None:
+        if self._first:
+            self._first = False
+            return
+        self.scene.apply_measurements(self.after)
+
+    def undo(self) -> None:
+        self.scene.apply_measurements(self.before)
+
+
 class SceneEditor:
     """High-level, undoable operations on a Scene.
 
@@ -378,6 +394,31 @@ class SceneEditor:
         ids = set(ids)
         return self.set_joints([j for j in self.scene.joints_snapshot() if j["id"] not in ids],
                                "Remove Joint" + ("s" if len(ids) > 1 else ""))
+
+    def set_measurements(self, data: list[dict], text: str = "Edit Measurements") -> bool:
+        from .measurements import validate_measurements
+        after = [m.to_dict() for m in validate_measurements(copy.deepcopy(data))]
+        for m in after:
+            for p in m["points"]:
+                if p["object"] not in self.scene.objects:
+                    raise SceneError(f"{m['name']}: missing object reference '{p['object']}'")
+        before = self.scene.measurements_snapshot()
+        if after == before:
+            return False
+        self.scene.apply_measurements(after)
+        self._push(MeasurementsCommand(self.scene, before, copy.deepcopy(after), text))
+        return True
+
+    def add_measurement(self, kind: str, object_ids: list[str], at: str = "origin", name: str | None = None) -> str:
+        from .measurements import new_measurement
+        data = new_measurement(self.scene, kind, list(object_ids), at, name)
+        self.set_measurements(self.scene.measurements_snapshot() + [data], f"Add Measurement '{data['name']}'")
+        return data["id"]
+
+    def remove_measurements(self, ids) -> bool:
+        ids = set(ids)
+        return self.set_measurements([m for m in self.scene.measurements_snapshot() if m["id"] not in ids],
+                                     "Remove Measurement" + ("s" if len(ids) > 1 else ""))
 
     def set_global_parameters(self, params: list[dict], text: str = "Edit Global Parameters") -> bool:
         from ..processes.global_parameters import validate_globals

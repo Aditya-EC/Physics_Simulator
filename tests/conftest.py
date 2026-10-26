@@ -25,7 +25,7 @@ from PySide6.QtCore import QStandardPaths  # noqa: E402
 
 QStandardPaths.setTestModeEnabled(True)  # never touch the real user profile
 
-import app as launcher  # noqa: E402
+from psim import app as launcher  # noqa: E402
 
 launcher.configure_opengl()
 

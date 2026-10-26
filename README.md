@@ -47,6 +47,18 @@ Implemented so far:
     a C++ projected Gauss–Seidel core with block solves and split-impulse position correction
   - central gravity, region force fields and anchored spring-dampers; the Joints dialog, an inspector
     *Collision & Joints* section and viewport drawing of colliders, joints and contacts
+- **Phase 8**, testing and distribution:
+  - an acceptance suite with one end-to-end test for each of the 30 mandatory acceptance tests
+    (`docs/acceptance.md`)
+  - conditional stop events (formulas that pause or end a run), saving and restoring simulation
+    states with bit-for-bit continuation, live distance/angle measurements, and headless batch
+    runs with parameter overrides
+  - per-stage engine profiling, a crash-report and log system, and Help ▸ System Information
+  - GUI responsiveness under heavy runs (frame pacing and snapshot backpressure)
+  - packaging: a platform wheel with `psim-studio` / `psim-batch` commands, a PyInstaller bundle,
+    a Linux `.tar.gz` and `.deb` (built and tested here), and an Inno Setup script for Windows
+    (not built here)
+  - a user guide, developer guide and file-format reference in `docs/`
 
 ![Main window](docs/screenshot_main.png)
 
@@ -66,9 +78,15 @@ python app.py examples/formula_demo.psim      # formula processes, global parame
 python app.py examples/frames_demo.psim       # reference frames: open Coordinates ▸ Relative Motion Panel, F5
 python app.py examples/recording_demo.psim    # trajectories and six ready-made plots (Plots ▸ Plot Workspace), F5
 python app.py examples/physics_demo.psim      # collisions, a stack, a hinge, a rope chain and a motorised slider, F5
+python app.py examples/measurements_demo.psim # live angle/distance measurements; a stop condition pauses the run
+python -m psim.batch examples/physics_demo.psim --duration 2 --csv out.csv   # headless run (see docs/user_guide.md §9)
 ```
 
-Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`.
+Installed packages (wheel, `.deb`, Windows installer) provide the commands `psim-studio` and
+`psim-batch`; see *Packaging* in `docs/developer_guide.md`. The **user guide** is
+`docs/user_guide.md`.
+
+Options: `--theme dark|light`, `--no-recovery`, `--reset-settings`, `--version`.
 
 **Windows.** You need Python ≥ 3.10 (64-bit), Visual Studio 2019+ ("Desktop development with
 C++") and CMake ≥ 3.18. Run the same commands from a *Developer PowerShell*. `build_native.py`
@@ -117,10 +135,18 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_physics.py` | bounce height e²·h, resting box with zero net force, sliding distance v²/(2μg), stick/slip on an incline, stable stack, momentum and elastic energy in collisions, a kinematic platform carrying a box, physical-pendulum period, point mass on a rod, prismatic slider, fixed joint, motor speed and limits, slack/taut rope, compound assemblies, ownership rules, disabling physics, C++ ≡ NumPy PGS (incl. separate impulse directions), energy of a large-swing pendulum |
 | `test_force_models.py` | circular orbit under central gravity (radius, period, μ/r²), softening at the centre, a force field acting only inside its region or everywhere, anchored-spring oscillation z(t), torque from an off-centre attachment |
 | `test_physics_gui.py` | Joints dialog (world anchors and axes → local frames, limits, rope length from anchors, one undo step, rejecting body A = body B), inspector Collision & Joints section, solver fields of the Simulation Settings dialog, collider/joint/contact overlay geometry, contacts in engine snapshots, Physics menu and overlay toggles with rendering |
+| `test_acceptance.py` | the 30 mandatory acceptance tests of the specification, end to end (traceability in `docs/acceptance.md`) |
+| `test_conditions.py` | stop conditions: stop/pause at the right step, fire once per false→true transition, dimension/type/reference checks, global parameters, settings round trip; per-stage profile |
+| `test_sim_state.py` | saved simulation states: bit-for-bit continuation (with collisions, joints and formula processes), recording truncation, rejection of foreign/invalid states, save/restore through the session controller |
+| `test_batch.py` | headless batch runs: CSV/JSON/report/state outputs against analytic values, property and global overrides, restore-and-continue, stop conditions, exit codes for invalid input and numerical failure |
+| `test_measurements.py` | distance and angle values (precise near 180°, undefined at the vertex), centre-of-mass points, undo, dangling objects, project files, viewport overlays, Measurements panel |
+| `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
+| `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel |
+| `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **418 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 387 pass and 31 native-comparison tests are skipped. This was measured on
+Current result: **485 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 454 pass and 31 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -362,8 +388,9 @@ from defining or altering processes through the application and detects tampered
 It does **not** protect against someone who can modify the Python source of the installation
 or run arbitrary code as the same OS user. Python code can be read and patched, and no
 client-side scheme prevents reverse engineering. A stronger guarantee would need
-an OS-level install location writable only by administrators, which is a Phase 8
-packaging concern.
+an OS-level install location writable only by administrators. The Phase 8 Windows installer
+installs into Program Files by default and the `.deb` into `/opt`, both writable only by
+administrators. Even so, a determined local administrator can change anything.
 
 ## 3d. What Phase 5 implements (coordinates and units)
 
@@ -589,10 +616,93 @@ packaging concern.
   (magenta), and contact points with normals scaled by the contact force.
 - They are switched in the *Physics* menu, and per object with *Show collider*.
 
+## 3g. What Phase 8 implements (testing and distribution)
+
+**Acceptance tests** (`tests/test_acceptance.py`, `docs/acceptance.md`). Each of the 30 mandatory
+acceptance tests has an end-to-end test that drives the real main window, session controller,
+project files or engine. They pass on both numerical backends.
+
+**Stop conditions** (*Simulation ▸ Stop Conditions*; `psim/simulation/conditions.py`).
+- Boolean formulas in the safe formula language, e.g. `object("OBJ-000002").position.z < 0[m]`.
+- Parsed, type-checked and dimension-checked when the run is planned, with object references
+  validated. Global parameters are available.
+- Checked after every step, after the constraint solver. The *pause* or *stop* action fires when
+  the formula becomes true, once per transition, and is logged in the recording's event log.
+- Saved with the simulation settings.
+
+**Simulation states** (*Simulation ▸ Save / Restore Simulation State*, `.psimstate`).
+- A state holds the exact clock, every body's motion and accelerations, values written by update
+  processes, the solver's contact memory and the stop-condition flags.
+- Continuing from a restored state is bit-for-bit identical to the uninterrupted run (tested with
+  collisions, joints and formula processes).
+- Restoring discards recorded samples from the restored time on.
+- Save and restore run on the simulation thread between steps, so they never race the engine.
+
+**Measurements** (*Tools ▸ Measure Distance / Measure Angle*, *Measurements* panel).
+- Distances (with components) and angles between object origins or centres of mass.
+- Live during simulations, drawn and labelled in the viewport, undoable and saved in the project.
+
+**Batch execution** (`psim-batch`, `python -m psim.batch`; `psim/batch.py`).
+- Runs a project headless as fast as possible.
+- Overrides Δt, the duration, the integrator, global parameters and object properties.
+- Writes chosen variables as CSV, the full recording as JSON, the HTML report, the final state and
+  a JSON summary.
+- Exit codes: 0 success, 2 invalid input, 3 simulation failure (partial results are still written).
+- `psim/simulation/factory.py` builds engines the same way for the GUI and batch runs.
+
+**Profiling.** The engine times each stage of every step:
+- update processes
+- processes and integration
+- prescribed motion
+- constraints
+- recording
+- stop conditions
+The averages appear in the *Performance* panel and in batch summaries.
+
+**Error handling.** `psim/crash.py`:
+- a rotating `psim.log`
+- crash reports (`crash-*.txt`: traceback, versions, backend) for unexpected exceptions on any
+  thread
+- `faulthandler` for hard crashes
+*Help ▸ System Information* shows the versions, the numerical core, the OpenGL driver and the log
+folder. A detached log handler no longer fails after its window closes.
+
+**Responsiveness.** The acceptance test measures event-loop gaps during an unpaced collision run;
+they used to reach 0.5 s. Two changes fix this:
+- The viewport paces automatic redraws, leaving at least as much idle time as the last frame cost
+  (software OpenGL frames can take ~0.1–0.2 s).
+- The runner waits briefly for the GUI to take each snapshot before publishing the next. This
+  stops an as-fast-as-possible run from monopolising Python's interpreter lock.
+Batch runs are unaffected.
+
+**Packaging** (`packaging/`, details in `docs/developer_guide.md`).
+- `pyproject.toml` builds a platform wheel containing the native core, the process library and the
+  `psim-studio` (GUI) and `psim-batch` commands. `python -m psim` also starts the GUI.
+- `packaging/build_dist.py` builds the native core, renders the icons, freezes the application
+  with PyInstaller (`psim_studio.spec`), smoke-tests the frozen executables and packages them.
+- **Linux** (built and tested here): a `.tar.gz` and a `.deb`. The `.deb` installs into
+  `/opt/psim-studio`, adds commands in `/usr/bin`, a desktop entry, an icon and a `.psim` MIME type.
+  It was installed, run and removed in this environment.
+- **Windows:** the same build plus an Inno Setup 6 installer (`packaging/windows/psim_studio.iss`)
+  with Start-menu entries, a `.psim` file association and an uninstaller. The installer script has
+  **not** been compiled or run here (no Windows machine).
+
+**Documentation** (`docs/`).
+- `user_guide.md`: a walkthrough of the application
+- `developer_guide.md`: build, tests, extension points, profiling, packaging and a release checklist
+- `project_format.md`: the `.psim` and `.psimstate` formats
+- `acceptance.md`: requirement → test traceability
+
+**Samples.** `examples/measurements_demo.psim` and the matching template: a 60° pendulum with live
+swing-angle and distance measurements, and a stop condition that pauses at the bottom of the swing.
+The measured period of 2.638 s agrees with the large-amplitude formula (2.637 s).
+
 ## 4. Architecture
 
 ```
-app.py                     launcher (OpenGL format, theme, CLI)
+app.py                     source-checkout launcher (→ psim/app.py; installed: `psim-studio`, `python -m psim`)
+packaging/                 PyInstaller spec, build_dist.py, Linux desktop/MIME files, Windows Inno Setup script
+docs/                      user guide, developer guide, file formats, acceptance traceability
 build_native.py            CMake configure/build/test/install of the C++ core
 native/                    C++17 numerical core + pybind11 bindings + C++ tests
   include/psim/vecmath.hpp     Vec3 / Quat / Mat3 / Mat4, Euler (extrinsic XYZ) conventions
@@ -623,6 +733,8 @@ psim/
   physics/         colliders (separate from meshes), joints, collision detection, solver set-up and
                    ownership rules, the constraint system (contacts, joints, limits, motors)
   plugins/         trusted application plugins (object types)
+  app.py           GUI entry point (OpenGL format, theme, CLI); batch.py: headless runs; crash.py: logs and
+                   crash reports
 tests/             pytest suites (see §2)
 examples/          sample projects
 ```
@@ -666,7 +778,18 @@ Key design decisions:
 
 ## 5. Limitations (honest status)
 
-- **Not implemented yet** (planned phase): installer and distribution (Phase 8).
+- Distribution limits (Phase 8):
+  - The Windows installer and the macOS archive are scripted but **not built or tested** here (Linux
+    only). The executables are not code-signed, so Windows SmartScreen and macOS Gatekeeper will warn.
+  - The frozen bundle is about 250 MB, mostly Qt. Two executables share one `_internal` folder.
+  - There is no automatic updater.
+  - The GUI-responsiveness fix keeps input working, but under software OpenGL a single frame of a
+    large scene still takes ~0.1–0.2 s and an as-fast-as-possible run slows while the GUI draws.
+    With a GPU, frames take a few milliseconds.
+  - Measurements are between object origins or centres of mass. There is no picking of arbitrary
+    surface points, and no angle between two edges or faces.
+  - Batch runs execute one project per process; parameter sweeps are scripted by calling
+    `psim-batch` repeatedly.
 - Rigid-body physics limits (Phase 7):
   - Constraint rows are built in Python. Only the solver runs in C++. The physics demo (10 bodies,
     7 colliders, 5 joints) takes about 2.3 ms per step on this machine, so real-time Δt = 5 ms
@@ -723,8 +846,8 @@ Key design decisions:
     because it would need the accelerations being computed in the same step. The Relative
     Motion panel shows it.
   - The "Axes drawn at" setting moves only the drawn axes, not the coordinate origin.
-- Box (marquee) selection, measurement tools and a numeric "move relative to object" dialog are
-  not implemented. Relative placement is done through the inspector's *Relative to* frame
+- Box (marquee) selection and a numeric "move relative to object" dialog are not implemented.
+  Relative placement is done through the inspector's *Relative to* frame
   selector and surface snapping.
 - Imported meshes are stored inside the project file (as JSON arrays) rather than as
   separate asset files. Very large meshes make projects large.
@@ -739,6 +862,6 @@ Key design decisions:
 ## 6. Next steps
 
 1. Run the test suite on Windows with a hardware GPU.
-2. Phase 8: testing on more platforms, packaging and distribution.
+2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
 3. Physics performance: build constraint rows in C++, add a spatial broadphase and continuous
    collision detection, and add convex-hull colliders.

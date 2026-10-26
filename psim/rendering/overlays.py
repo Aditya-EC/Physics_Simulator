@@ -122,6 +122,7 @@ def paint_overlays(p: QPainter, scene: Scene, view: ViewSettings, cam: OrbitCame
     # ---- named reference frames ------------------------------------------------------------------------
     if view.environment.show_labels:
         _paint_frame_labels(p, scene, cam, width, height, small)
+    _paint_measurement_labels(p, scene, cam, units, width, height, small)
 
     # ---- object labels -------------------------------------------------------------------------------
     if view.environment.show_labels:
@@ -251,6 +252,25 @@ def _paint_trajectory_marks(p: QPainter, paths: list, cam: OrbitCamera, units: U
                     p.setBrush(color)
                     p.drawEllipse(QPointF(x, y), 2.5, 2.5)
                     p.drawText(QPointF(x + 5, y - 4), f"{units.from_si(float(path.times[i]), tu):.4g} {tu}")
+
+
+def _paint_measurement_labels(p: QPainter, scene: Scene, cam: OrbitCamera, units: UnitRegistry, w: float, h: float,
+                              font: QFont) -> None:
+    from .physics_overlay import MEASURE_COLOR, measurement_labels
+    items = measurement_labels(scene, units)
+    if not items:
+        return
+    xy, ok = cam.project(np.array([a for a, _ in items]), w, h)
+    p.setFont(font)
+    fm = p.fontMetrics()
+    for (x, y), vis, (_a, text) in zip(xy, ok, items):
+        if not vis:
+            continue
+        rect = fm.boundingRect(text).adjusted(-4, -2, 4, 2)
+        rect.moveCenter(QPointF(x, y - 12).toPoint())
+        p.fillRect(rect, qcolor((0.08, 0.09, 0.1), 0.75))
+        p.setPen(qcolor(MEASURE_COLOR))
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 
 def _paint_frame_labels(p: QPainter, scene: Scene, cam: OrbitCamera, w: float, h: float, font: QFont) -> None:

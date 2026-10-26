@@ -18,6 +18,7 @@ enters the numerics.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 
 import numpy as np
 
@@ -25,9 +26,15 @@ from ..processes.process_base import StepContext
 from ..processes.process_scheduler import ExecutionPlan
 from .. import numerics
 from .clock import SimulationClock
+from .conditions import evaluate as evaluate_conditions
 from .integrators import integrate
 from .settings import SimulationSettings
 from .state import BodySet, SimState, origins
+
+
+STATE_FORMAT = "psim-simulation-state"
+STATE_VERSION = 1
+PROFILE_STAGES = ("updates", "processes_and_integration", "prescribed", "constraints", "recording", "conditions")
 
 
 class SimulationError(Exception):
@@ -59,8 +66,8 @@ class SimulationEngine:
         if not plan.ok:
             raise SimulationError("; ".join(d.message for d in plan.errors))
         needs_world = plan.updates or any(p.pdef.is_formula for p in plan.contributions + plan.prescribed)
-        if needs_world and world is None:
-            raise SimulationError("Formula processes need the scene world view (capture_static)")
+        if (needs_world or plan.conditions) and world is None:
+            raise SimulationError("Formula processes and stop conditions need the scene world view (capture_static)")
         self.settings = settings
         self.plan = plan
         self.bodies = bodies
@@ -80,6 +87,10 @@ class SimulationEngine:
         self.state = self._apply_prescribed(0.0, state)
         self.finished = False
         self.sampler = None     # EngineSampler when data recording is attached
+        self.conditions = list(plan.conditions)
+        self.fired: list = []   # stop conditions that became true (taken by the runner)
+        self.profile = {k: 0.0 for k in PROFILE_STAGES}   # wall seconds per stage, accumulated
+        self.profile_steps = 0
 
     def attach_recording(self, recording, process_outputs: bool = True) -> None:
         """Record samples into `recording` every recording.interval_steps steps (see psim.recording.sampler)."""
@@ -190,12 +201,17 @@ class SimulationEngine:
         t = self.clock.time
         step = self.clock.steps
         old = self.state
+        prof = self.profile
+        c0 = perf_counter()
         updates = self._run_updates(t, dt)
+        c1 = perf_counter()
         new, acc, alpha = integrate(self.settings.integrator, self.state.copy(), t, dt, self._deriv,
                                     self.plan.integrate_translation, self.plan.integrate_rotation,
                                     self.settings.adaptive_tolerance)
+        c2 = perf_counter()
         self._apply_updates(updates, new)
         new = self._apply_prescribed(t + dt, new)
+        c3 = perf_counter()
         if self.physics is not None:
             dv, dw = self.physics.step(new, dt, old)
             if dt > 0:     # contact and joint forces are part of the total acceleration of this step
@@ -206,16 +222,56 @@ class SimulationEngine:
                     self.sampler.rec.log(t + dt, step + 1, "contact", f"Contact {a} ↔ {b}")
             else:
                 self.physics.take_new_contacts()
+        c4 = perf_counter()
         self._check_finite(new, t + dt)
         if self.sampler is not None:
             self.sampler.after_step(t, step, old, acc, alpha, new, dt)
+        c5 = perf_counter()
         self.state, self.acc, self.alpha = new, acc, alpha
         self.clock.advance(dt)
-        if self.clock.next_step_dt(self.settings.duration, self.settings.duration_policy) is None:
+        if self.conditions:
+            self._check_conditions(dt, step + 1)
+        c6 = perf_counter()
+        if not self.finished and \
+                self.clock.next_step_dt(self.settings.duration, self.settings.duration_policy) is None:
             self.finished = True
             if self.sampler is not None:
                 self.sampler.final()
+        c7 = perf_counter()
+        prof["updates"] += c1 - c0
+        prof["processes_and_integration"] += c2 - c1
+        prof["prescribed"] += c3 - c2
+        prof["constraints"] += c4 - c3
+        prof["recording"] += (c5 - c4) + (c7 - c6)
+        prof["conditions"] += c6 - c5
+        self.profile_steps += 1
         return True
+
+    def _check_conditions(self, dt: float, step: int) -> None:
+        s = self.state
+        self.world.set_stage(s.x, s.q, s.v, s.w)
+        for c in evaluate_conditions(self.conditions, self.world, self.clock.time, dt):
+            self.fired.append((c.name, c.action, self.clock.time))
+            if self.sampler is not None:
+                self.sampler.rec.log(self.clock.time, step, "condition",
+                                     f"Stop condition '{c.name}' became true ({c.action})")
+            if c.action == "stop" and not self.finished:
+                self.finished = True
+                if self.sampler is not None:
+                    self.sampler.final()
+
+    def take_fired(self) -> list[tuple[str, str, float]]:
+        """(name, action, time) of the stop conditions that fired since the last call."""
+        out, self.fired = self.fired, []
+        return out
+
+    def profile_report(self) -> dict:
+        """Average wall time per step (ms) of each stage, and their total."""
+        n = max(self.profile_steps, 1)
+        out = {k: 1000 * v / n for k, v in self.profile.items()}
+        out["total"] = sum(out.values())
+        out["steps"] = self.profile_steps
+        return out
 
     def _run_updates(self, t: float, dt: float) -> dict:
         """Evaluate update processes (dependency order) against the state at the start of the step."""
@@ -307,6 +363,10 @@ class SimulationEngine:
                 state.x[k], state.q[k], state.v[k], state.w[k] = (self.state.x[i], self.state.q[i],
                                                                   self.state.v[i], self.state.w[i])
                 bodies.origin0[k], bodies.q0[k] = self.bodies.origin0[i], self.bodies.q0[i]
+        was_true = {c.name: c.was_true for c in self.conditions}
+        self.conditions = list(plan.conditions)
+        for c in self.conditions:      # a condition that is already true does not fire again after a live edit
+            c.was_true = was_true.get(c.name, c.was_true)
         self.plan, self.bodies = plan, bodies
         if self.world is not None:
             self.world.set_bodies(plan.body_ids)
@@ -319,6 +379,87 @@ class SimulationEngine:
         self.state = self._apply_prescribed(self.clock.time, state)
         if self.sampler is not None:
             self.sampler.refresh_schema()
+
+    # ---- saved simulation states ------------------------------------------------------------------------
+    def export_state(self) -> dict:
+        """Everything needed to continue this run exactly from its current step (JSON-serialisable)."""
+        s = self.state
+        bodies = {oid: {"x": s.x[i].tolist(), "q": s.q[i].tolist(), "v": s.v[i].tolist(), "w": s.w[i].tolist(),
+                        "acc": self.acc[i].tolist(), "alpha": self.alpha[i].tolist()}
+                  for i, oid in enumerate(self.bodies.ids)}
+        custom = {}
+        if self.world is not None:
+            for ref, key in sorted(self.world.written):
+                v = self.world.custom_state[ref][key]
+                custom.setdefault(self.world.ids[ref], {})[key] = v.tolist() if isinstance(v, np.ndarray) else v
+        physics = None
+        if self.physics is not None:
+            physics = {"touching": sorted(sorted(p) for p in self.physics.touching),
+                       "last_dv": self.physics._last_dv.tolist(), "last_dw": self.physics._last_dw.tolist(),
+                       "keys": list(self.physics.keys)}
+        return {"format": STATE_FORMAT, "version": STATE_VERSION, "time": self.clock.time,
+                "clock": self.clock.export(), "integrator": self.settings.integrator, "bodies": bodies,
+                "custom": custom, "physics": physics, "conditions": {c.name: c.was_true for c in self.conditions}}
+
+    def import_state(self, d: dict) -> None:
+        """Continue from a state saved by export_state for the same simulated objects. Recorded samples later
+        than or at the restored time are discarded (the next step records it again)."""
+        if not isinstance(d, dict) or d.get("format") != STATE_FORMAT:
+            raise SimulationError("Not a PSim simulation state")
+        if int(d.get("version", 0)) > STATE_VERSION:
+            raise SimulationError(f"Simulation state version {d.get('version')} is newer than this application "
+                                  f"supports ({STATE_VERSION})")
+        saved = d.get("bodies", {})
+        ids = list(self.bodies.ids)
+        if set(saved) != set(ids):
+            extra, missing = sorted(set(saved) - set(ids)), sorted(set(ids) - set(saved))
+            raise SimulationError("The saved state does not match the simulated objects"
+                                  + (f" (not simulated now: {', '.join(extra[:5])})" if extra else "")
+                                  + (f" (not in the state: {', '.join(missing[:5])})" if missing else ""))
+        try:
+            new = self.state.copy()
+            acc, alpha = self.acc.copy(), self.alpha.copy()
+            for i, oid in enumerate(ids):
+                b = saved[oid]
+                new.x[i], new.v[i], new.w[i] = (np.asarray(b[k], float).reshape(3) for k in ("x", "v", "w"))
+                q = np.asarray(b["q"], float).reshape(4)
+                new.q[i] = q / np.linalg.norm(q)
+                acc[i] = np.asarray(b.get("acc", [0, 0, 0]), float).reshape(3)
+                alpha[i] = np.asarray(b.get("alpha", [0, 0, 0]), float).reshape(3)
+            values = np.concatenate([new.x.ravel(), new.q.ravel(), new.v.ravel(), new.w.ravel()])
+            if not np.all(np.isfinite(values)):
+                raise ValueError("non-finite values")
+            clock = SimulationClock(self.clock.delta_time)
+            clock.restore(d["clock"])
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+            raise SimulationError(f"Invalid simulation state: {exc}") from None
+        if self.world is not None:
+            for oid, values in dict(d.get("custom", {})).items():
+                ref = self.world.ref_index.get(oid)
+                if ref is None:
+                    continue
+                for key, v in values.items():
+                    self.world.custom_state[ref][key] = np.asarray(v, float) if isinstance(v, list) else v
+                    self.world.written.add((ref, key))
+                    self.world.custom_dirty.add((ref, key))
+        ph = d.get("physics")
+        if self.physics is not None:
+            self.physics.touching = set()
+            self.physics._last_dv[:] = 0.0
+            self.physics._last_dw[:] = 0.0
+            if ph and list(ph.get("keys", [])) == list(self.physics.keys):
+                self.physics.touching = {frozenset(p) for p in ph.get("touching", [])}
+                self.physics._last_dv[:] = np.asarray(ph["last_dv"], float)
+                self.physics._last_dw[:] = np.asarray(ph["last_dw"], float)
+        for c in self.conditions:
+            c.was_true = bool(dict(d.get("conditions", {})).get(c.name, False))
+        self.state, self.acc, self.alpha, self.clock = new, acc, alpha, clock
+        self.finished = self.clock.next_step_dt(self.settings.duration, self.settings.duration_policy) is None
+        if self.sampler is not None:
+            removed = self.sampler.rec.truncate_from(self.clock.time)
+            self.sampler.rec.log(self.clock.time, self.clock.steps, "restore",
+                                 f"Simulation state restored at t = {self.clock.time:.6g} s"
+                                 + (f" ({removed} later samples discarded)" if removed else ""))
 
     # ---- output ------------------------------------------------------------------------------------
     def snapshot(self) -> Snapshot:

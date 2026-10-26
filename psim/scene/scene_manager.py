@@ -35,6 +35,7 @@ class Scene(QObject):
     globalsChanged = Signal()         # global parameters edited
     framesChanged = Signal()          # named reference frames added / removed / edited
     jointsChanged = Signal()          # joints added / removed / edited
+    measurementsChanged = Signal()    # distance / angle measurements added / removed / edited
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -50,6 +51,8 @@ class Scene(QObject):
         self.next_frame_number = 1             # FRM-0001, ... never reused
         self.joints: list = []                 # psim.physics.joints.Joint
         self.next_joint_number = 1             # JNT-0001, ... never reused
+        self.measurements: list = []           # psim.scene.measurements.Measurement
+        self.next_measurement_number = 1       # MSR-0001, ... never reused
         self.simulating = False                # a simulation session is active (set by the controller)
         # values produced by a running simulation that are not object properties
         # (e.g. current total acceleration); cleared when a session ends
@@ -82,6 +85,8 @@ class Scene(QObject):
         self.next_frame_number = 1
         self.joints = []
         self.next_joint_number = 1
+        self.measurements = []
+        self.next_measurement_number = 1
         self.simulating = False
         self.runtime = {}
         self.sceneReset.emit()
@@ -143,6 +148,26 @@ class Scene(QObject):
             self.next_joint_number += 1
             if jid not in used:
                 return jid
+
+    # ---- measurements -------------------------------------------------------------------------------------
+    def allocate_measurement_id(self) -> str:
+        used = {m.id for m in self.measurements}
+        while True:
+            mid = f"MSR-{self.next_measurement_number:04d}"
+            self.next_measurement_number += 1
+            if mid not in used:
+                return mid
+
+    def measurements_snapshot(self) -> list[dict]:
+        return [m.to_dict() for m in self.measurements]
+
+    def apply_measurements(self, data: list[dict]) -> None:
+        from .measurements import MEASUREMENT_ID, validate_measurements
+        self.measurements = validate_measurements(data)
+        for m in self.measurements:
+            self.next_measurement_number = max(self.next_measurement_number,
+                                               int(MEASUREMENT_ID.match(m.id).group(1)) + 1)
+        self.measurementsChanged.emit()
 
     def joint(self, jid: str | None):
         return next((j for j in self.joints if j.id == jid), None)
@@ -458,4 +483,9 @@ class Scene(QObject):
             for b in (j.body_a, j.body_b):
                 if b and b not in self.objects:
                     problems.append(f"{j.id} ({j.name}): connects the missing object '{b}'")
+        for m in self.measurements:
+            for oid in m.objects:
+                if oid not in self.objects:
+                    problems.append(f"{m.id} ({m.name}): measures the missing object '{oid}'")
+                    break
         return problems

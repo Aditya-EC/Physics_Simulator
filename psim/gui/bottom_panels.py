@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QGridLayout, QHBo
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import numerics
+from ..simulation.simulation_engine import PROFILE_STAGES
 from ..rendering.renderer import FrameStats
 from ..scene.scene_manager import Scene
 from ..units.unit_registry import UnitRegistry
@@ -42,7 +43,10 @@ class _LogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         level = "error" if record.levelno >= logging.ERROR else ("warning" if record.levelno >= logging.WARNING else "info")
-        self.bus.message.emit(level, record.getMessage(), record.name)
+        try:
+            self.bus.message.emit(level, record.getMessage(), record.name)
+        except RuntimeError:   # the window owning the bus was closed: stop forwarding to it
+            logging.getLogger("psim").removeHandler(self)
 
 
 def install_logging(bus: LogBus) -> None:
@@ -309,6 +313,15 @@ class PerformancePanel(QWidget):
             grid.addWidget(lab, row, col + 1)
             self.labels[key] = lab
         grid.setColumnStretch(5, 1)
+        name = QLabel("Step profile (mean ms)")
+        name.setObjectName("Muted")
+        self.labels["profile"] = QLabel("—")
+        self.labels["profile"].setWordWrap(True)
+        self.labels["profile"].setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.labels["profile"].setToolTip("Average wall time per simulation step spent in each engine stage since "
+                                          "the run started (constraints = collisions and joints)")
+        grid.addWidget(name, 4, 0)
+        grid.addWidget(self.labels["profile"], 4, 1, 1, 5)
         lay.addLayout(grid, 3)
         self.spark = _Sparkline()
         lay.addWidget(self.spark, 2)
@@ -332,6 +345,10 @@ class PerformancePanel(QWidget):
             self.labels["sim_rate"].setText(f"{st.achieved_hz:,.2f} / {st.requested_hz:g} Hz{warn}")
         self.labels["sim_speed"].setText(f"{st.sim_speed:.4g}")
         self.labels["sim_cost"].setText(f"{st.step_ms:.3f} ms · {st.dropped_steps:,} dropped")
+        prof = st.profile or {}
+        if prof.get("steps"):
+            parts = [f"{k.replace('_', ' ')} {prof[k]:.3f}" for k in PROFILE_STAGES if prof.get(k, 0) >= 0.0005]
+            self.labels["profile"].setText(" · ".join(parts) + f"  (total {prof['total']:.3f})")
 
     def set_gl_info(self, info: dict) -> None:
         self.labels["gl"].setText(f"{info.get('renderer', '?')} · {info.get('version', '?')}")

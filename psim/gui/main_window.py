@@ -41,6 +41,7 @@ from ..rendering.trajectories import TrajectoryBuilder
 from .plots.workspace import QUICK_PLOTS, PlotWorkspace
 from .recording_panel import RecordingPanel
 from .relative_motion_panel import RelativeMotionPanel
+from .measurements_panel import MeasurementsPanel
 from .simulation_panels import ProcessesPanel, SimulationFields
 from .dialogs.process_dialogs import AssignProcessDialog, DependencyDialog, ProcessDocumentationDialog
 from .dialogs.simulation_settings_dialog import SimulationSettingsDialog
@@ -151,6 +152,9 @@ class MainWindow(QMainWindow):
         self.bottom_tabs.addTab(self.processes_panel, icons.icon("function"), "Processes")
         self.relative_motion = RelativeMotionPanel(self.scene, self.units)
         self.bottom_tabs.addTab(self.relative_motion, icons.icon("frame_axes"), "Relative Motion")
+        self.measurements_panel = MeasurementsPanel(self.scene, self.editor, self.units)
+        self.measurements_panel.errorOccurred.connect(lambda m: self.bus.error(m, "measurements"))
+        self.bottom_tabs.addTab(self.measurements_panel, icons.icon("ruler"), "Measurements")
         self.recording_panel = RecordingPanel(self.scene, self.units, lambda: self.sim.recording,
                                               lambda: self.project.simulation)
         self.bottom_tabs.addTab(self.recording_panel, icons.icon("history"), "Recording")
@@ -189,6 +193,12 @@ class MainWindow(QMainWindow):
         A("sim.afap", "Run as &Fast as Possible", self._set_afap, icon="fast", checkable=True,
           tip="Scientific calculation mode: no real-time pacing (Δt and duration still apply)")
         A("sim.settings", "Simulation &Settings…", self.open_simulation_settings, icon="timer")
+        A("sim.save_state", "Save Simulation S&tate…", self.save_simulation_state, icon="save",
+          tip="Save the current simulation state (time, every body's motion) to continue from it later")
+        A("sim.load_state", "Restore Simulation St&ate…", self.restore_simulation_state, icon="open",
+          tip="Continue from a saved simulation state of this project")
+        A("sim.conditions", "Stop &Conditions…", self.open_stop_conditions, icon="stop",
+          tip="Pause or end the run when a formula becomes true (e.g. an object reaches the ground)")
         # processes
         A("proc.assign", "&Assign Process…", lambda: self.assign_process(self.scene.selection), icon="function",
           shortcut="Ctrl+Shift+P")
@@ -296,6 +306,11 @@ class MainWindow(QMainWindow):
           tip="Create and edit named reference frames (fixed or attached to objects)")
         A("coord.add_frame", "&Add Reference Frame at Selection", self.add_frame_at_selection, icon="target",
           tip="Attach a new named frame to the selected object, at its origin")
+        A("tools.measure_distance", "Measure &Distance", lambda: self.measure("distance"), icon="ruler",
+          tip="Add a live distance measurement between the two selected objects")
+        A("tools.measure_angle", "Measure &Angle", lambda: self.measure("angle"),
+          tip="Add a live angle measurement at the second of three selected objects")
+        A("tools.measurements", "&Measurements Panel", self.show_measurements, icon="ruler")
         A("coord.relative", "Relative &Motion Panel", self.show_relative_motion, icon="activity",
           tip="Position, velocity and acceleration of an object expressed in / relative to any frame")
         A("plots.workspace", "Plot &Workspace", self.show_plots, icon="chart", shortcut="Ctrl+Shift+P")
@@ -319,6 +334,8 @@ class MainWindow(QMainWindow):
         A("help.controls", "&Controls && Shortcuts", lambda: HelpDialog(self).exec(), icon="keyboard",
           shortcut="F1")
         A("help.about", "&About PSim Studio", self.about, icon="info")
+        A("help.sysinfo", "&System Information…", self.show_system_info, icon="terminal",
+          tip="Versions, numerical core, OpenGL driver and the log folder (for problem reports)")
         A("help.about_qt", "About &Qt", lambda: QMessageBox.aboutQt(self))
 
     def _build_menus(self) -> None:
@@ -436,9 +453,13 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("Si&mulation")
         m.addActions([a["sim.start"], a["sim.pause"], a["sim.stop"], a["sim.reset"], a["sim.step"]])
         m.addSeparator()
-        m.addActions([a["sim.afap"], a["sim.settings"]])
+        m.addActions([a["sim.afap"], a["sim.settings"], a["sim.conditions"]])
+        m.addSeparator()
+        m.addActions([a["sim.save_state"], a["sim.load_state"]])
 
         m = mb.addMenu("&Tools")
+        m.addActions([a["tools.measure_distance"], a["tools.measure_angle"], a["tools.measurements"]])
+        m.addSeparator()
         m.addActions([a["tools.shortcuts"], a["tools.preferences"], a["view.settings"]])
         m.addSeparator()
         m.addAction(a["tools.developer"])
@@ -464,7 +485,7 @@ class MainWindow(QMainWindow):
             self.theme_group.addAction(act)
 
         m = mb.addMenu("&Help")
-        m.addActions([a["help.controls"], a["help.about"], a["help.about_qt"]])
+        m.addActions([a["help.controls"], a["help.sysinfo"], a["help.about"], a["help.about_qt"]])
 
     def _fill_add_menu(self, menu: QMenu) -> None:
         menu.clear()
@@ -1097,6 +1118,39 @@ class MainWindow(QMainWindow):
             self._mark_dirty()
             self._sync_sim_fields()
 
+    def save_simulation_state(self) -> None:
+        from ..simulation.simulation_engine import SimulationError
+        start = os.path.splitext(self.project_path or "simulation")[0] + ".psimstate"
+        path, _ = QFileDialog.getSaveFileName(self, "Save Simulation State", start,
+                                              "PSim simulation states (*.psimstate);;All files (*)")
+        if not path:
+            return
+        try:
+            self.sim.save_state(path)
+        except (SimulationError, OSError, TimeoutError) as exc:
+            QMessageBox.warning(self, "Save Simulation State", str(exc))
+
+    def restore_simulation_state(self) -> None:
+        from ..simulation.simulation_engine import SimulationError
+        path, _ = QFileDialog.getOpenFileName(self, "Restore Simulation State",
+                                              os.path.dirname(self.project_path or ""),
+                                              "PSim simulation states (*.psimstate);;All files (*)")
+        if not path:
+            return
+        try:
+            self.sim.restore_state(path)
+        except (SimulationError, OSError, TimeoutError) as exc:
+            QMessageBox.warning(self, "Restore Simulation State", str(exc))
+
+    def open_stop_conditions(self) -> None:
+        from .dialogs.stop_conditions_dialog import StopConditionsDialog
+        dlg = StopConditionsDialog(self.scene, self.project.simulation.stop_conditions, self)
+        if dlg.exec() and dlg.result_conditions is not None \
+                and dlg.result_conditions != self.project.simulation.stop_conditions:
+            self.project.simulation.stop_conditions = dlg.result_conditions
+            self._mark_dirty()
+            self.sim.refresh_plan()   # a running simulation uses the new conditions from the next step
+
     def _on_sim_state(self, state: str) -> None:
         a = self.actions_
         active = self.sim.session_active
@@ -1107,6 +1161,7 @@ class MainWindow(QMainWindow):
         a["sim.stop"].setEnabled(active)
         a["sim.reset"].setEnabled(self.sim.can_reset)
         a["sim.step"].setEnabled(state in ("idle", "paused"))
+        a["sim.save_state"].setEnabled(active)
         for k in ("edit.cut", "edit.paste", "edit.duplicate", "edit.delete", "scene.group", "scene.ungroup",
                   "scene.unparent", "file.import_obj"):
             if active:
@@ -1678,6 +1733,21 @@ class MainWindow(QMainWindow):
         from .dialogs.unit_inspector_dialog import FormulaUnitInspector
         FormulaUnitInspector(process_registry(), self.units, None, self).exec()
 
+    def show_measurements(self) -> None:
+        self.dock_bottom.show()
+        self.bottom_tabs.setCurrentWidget(self.measurements_panel)
+
+    def measure(self, kind: str) -> None:
+        from ..scene.measurements import MeasurementError
+        ids = [i for i in self.scene.selection if i in self.scene.objects]
+        try:
+            self.editor.add_measurement(kind, ids, self.measurements_panel.at.currentData())
+        except (MeasurementError, SceneError) as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            self.bus.error(str(exc), "measurements")
+            return
+        self.show_measurements()
+
     def show_relative_motion(self) -> None:
         self.dock_bottom.show()
         self.bottom_tabs.setCurrentWidget(self.relative_motion)
@@ -1741,6 +1811,10 @@ class MainWindow(QMainWindow):
         for d in self.findChildren(QDockWidget):
             d.show()
         self.dock_history.hide()
+
+    def show_system_info(self) -> None:
+        from .dialogs.system_info_dialog import SystemInfoDialog
+        SystemInfoDialog(self.viewport.renderer.gl_info, self).exec()
 
     def about(self) -> None:
         QMessageBox.about(self, f"About {APP_NAME}", about_html(self.viewport.renderer.gl_info))

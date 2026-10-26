@@ -1,9 +1,44 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "psim-studio"
 version = "0.1.0"
-description = "Professional 3D physics simulation studio (Phase 1: scene building and 3D viewport)"
+description = "Professional 3D physics simulation studio with a fixed-step engine, safe formula processes and rigid-body physics"
+readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PySide6>=6.6", "PyOpenGL>=3.1.7", "numpy>=1.26"]
+license = {text = "Proprietary"}
+authors = [{name = "Aditya Kumar"}]
+dependencies = ["PySide6>=6.6", "PyOpenGL>=3.1.7", "numpy>=1.26", "pyqtgraph>=0.13"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-qt>=4.2"]
+
+[project.gui-scripts]
+psim-studio = "psim.app:main"
+
+[project.scripts]
+psim-batch = "psim.batch:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["psim*"]
+
+[tool.setuptools.package-data]
+"psim.processes" = ["library/*.json", "trusted_keys/*"]
+"psim.numerics" = ["_psim_native*.so", "_psim_native*.pyd"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

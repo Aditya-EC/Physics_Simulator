@@ -261,6 +261,29 @@ def _physics_demo(scene: Scene, editor: SceneEditor) -> None:
     editor.assign_process("dyn.gravity", TargetFilter(ids=[o.id for o in dynamic]), label="Earth gravity")
 
 
+def _measurements_demo(scene: Scene, editor: SceneEditor) -> None:
+    """A pendulum on a rod with live angle and distance measurements (a stop condition is in the example file)."""
+    from ..processes.process_base import TargetFilter
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 8, "width": 6})
+    ground.color = [0.30, 0.32, 0.36]
+    pivot = scene.create_object("basic.sphere", name="Pivot", params={"radius": 0.06}, position=[0.0, 0.0, 3.0])
+    pivot.color = [0.85, 0.85, 0.9]
+    plumb = scene.create_object("frame.marker", name="Plumb Point", position=[0.0, 0.0, 1.5])
+    angle0 = math.radians(60)
+    bob = scene.create_object("basic.sphere", name="Bob", params={"radius": 0.15},
+                              position=[-1.5 * math.sin(angle0), 0.0, 3.0 - 1.5 * math.cos(angle0)])
+    bob.color = [0.95, 0.55, 0.20]
+    target = scene.create_object("basic.cube", name="Target", params={"size": 0.3}, position=[2.0, 0.0, 0.15])
+    target.color = [0.35, 0.75, 1.0]
+    editor.add_objects([ground, pivot, plumb, bob, target], text="Measurements demo", select=False)
+    editor.set_property([bob.id], "trajectory.enabled", True)
+    editor.add_joint("distance", bob.id, None, list(scene.world_pose(bob.id)[0]), name="Rod",
+                     anchor_world_b=[0.0, 0.0, 3.0])
+    editor.assign_process("dyn.gravity", TargetFilter(ids=[bob.id]), label="Earth gravity")
+    editor.add_measurement("angle", [plumb.id, pivot.id, bob.id], name="Swing angle")
+    editor.add_measurement("distance", [bob.id, target.id], name="Bob to target")
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
@@ -270,4 +293,5 @@ PROJECT_TEMPLATES = {
     "frames": ("Reference Frames Demo", _frames_demo),
     "recording": ("Data Recording & Plots Demo", _recording_demo),
     "physics": ("Rigid Bodies, Collisions & Joints Demo", _physics_demo),
+    "measurements": ("Measurements & Stop Conditions Demo", _measurements_demo),
 }

@@ -140,6 +140,20 @@ class Recording:
         self._event(t, step, "recording", "Memory limit reached: recording stopped")
         return False
 
+    def truncate_from(self, t: float) -> int:
+        """Remove samples at or after `t` (after a simulation state of time t was restored: the sample of t itself
+        is written again by the next step). Returns how many were removed; they count as dropped, so readers
+        and trajectory caches rebuild."""
+        with self._lock:
+            keep = int(np.searchsorted(self._buf[:self.n, 0], t - 1e-12 * max(1.0, abs(t)), side="right"))
+            removed = self.n - keep
+            if removed > 0:
+                self.n = keep
+                self.dropped += removed
+                self.full_stop = False
+                self.version += 1
+            return removed
+
     # ---- events --------------------------------------------------------------------------------------------
     def _event(self, t: float, step: int, kind: str, message: str) -> None:
         self.events.append(Event(float(t), int(step), kind, message))

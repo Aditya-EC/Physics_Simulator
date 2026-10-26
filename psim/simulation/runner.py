@@ -52,6 +52,7 @@ class RunStats:
     dropped_steps: int          # steps removed from the real-time schedule because the engine fell behind
     overrun: bool               # requested rate currently not achieved
     step_ms: float              # mean compute time per step (recent)
+    profile: dict | None = None  # mean ms per step of each engine stage since the start (profile_report)
 
 
 class _WindowsTimerResolution:
@@ -73,6 +74,9 @@ class _WindowsTimerResolution:
             ctypes.windll.winmm.timeEndPeriod(1)
 
 
+BACKPRESSURE_WAIT = 0.1   # s: longest wait for the GUI before a snapshot is published anyway
+
+
 class SimulationRunner(QObject):
     snapshotReady = Signal(object)    # Snapshot
     statsUpdated = Signal(object)     # RunStats
@@ -87,6 +91,9 @@ class SimulationRunner(QObject):
         self._state = RunState.IDLE
         self.engine: SimulationEngine | None = None
         self.render_fps = 60.0
+        self._backpressure = False
+        self._published = 0     # snapshots emitted / applied by the consumer (backpressure)
+        self._applied = 0
 
     # ---- public API (GUI thread) -----------------------------------------------------------------
     @property
@@ -102,6 +109,7 @@ class SimulationRunner(QObject):
             raise RuntimeError("A simulation is already running")
         self.engine = engine
         self.render_fps = engine.settings.render_fps
+        self._published = self._applied = 0
         self._commands = queue.Queue()
         self._thread = threading.Thread(target=self._run, args=(paused,), name="psim-simulation", daemon=True)
         self._thread.start()
@@ -140,6 +148,31 @@ class SimulationRunner(QObject):
 
     def replace_plan(self, plan, bodies, state, keep: set[str], statics=None, globals_=None, frames=None) -> None:
         self._commands.put(("plan", plan, bodies, state, keep, statics, globals_, frames))
+
+    def enable_backpressure(self, on: bool = True) -> None:
+        """Wait (up to BACKPRESSURE_WAIT) for the GUI to apply each snapshot before publishing the next.
+
+        Without it a run that is not paced (as fast as possible, or behind schedule) keeps Python's global
+        interpreter lock busy, and a GUI thread that needs it many times per frame (every OpenGL call) is
+        starved. While the worker waits it holds no lock, so the GUI renders and handles input at full speed.
+        The consumer reports progress with snapshot_applied()."""
+        self._backpressure = on
+
+    def snapshot_applied(self) -> None:
+        self._applied += 1
+
+    def call(self, fn, timeout: float = 10.0):
+        """Run fn(engine) on the simulation thread between steps and return its result (re-raising its error).
+        Used to save or restore the simulation state without racing the worker."""
+        if not self.active:
+            return fn(self.engine)
+        box = {"done": threading.Event()}
+        self._commands.put(("call", fn, box))
+        if not box["done"].wait(timeout):
+            raise TimeoutError("The simulation thread did not respond")
+        if "error" in box:
+            raise box["error"]
+        return box.get("result")
 
     def wait_until(self, predicate, timeout: float = 10.0) -> bool:
         """Test helper: poll `predicate()` (no Qt event processing)."""
@@ -185,7 +218,13 @@ class SimulationRunner(QObject):
             now = time.perf_counter()
             if not force and now - last_publish < 1.0 / max(self.render_fps, 1.0):
                 return
+            if self._backpressure:   # let a busy GUI catch up first (see enable_backpressure)
+                give_up = now + BACKPRESSURE_WAIT
+                while self._published > self._applied and time.perf_counter() < give_up and self._commands.empty():
+                    time.sleep(0.002)
+                now = time.perf_counter()
             last_publish = now
+            self._published += 1
             self.snapshotReady.emit(eng.snapshot())
             speed_window.append((wall_running, eng.clock.time))
             while len(speed_window) > 2 and speed_window[-1][0] - speed_window[0][0] > 1.0:
@@ -205,7 +244,7 @@ class SimulationRunner(QObject):
             self.statsUpdated.emit(RunStats(
                 self._state.value, eng.clock.time, eng.clock.steps, eng.clock.delta_time, s.duration, s.pacing.value,
                 s.update_rate_hz, achieved, speed, wall_running, dropped_total(), overrun,
-                1000 * sum(step_costs) / len(step_costs) if step_costs else 0.0))
+                1000 * sum(step_costs) / len(step_costs) if step_costs else 0.0, eng.profile_report()))
 
         def do_step() -> bool:
             t0 = eng.clock.time
@@ -221,6 +260,14 @@ class SimulationRunner(QObject):
             if not advanced:
                 return False
             ctl.record_step()
+            fired = eng.take_fired()
+            for name, action, at in fired:
+                self.message.emit(f"Stop condition '{name}' became true at t = {at:.6g} s"
+                                  + (" — paused" if action == "pause" else " — run stopped"))
+            if any(action == "pause" for _n, action, _t in fired) and not eng.finished:
+                self._set_state(RunState.PAUSED)
+                publish(force=True)
+                return False
             for bp in s.breakpoints:
                 if t0 < bp <= eng.clock.time + 1e-12:
                     self._set_state(RunState.PAUSED)
@@ -266,6 +313,19 @@ class SimulationRunner(QObject):
                     self.render_fps = cmd[1]
                 elif kind == "plan":
                     eng.replace_plan(*cmd[1:])
+                    publish(force=True)
+                elif kind == "call":
+                    box = cmd[2]
+                    try:
+                        box["result"] = cmd[1](eng)
+                    except Exception as exc:   # handed back to the caller
+                        box["error"] = exc
+                    finally:
+                        box["done"].set()
+                    if self._state == RunState.FINISHED and not eng.finished:
+                        self._set_state(RunState.PAUSED)   # restored to an earlier time
+                    elif eng.finished and self._state != RunState.FINISHED:
+                        self._set_state(RunState.FINISHED)
                     publish(force=True)
             except Exception as exc:  # invalid live change: report and keep the previous configuration
                 self.errorOccurred.emit(f"Change not applied: {exc}")

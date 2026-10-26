@@ -70,6 +70,20 @@ class SimulationClock:
             self._partial_time += dt  # only used for a final partial step
         self.steps += 1
 
+    def export(self) -> dict:
+        """Exact clock state (segment start, steps in the segment, partial time, total steps, Δt)."""
+        return {"segment_start": self._segment_start, "segment_steps": self._segment_steps,
+                "partial_time": self._partial_time, "steps": self.steps, "delta_time": self._dt}
+
+    def restore(self, d: dict) -> None:
+        dt = float(d["delta_time"])
+        values = (float(d["segment_start"]), int(d["segment_steps"]), float(d["partial_time"]), int(d["steps"]))
+        if not (math.isfinite(dt) and dt > 0 and all(math.isfinite(v) for v in values) and values[1] >= 0
+                and values[3] >= 0):
+            raise ValueError("Invalid clock state")
+        self._segment_start, self._segment_steps, self._partial_time, self.steps = values
+        self._dt = dt
+
     def reset(self) -> None:
         self._segment_start = 0.0
         self._segment_steps = 0

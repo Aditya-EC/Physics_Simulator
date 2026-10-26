@@ -17,16 +17,17 @@ import copy
 
 from PySide6.QtCore import QObject, Signal
 
-from ..processes.process_scheduler import ExecutionPlan, build_plan
+from ..processes.process_scheduler import ExecutionPlan
 from ..properties.property_system import PropertyError
 from ..scene.editing import SceneEditor, StateCommand
 from ..scene.scene_manager import Scene
 from ..simulation.runner import RunState, RunStats, SimulationRunner
 from ..simulation.settings import PacingMode, SimulationSettings
-from ..simulation.simulation_engine import SimulationEngine, SimulationError, Snapshot
+from ..simulation.factory import NOTHING_TO_SIMULATE, build_engine, plan_run
+from ..simulation.simulation_engine import SimulationError, Snapshot
 from ..simulation.state import capture_bodies
 from ..recording.recording import Recording
-from ..simulation.world import EngineWorld, capture_frames, capture_static, global_values
+from ..simulation.world import capture_frames, capture_static, global_values
 
 
 class SimulationController(QObject):
@@ -44,6 +45,7 @@ class SimulationController(QObject):
         self.editor = editor
         self._settings = settings_getter
         self.runner = SimulationRunner(self)
+        self.runner.enable_backpressure()   # keep the GUI responsive during unpaced runs
         self.runner.snapshotReady.connect(self._apply_snapshot)
         self.runner.statsUpdated.connect(self._on_stats)
         self.runner.stateChanged.connect(self._on_runner_state)
@@ -132,7 +134,7 @@ class SimulationController(QObject):
         self.recordingChanged.emit()
 
     def validate(self) -> ExecutionPlan:
-        return build_plan(self.scene, self.scene.assignments)
+        return plan_run(self.scene, self.settings)
 
     # ---- commands --------------------------------------------------------------------------------------
     def start(self, paused: bool = False) -> bool:
@@ -155,27 +157,16 @@ class SimulationController(QObject):
             {"error": self.error, "warning": self.warning}.get(d.level, self.info).emit(d.message)
         if not plan.ok:
             return False
-        if not plan.body_ids:
-            self.error.emit("Nothing to simulate: assign at least one enabled process to an object "
-                            "(Processes ▸ Assign Process).")
-            return False
-        bodies, state = capture_bodies(self.scene, plan.body_ids)
-        statics = capture_static(self.scene)
-        world = EngineWorld(statics, plan.body_ids, global_values(self.scene), self.settings.delta_time,
-                            capture_frames(self.scene, statics))
         try:
-            engine = SimulationEngine(SimulationSettings.from_dict(self.settings.to_dict()), plan, bodies, state, world)
+            plan, engine, rec = build_engine(self.scene, self.settings, plan=plan)
         except SimulationError as exc:
             self.error.emit(str(exc))
             return False
-        recording_on = self.settings.record_enabled
+        if engine is None:
+            self.error.emit(NOTHING_TO_SIMULATE)
+            return False
+        recording_on = rec is not None
         if recording_on:
-            rec = Recording(int(self.settings.record_max_mb * 2 ** 20), self.settings.record_overflow,
-                            self.settings.record_every_n_steps)
-            rec.meta["settings"] = self.settings.to_dict()
-            rec.meta["names"] = {o.id: o.name for o in self.scene.objects.values()}
-            rec.meta["types"] = {o.id: o.type_id for o in self.scene.objects.values()}
-            engine.attach_recording(rec, self.settings.record_process_outputs)
             self.recording = rec
         self._initial = self.scene.snapshot(plan.body_ids)
         self._reported = set()
@@ -283,6 +274,7 @@ class SimulationController(QObject):
 
     # ---- runner callbacks (GUI thread) ---------------------------------------------------------------------
     def _apply_snapshot(self, snap: Snapshot) -> None:
+        self.runner.snapshot_applied()
         if not self.session_active:
             return
         self._applying = True
@@ -351,6 +343,38 @@ class SimulationController(QObject):
             return True
         return any(oid in self.scene.objects and self.scene.objects[oid].physics_setting("collider") != "none"
                    for oid in ids)
+
+    # ---- saved simulation states ---------------------------------------------------------------------
+    def save_state(self, path: str) -> float:
+        """Write the current simulation state to `path` (JSON). Returns its simulated time."""
+        from ..project.serialization import write_json_atomic
+        if not self.session_active or self.runner.engine is None:
+            raise SimulationError("There is no simulation to save: start or step a run first")
+        data = self.runner.call(lambda eng: eng.export_state())
+        data["saved"] = {"objects": len(data["bodies"]), "application": "PSim Studio"}
+        write_json_atomic(path, data)
+        self._log("state", f"Simulation state saved at t = {data['time']:.6g} s")
+        self.info.emit(f"Saved the simulation state at t = {data['time']:.6g} s to {path}")
+        return float(data["time"])
+
+    def restore_state(self, path: str) -> float:
+        """Continue from a saved state; starts a paused session first if none is active."""
+        import json
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError) as exc:
+            raise SimulationError(f"Cannot read the simulation state: {exc}") from None
+        if not self.session_active and not self.start(paused=True):
+            raise SimulationError("The simulation could not be started (see Errors & Warnings)")
+        self.runner.call(lambda eng: eng.import_state(data))
+        t = float(data.get("time", 0.0))
+        self.info.emit(f"Restored the simulation state of t = {t:.6g} s from {path}")
+        return t
+
+    def refresh_plan(self) -> None:
+        """Re-plan a running session (e.g. after its stop conditions changed); no effect when idle."""
+        self._on_processes_changed()
 
     def _on_processes_changed(self) -> None:
         if self.session_active:

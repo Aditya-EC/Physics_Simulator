@@ -16,6 +16,7 @@ assignments — are still read):
       "reference_frames": [{"id", "name", "parent", "position", "orientation", "follow_rotation", …}...],
       "frame_counter": next FRM- number (v2, optional; frames are never reused)
       "joints": [<Joint.to_dict()>...], "joint_counter": next JNT- number (v2, optional)
+      "measurements": [{"id", "name", "kind", "points", "visible"}...], "measurement_counter" (v2, optional)
       "assets":     {"meshes": {<asset id>: {"name", "vertices", "indices"}}},
       "units":      {"preferred": {...}, "custom_units": [...]},
       "view":       <ViewSettings.to_dict()>,
@@ -90,6 +91,8 @@ def project_to_dict(scene: Scene, units: UnitRegistry, data: ProjectData) -> dic
         "frame_counter": scene.next_frame_number,
         "joints": scene.joints_snapshot(),
         "joint_counter": scene.next_joint_number,
+        "measurements": scene.measurements_snapshot(),
+        "measurement_counter": scene.next_measurement_number,
         "assets": {"meshes": mesh_assets.to_dict({a for a in used_assets if a})},
         "units": units.to_dict(),
         "view": data.view.to_dict(),
@@ -217,6 +220,18 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
         for b in (j.body_a, j.body_b):
             if b and b not in seen:
                 data.warnings.append(f"{j.id} ({j.name}): connects the missing object '{b}'")
+    from ..scene.measurements import MEASUREMENT_ID, MeasurementError, validate_measurements
+    try:
+        measurements = validate_measurements(raw.get("measurements", []))
+    except MeasurementError as exc:
+        raise ProjectError(str(exc)) from None
+    kept = []
+    for m in measurements:
+        missing = [o for o in m.objects if o not in seen]
+        if missing:
+            data.warnings.append(f"{m.id} ({m.name}): measured the missing object '{missing[0]}'; removed")
+        else:
+            kept.append(m)
     for obj in objects:
         if obj.parent_id and obj.parent_id not in seen:
             data.warnings.append(f"{obj.id}: parent '{obj.parent_id}' not found; object moved to the scene root")
@@ -238,6 +253,13 @@ def load_project_dict(raw: dict, scene: Scene, units: UnitRegistry) -> ProjectDa
                                           *(int(JOINT_ID.match(j.id).group(1)) + 1 for j in joints))
         except (TypeError, ValueError):
             scene.next_joint_number = 1 + max((int(JOINT_ID.match(j.id).group(1)) for j in joints), default=0)
+        scene.measurements = kept
+        try:
+            scene.next_measurement_number = max(int(raw.get("measurement_counter", 1)), 1,
+                                                *(int(MEASUREMENT_ID.match(m.id).group(1)) + 1 for m in measurements))
+        except (TypeError, ValueError):
+            scene.next_measurement_number = 1 + max((int(MEASUREMENT_ID.match(m.id).group(1))
+                                                     for m in measurements), default=0)
         scene.simulating = False
         try:
             scene.next_process_number = max(int(raw.get("process_counter", 1)), 1)

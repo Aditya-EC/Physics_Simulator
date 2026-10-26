@@ -130,3 +130,61 @@ def contact_lines(contacts, marker: float, force_scale: float = 0.02) -> tuple[l
         seg += [c, c + np.asarray(normal, float) * max(abs(force) * force_scale, marker * 3)]
     seg = np.array(seg)
     return [seg], [np.tile([*CONTACT_COLOR, 1.0], (len(seg), 1))]
+
+
+MEASURE_COLOR = (0.98, 0.86, 0.35)
+
+
+def measurement_geometry(scene) -> list[tuple]:
+    """(measurement, value, segment endpoints (2k, 3), label anchor) of every visible, evaluable measurement."""
+    from ..scene.measurements import evaluate
+    out = []
+    for m in scene.measurements:
+        if not m.visible:
+            continue
+        try:
+            val = evaluate(scene, m)
+        except Exception:   # missing objects are shown in the Measurements panel, not drawn
+            continue
+        pts = val.points
+        if m.kind == "distance":
+            seg = np.array([pts[0], pts[1]])
+            anchor = (pts[0] + pts[1]) / 2
+        else:
+            a, v, b = pts
+            seg = [v, a, v, b]
+            u, w = a - v, b - v
+            nu, nw = np.linalg.norm(u), np.linalg.norm(w)
+            anchor = v
+            if nu > 1e-12 and nw > 1e-12 and np.isfinite(val.value):
+                r = 0.3 * min(nu, nw)
+                e1 = u / nu
+                e2 = w - (w @ e1) * e1
+                n2 = np.linalg.norm(e2)
+                e2 = e2 / n2 if n2 > 1e-12 else np.zeros(3)
+                seg += list(_arc(v, e1, e2, r, 0.0, val.value, 16))
+                mid = val.value / 2
+                anchor = v + 1.3 * r * (np.cos(mid) * e1 + np.sin(mid) * e2)
+            seg = np.array(seg)
+        out.append((m, val, seg, anchor))
+    return out
+
+
+def measurement_lines(scene) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    pts, cols = [], []
+    for _m, _v, seg, _a in measurement_geometry(scene):
+        pts.append(seg)
+        cols.append(np.tile([*MEASURE_COLOR, 1.0], (len(seg), 1)))
+    return pts, cols
+
+
+def measurement_labels(scene, units) -> list[tuple[np.ndarray, str]]:
+    """(world anchor, text) of every visible measurement, in the project's display units."""
+    lu, au = units.preferred_unit("length"), units.preferred_unit("angle")
+    out = []
+    for m, val, _seg, anchor in measurement_geometry(scene):
+        if not np.isfinite(val.value):
+            continue
+        unit = lu if m.kind == "distance" else au
+        out.append((anchor, f"{m.name}: {float(units.from_si(val.value, unit)):.4g} {unit}"))
+    return out

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-psim-project">
+    <comment>PSim Studio project</comment>
+    <glob pattern="*.psim"/>
+    <sub-class-of type="application/json"/>
+  </mime-type>
+  <mime-type type="application/x-psim-state">
+    <comment>PSim Studio simulation state</comment>
+    <glob pattern="*.psimstate"/>
+    <sub-class-of type="application/json"/>
+  </mime-type>
+</mime-info>

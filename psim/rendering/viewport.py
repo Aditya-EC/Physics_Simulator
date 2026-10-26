@@ -77,7 +77,15 @@ class Viewport(QOpenGLWidget):
         self.measured_fps = 0.0
         self.continuous = False
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self.update)
+        self._timer.timeout.connect(self.request_frame)
+        # Frame pacing: automatic redraws (continuous rendering, scene changes from a running simulation) leave the
+        # event loop at least as much idle time as the last frame took, so slow (e.g. software) OpenGL can never
+        # starve user input. Direct interaction still repaints immediately.
+        self._paint_cost = 0.0          # smoothed wall time of one paintGL (s)
+        self._last_paint_end = 0.0
+        self._deferred = QTimer(self)
+        self._deferred.setSingleShot(True)
+        self._deferred.timeout.connect(self.update)
         self.render_fps = 60.0
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -90,6 +98,7 @@ class Viewport(QOpenGLWidget):
         scene.sceneReset.connect(self._scene_changed)
         scene.framesChanged.connect(self._scene_changed)
         scene.jointsChanged.connect(self._scene_changed)
+        scene.measurementsChanged.connect(self._scene_changed)
 
     # ---- configuration -------------------------------------------------------------------------
     def set_view_settings(self, view: ViewSettings) -> None:
@@ -134,12 +143,21 @@ class Viewport(QOpenGLWidget):
                 self._follow_offset = r.T @ (self.camera.eye() - p)
         self.update()
 
+    def request_frame(self) -> None:
+        """Repaint now, or after the idle time owed to the previous (slow) frame — never more than once pending."""
+        wait = self._last_paint_end + self._paint_cost - time.perf_counter()
+        if wait <= 0.0:
+            self._deferred.stop()
+            self.update()
+        elif not self._deferred.isActive():
+            self._deferred.start(max(1, int(wait * 1000)))
+
     def _scene_changed(self, *args) -> None:
         if self.hover_id and self.hover_id not in self.scene:
             self.hover_id = None
         if self.follow_id and self.follow_id not in self.scene:
             self.set_follow("none", None)
-        self.update()
+        self.request_frame()
 
     # ---- camera commands -------------------------------------------------------------------------
     def frame_objects(self, ids: list[str] | None) -> None:
@@ -184,6 +202,15 @@ class Viewport(QOpenGLWidget):
         self.doneCurrent()
 
     def paintGL(self) -> None:  # noqa: N802
+        started = time.perf_counter()
+        try:
+            self._paint()
+        finally:
+            end = time.perf_counter()
+            self._paint_cost = 0.7 * self._paint_cost + 0.3 * (end - started) if self._paint_cost else end - started
+            self._last_paint_end = end
+
+    def _paint(self) -> None:
         self._apply_follow()
         dpr = self.devicePixelRatioF()
         w, h = int(self.width() * dpr), int(self.height() * dpr)

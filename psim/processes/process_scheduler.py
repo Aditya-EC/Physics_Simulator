@@ -56,6 +56,7 @@ class ExecutionPlan:
     writers: dict[tuple[str, str], list[str]]   # (object id, quantity) -> assignment uids
     diagnostics: list[Diagnostic]
     physics: object = None                      # psim.physics.setup.PhysicsSetup (collisions / joints)
+    conditions: list = field(default_factory=list)   # compiled stop conditions (psim.simulation.conditions)
 
     @property
     def errors(self) -> list[Diagnostic]:

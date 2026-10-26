@@ -322,6 +322,9 @@ class Renderer:
             a, c = physics_overlay.joint_lines(scene, marker)
             pts += a
             cols += c
+        a, c = physics_overlay.measurement_lines(scene)
+        pts += a
+        cols += c
         if env.show_contacts:
             a, c = physics_overlay.contact_lines(f.contacts, marker)
             pts += a
