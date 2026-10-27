@@ -217,7 +217,27 @@ psim-batch drop.psim --duration 5 --dt 0.001 --integrator rk4 \
 ```
 
 It prints the steps, run time, stop conditions and a profile (milliseconds per step for each
-engine stage). Exit status:
+engine stage).
+
+**Parameter sweeps** run the project once per value, or per combination when `--sweep` is
+repeated, and collect one row per run:
+
+```bash
+psim-batch drop.psim --sweep drag_cd=0.2:1.0:5 --sweep "Ball.restitution=0.5,0.9" \
+    --var Ball:position.z --sweep-csv sweep.csv --jobs 4
+```
+
+- Values: `START:STOP:COUNT` (evenly spaced, both ends included), a comma list, or a JSON list
+  such as `'[[1,0,0],[2,0,0]]'` for vectors. A name with a dot is an object property, otherwise
+  a global parameter.
+- `sweep.csv` holds the swept values, whether each run finished, its steps and end time, the stop
+  conditions that fired, any error, and the final value of every `--var`.
+- `--csv`, `--json`, `--report` and `--save-state` write one file per run, numbered (`out_03.csv`),
+  or with `{run}` replaced in the name.
+- `--jobs N` runs N simulations in parallel; the results are the same as one after another.
+- A run with an invalid value is reported in its row and the others still run.
+
+Exit status (for a sweep, the worst of its runs):
 - 0: success
 - 2: invalid input
 - 3: the simulation failed (partial results are still written)

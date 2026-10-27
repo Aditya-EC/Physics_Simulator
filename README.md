@@ -139,7 +139,7 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_acceptance.py` | the 30 mandatory acceptance tests of the specification, end to end (traceability in `docs/acceptance.md`) |
 | `test_conditions.py` | stop conditions: stop/pause at the right step, fire once per false→true transition, dimension/type/reference checks, global parameters, settings round trip; per-stage profile |
 | `test_sim_state.py` | saved simulation states: bit-for-bit continuation (with collisions, joints and formula processes), recording truncation, rejection of foreign/invalid states, save/restore through the session controller |
-| `test_batch.py` | headless batch runs: CSV/JSON/report/state outputs against analytic values, property and global overrides, restore-and-continue, stop conditions, exit codes for invalid input and numerical failure |
+| `test_batch.py` | headless batch runs: CSV/JSON/report/state outputs against analytic values, property and global overrides, restore-and-continue, stop conditions, exit codes for invalid input and numerical failure; sweeps (value syntax, grid order, numbered files, final values against z₀ + v·t − g t²/2, parallel ≡ serial, a bad value fails only its run) |
 | `test_placement.py` | Place Relative To: offsets along the reference's or the global axes, relative orientation, round trip with the current placement, rigid groups with children, one undo step, invalid references (itself, children, attached frames, missing), locked objects, the dialog and its menu action |
 | `test_measurements.py` | distance and angle values (precise near 180°, undefined at the vertex), centre-of-mass points, surface points that follow motion, rotation and scale, point validation, undo, dangling objects, project files, viewport overlays, Measurements panel |
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
@@ -151,8 +151,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **564 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 485 pass and 79 native-comparison tests are skipped. This was measured on
+Current result: **568 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 489 pass and 79 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -683,6 +683,10 @@ project files or engine. They pass on both numerical backends.
 - Writes chosen variables as CSV, the full recording as JSON, the HTML report, the final state and
   a JSON summary.
 - Exit codes: 0 success, 2 invalid input, 3 simulation failure (partial results are still written).
+- Parameter sweeps: `--sweep NAME=VALUES` (a global parameter or `OBJECT.PATH`; values
+  `START:STOP:COUNT`, a comma list or a JSON list), repeated for a grid. One row per run (swept
+  values, outcome, stop conditions, final value of every `--var`) goes to `--sweep-csv`; per-run
+  files are numbered; `--jobs N` runs in parallel processes with identical results.
 - `psim/simulation/factory.py` builds engines the same way for the GUI and batch runs.
 
 **Profiling.** The engine times each stage of every step:
@@ -825,8 +829,9 @@ Key design decisions:
   - Measurements use points (origins, centres of mass, picked surface points). There is no
     snapping to vertices or edges, and no direct angle between two edges or faces (pick three
     points instead).
-  - Batch runs execute one project per process; parameter sweeps are scripted by calling
-    `psim-batch` repeatedly.
+  - Sweeps are grids of independent runs; there is no optimisation or adaptive sampling. A
+    sweep restarts the project for every run (a few tenths of a second each), so very many short
+    runs are dominated by start-up time.
 - Rigid-body physics limits (Phase 7):
   - Collision detection, contact rows, joint rows and the solver run in C++. The per-step
     bookkeeping around them (gathering poses, applying results) is vectorised NumPy. Measured on

@@ -122,3 +122,75 @@ def test_module_entry_point_runs_as_a_process(tmp_path):
     r = subprocess.run([sys.executable, "-m", "psim.batch", "--help"], cwd=ROOT, capture_output=True, text=True,
                        timeout=60)
     assert r.returncode == 0 and "--restore-state" in r.stdout
+
+
+def test_sweep_specs_grid_and_file_names():
+    assert batch.parse_sweep("k=0:1:5")[1] == [0.0, 0.25, 0.5, 0.75, 1.0]
+    assert batch.parse_sweep("k=2:2:1")[1] == [2.0]
+    assert batch.parse_sweep("Ball.restitution = 0.5, 0.9")[1] == [0.5, 0.9]
+    assert batch.parse_sweep("Ball.linear_velocity=[[1,0,0],[0,2,0]]")[1] == [[1, 0, 0], [0, 2, 0]]
+    for bad, msg in (("k", "NAME=VALUES"), ("k=1:2:0", "COUNT"), ("k=a:b:3", "numbers"), ("k=[1,", "JSON")):
+        with pytest.raises(batch.BatchError, match=msg):
+            batch.parse_sweep(bad)
+    grid = batch.sweep_grid([("a", [1, 2]), ("b", ["x", "y", "z"])])
+    assert grid[:4] == [{"a": 1, "b": "x"}, {"a": 1, "b": "y"}, {"a": 1, "b": "z"}, {"a": 2, "b": "x"}]
+    with pytest.raises(batch.BatchError, match="only once"):
+        batch.sweep_grid([("a", [1]), ("a", [2])])
+    with pytest.raises(batch.BatchError, match="runs"):
+        batch.sweep_grid([("a", list(range(1000))), ("b", list(range(1000)))])
+    assert batch.run_path("out/run.csv", 7, 3) == "out/run_007.csv"
+    assert batch.run_path("r{run}/x.json", 12, 2) == "r12/x.json"
+    assert batch.run_path(None, 1, 1) is None
+
+
+def test_sweep_runs_every_combination(scene, tmp_path, capsys):
+    path, ball = _project(scene, tmp_path)
+    table = str(tmp_path / "sweep.csv")
+    per_run = str(tmp_path / "z.csv")
+    code = batch.main([path, "--sweep", "Ball.position=[[0,0,20],[0,0,30]]", "--sweep", "Ball.linear_velocity="
+                       "[[0,0,0],[0,0,1],[0,0,2]]", "--var", "Ball:position.z", "--sweep-csv", table,
+                       "--csv", per_run])
+    assert code == batch.EXIT_OK
+    out = capsys.readouterr().out
+    assert "Sweep of" in out and "6 runs" in out and "run 6/6" in out
+    with open(table, encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
+    head, rows = rows[0], rows[1:]
+    assert head[:3] == ["run", "Ball.position", "Ball.linear_velocity"] and head[-1] == "Ball: Position z [m]"
+    assert len(rows) == 6
+    for r in rows:
+        z0, vz = json.loads(r[1])[2], json.loads(r[2])[2]
+        assert r[head.index("finished")] == "True" and r[head.index("error")] == ""
+        assert float(r[-1]) == pytest.approx(z0 + vz - G / 2, abs=1e-9)             # z(1 s) of each run
+    for k in range(1, 7):
+        _, series = _read(str(tmp_path / f"z_{k}.csv"))
+        assert len(series) == 101                                                    # one file per run
+
+
+def test_sweep_in_parallel_matches_serial(scene, tmp_path):
+    path, _ = _project(scene, tmp_path)
+    args = ["--quiet", "--sweep", "Ball.linear_velocity=[[0,0,0],[1,0,3],[2,0,-1]]", "--var", "Ball:position"]
+    a, b = str(tmp_path / "a.csv"), str(tmp_path / "b.csv")
+    assert batch.main([path, *args, "--sweep-csv", a]) == 0
+    assert batch.main([path, *args, "--sweep-csv", b, "--jobs", "2"]) == 0
+    with open(a, encoding="utf-8") as fa, open(b, encoding="utf-8") as fb:
+        ra, rb = list(csv.reader(fa)), list(csv.reader(fb))
+    wall = ra[0].index("wall [s]")
+    assert [r[:wall] + r[wall + 1:] for r in ra] == [r[:wall] + r[wall + 1:] for r in rb]    # identical results
+
+
+def test_sweep_reports_bad_runs_and_bad_input(scene, tmp_path, capsys):
+    path, _ = _project(scene, tmp_path)
+    table = str(tmp_path / "t.csv")
+    # one invalid value: that run is reported, the others still run
+    assert batch.main([path, "--quiet", "--sweep", "Ball.mass_input=1,-3,2", "--sweep-csv", table]) == \
+        batch.EXIT_INPUT
+    with open(table, encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
+    err = rows[0].index("error")
+    assert [bool(r[err]) for r in rows[1:]] == [False, True, False] and "mass_input" in rows[2][err]
+    assert "run 2:" in capsys.readouterr().err
+    assert batch.main([path, "--quiet", "--sweep", "gz=-9.8,-1.6"]) == 0          # global parameters
+    assert batch.main([path, "--quiet", "--sweep", "nothing=1,2"]) == batch.EXIT_INPUT
+    assert batch.main([path, "--quiet", "--sweep", "k=1:2:0"]) == batch.EXIT_INPUT
+    assert batch.main([path, "--quiet", "--jobs", "2"]) == batch.EXIT_INPUT         # --jobs needs --sweep
