@@ -372,10 +372,11 @@ class Viewport(QOpenGLWidget):
         what = (["the first point", "the second point"] if st["kind"] == "distance"
                 else ["point A", "the vertex", "point B"])[k]
         return (f"Measure {st['kind']}: click {what} on an object's surface ({k + 1} of {st['need']}) · "
-                "drag to orbit · Esc cancels")
+                "snaps to corners and edges (Ctrl: no snapping) · drag to orbit · Esc cancels")
 
-    def add_picked_point(self, pos) -> bool:
-        """Add the surface point under `pos` to the point measurement in progress (False: nothing was hit)."""
+    def add_picked_point(self, pos, snap: bool = True) -> bool:
+        """Add the surface point under `pos` to the point measurement in progress (False: nothing was hit).
+        With `snap`, a point near a corner or an edge of the face under the cursor is moved onto it."""
         from ..scene.measurements import MeasurementError, surface_point
         st = self._point_pick
         hit = self.pick_at(pos)
@@ -383,19 +384,23 @@ class Viewport(QOpenGLWidget):
             if st is not None:
                 self.hint.emit("Click on the surface of an object · Esc cancels")
             return False
+        point, kind = (picking.snap_point(hit, self.camera, self.width(), self.height(), pos.x(), pos.y())
+                       if snap else (np.asarray(hit.point, float), "surface"))
         try:
-            st["points"].append(surface_point(self.scene, hit.object_id, hit.point))
+            st["points"].append(surface_point(self.scene, hit.object_id, point))
         except MeasurementError as exc:
             self.hint.emit(str(exc))
             return False
-        st["world"].append(np.asarray(hit.point, float))
+        st["world"].append(point)
+        st.setdefault("snaps", []).append(kind)
         if len(st["points"]) == st["need"]:
             self._point_pick = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.hint.emit("")
             self.pointsPicked.emit(st["kind"], st["points"])
         else:
-            self.hint.emit(self._pick_prompt())
+            self.hint.emit(("(snapped to a vertex) " if kind == "vertex" else "(snapped to an edge) "
+                            if kind == "edge" else "") + self._pick_prompt())
         self.update()
         return True
 
@@ -530,7 +535,7 @@ class Viewport(QOpenGLWidget):
         if mode == "pending_box":
             mode = "pending"            # a click without dragging: same as clicking empty space
         if mode == "pending" and e.button() == Qt.MouseButton.LeftButton and self._point_pick is not None:
-            self.add_picked_point(pos)
+            self.add_picked_point(pos, snap=not e.modifiers() & Qt.KeyboardModifier.ControlModifier)
             return
         if mode == "pending" and e.button() == Qt.MouseButton.LeftButton:
             hit = self.pick_at(pos)

@@ -184,7 +184,8 @@ energy in swinging systems.
   - choose object origins or centres of mass
   - or measure between points on surfaces: *Tools ▸ Measure Distance Between Points / Measure Angle
     Between Points* (or *Points on surfaces* in the panel), then click the points on the objects in
-    the viewport (for an angle: A, the vertex, B). Dragging still orbits the camera, and Esc
+    the viewport (for an angle: A, the vertex, B). A click near a corner or an edge of the face
+    snaps onto it (hold Ctrl to place the point freely). Dragging still orbits the camera, and Esc
     cancels. Each point stays fixed on its object as it moves, turns or is rescaled.
   - values update live, also during a simulation, and appear in the viewport
   Measurements are saved with the project and can be renamed, hidden and undone.

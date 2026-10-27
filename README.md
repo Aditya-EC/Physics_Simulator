@@ -141,7 +141,7 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_sim_state.py` | saved simulation states: bit-for-bit continuation (with collisions, joints and formula processes), recording truncation, rejection of foreign/invalid states, save/restore through the session controller |
 | `test_batch.py` | headless batch runs: CSV/JSON/report/state outputs against analytic values, property and global overrides, restore-and-continue, stop conditions, exit codes for invalid input and numerical failure; sweeps (value syntax, grid order, numbered files, final values against z₀ + v·t − g t²/2, parallel ≡ serial, a bad value fails only its run) |
 | `test_placement.py` | Place Relative To: offsets along the reference's or the global axes, relative orientation, round trip with the current placement, rigid groups with children, one undo step, invalid references (itself, children, attached frames, missing), locked objects, the dialog and its menu action |
-| `test_measurements.py` | distance and angle values (precise near 180°, undefined at the vertex), centre-of-mass points, surface points that follow motion, rotation and scale, point validation, undo, dangling objects, project files, viewport overlays, Measurements panel |
+| `test_measurements.py` | distance and angle values (precise near 180°, undefined at the vertex), centre-of-mass points, surface points that follow motion, rotation and scale, snapping to corners and real edges but not to the seam of a flat face, point validation, undo, dangling objects, project files, viewport overlays, Measurements panel |
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport), measuring between surface points by clicking in the viewport (empty clicks ignored, Esc cancels, selection unchanged) |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
@@ -151,8 +151,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **568 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 489 pass and 79 native-comparison tests are skipped. This was measured on
+Current result: **569 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 490 pass and 79 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -673,7 +673,8 @@ project files or engine. They pass on both numerical backends.
 
 **Measurements** (*Tools ▸ Measure Distance / Measure Angle / … Between Points*, *Measurements* panel).
 - Distances (with components) and angles between object origins, centres of mass, or points
-  clicked on object surfaces in the viewport. A surface point is stored in the object's geometry
+  clicked on object surfaces in the viewport (snapped to a nearby corner or edge of the face, Ctrl
+  for no snapping). A surface point is stored in the object's geometry
   coordinates, so it stays on that surface when the object moves, turns or is rescaled.
 - Live during simulations, drawn and labelled in the viewport, undoable and saved in the project.
 
@@ -826,9 +827,10 @@ Key design decisions:
   - The GUI-responsiveness fix keeps input working, but under software OpenGL a single frame of a
     large scene still takes ~0.1–0.2 s and an as-fast-as-possible run slows while the GUI draws.
     With a GPU, frames take a few milliseconds.
-  - Measurements use points (origins, centres of mass, picked surface points). There is no
-    snapping to vertices or edges, and no direct angle between two edges or faces (pick three
-    points instead).
+  - Measurements use points (origins, centres of mass, picked surface points). Picked points snap
+    to the corners and real edges of the face under the cursor (Ctrl: no snapping), not to other
+    objects' features or to circle centres. There is no direct angle between two edges or faces
+    (pick three points instead).
   - Sweeps are grids of independent runs; there is no optimisation or adaptive sampling. A
     sweep restarts the project for every run (a few tenths of a second each), so very many short
     runs are dominated by start-up time.

@@ -191,3 +191,33 @@ def test_point_validation_and_project_files(scene, tmp_path):
     data = ser.load_project(path, s2, UnitRegistry())
     assert data.warnings == [] and s2.measurements_snapshot() == s.measurements_snapshot()
     assert evaluate(s2, s2.measurements[0]).value == pytest.approx(evaluate(s, s.measurements[0]).value)
+
+
+def test_snapping_to_corners_and_real_edges(scene):
+    from psim.rendering import picking
+    from psim.rendering.camera import OrbitCamera
+    s, e = scene
+    cube = e.add_new("basic.cube", position=[0, 0, 0.5])
+    cam = OrbitCamera()
+    cam.state.target = [0.0, 0.0, 0.5]
+    cam.state.distance, cam.state.azimuth_deg, cam.state.elevation_deg = 4.0, 30.0, 35.0
+    w, h = 800, 600
+
+    def at(world, offset=(0, 0)):
+        xy, _ = cam.project(np.asarray(world, float)[None, :], w, h)
+        x, y = xy[0][0] + offset[0], xy[0][1] + offset[1]
+        o, d = cam.screen_ray(x, y, w, h)
+        hit = picking.pick(s, o, d)
+        assert hit is not None and hit.object_id == cube.id
+        return picking.snap_point(hit, cam, w, h, x, y)
+
+    top = [0.0, 0.0, 1.0]
+    p, kind = at(top)                                                  # middle of the top face: no snapping
+    assert kind == "surface" and np.allclose(p, top, atol=1e-9)
+    corner = np.array([0.5, 0.5, 1.0])
+    p, kind = at(corner - [0.03, 0.03, 0], (0, 0))                     # just inside a corner
+    assert kind == "vertex" and np.allclose(p, corner)
+    p, kind = at([0.5 - 0.02, 0.1, 1.0])                               # next to the top-front edge
+    assert kind == "edge" and p[0] == pytest.approx(0.5) and p[2] == pytest.approx(1.0)
+    p, kind = at([0.1, 0.1 + 1e-3, 1.0])                               # on the diagonal seam of the top face
+    assert kind == "surface"

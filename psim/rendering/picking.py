@@ -16,6 +16,8 @@ class PickResult:
     distance: float
     point: np.ndarray
     normal: np.ndarray
+    triangle: np.ndarray | None = None     # (3, 3) world corners of the triangle that was hit
+    source: tuple | None = None            # (mesh vertices, triangles, index of the hit triangle)
 
 
 def pick(scene: Scene, origin, direction, exclude: set[str] | None = None) -> PickResult | None:
@@ -53,8 +55,65 @@ def pick(scene: Scene, origin, direction, exclude: set[str] | None = None) -> Pi
             n /= max(np.linalg.norm(n), 1e-12)
             if n @ direction > 0:
                 n = -n
-            best = PickResult(obj.id, dist, world_point, n)
+            corners = np.array([a, b, c]) @ model[:3, :3].T + model[:3, 3]
+            best = PickResult(obj.id, dist, world_point, n, corners, (mesh.vertices, mesh.indices, int(tri)))
     return best
+
+
+def _feature_edges(verts: np.ndarray, tris: np.ndarray, k: int, cos_tol: float = 0.9998) -> tuple:
+    """For the edges of triangle k: True if the neighbouring triangle (found by vertex position, since meshes split
+    vertices for flat shading) bends away by more than ~1°, or there is none."""
+    t = verts[tris]                                         # (T, 3, 3)
+    normals = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-300)
+    tol = 1e-9 * max(float(np.max(np.ptp(verts, axis=0))), 1e-12)
+    out = []
+    for i in range(3):
+        a, b = t[k, i], t[k, (i + 1) % 3]
+        has_a = np.any(np.all(np.abs(t - a) <= tol, axis=2), axis=1)
+        has_b = np.any(np.all(np.abs(t - b) <= tol, axis=2), axis=1)
+        nb = np.flatnonzero(has_a & has_b)
+        nb = nb[nb != k]
+        out.append(not len(nb) or bool(np.min(normals[nb] @ normals[k]) < cos_tol))
+    return tuple(out)
+
+
+def snap_point(hit: PickResult, camera, width: float, height: float, x: float, y: float,
+               radius: float = 12.0) -> tuple[np.ndarray, str]:
+    """Snap a picked surface point to a corner of the triangle that was hit, else to one of its real (feature)
+    edges, when the cursor (x, y) is within `radius` pixels of it. Returns (world point, "vertex" | "edge" |
+    "surface")."""
+    if hit.triangle is None:
+        return np.asarray(hit.point, float), "surface"
+    tri = np.asarray(hit.triangle, float)
+    feature = (_feature_edges(np.asarray(hit.source[0], float), np.asarray(hit.source[1]), hit.source[2])
+               if hit.source is not None else (True, True, True))
+    xy, ok = camera.project(tri, width, height)
+    cursor = np.array([x, y], float)
+    d = np.where(ok, np.linalg.norm(xy - cursor, axis=1), np.inf)
+    k = int(np.argmin(d))
+    if d[k] <= radius:
+        return tri[k].copy(), "vertex"
+    o, ray = camera.screen_ray(x, y, width, height)
+    best = None
+    for i in range(3):
+        if not feature[i]:
+            continue                                         # a seam inside a flat face is no edge
+        a, b = tri[i], tri[(i + 1) % 3]
+        e = b - a
+        # closest point of the edge to the cursor ray
+        w0 = a - o
+        aa, bb, cc, dd, ee = e @ e, e @ ray, ray @ ray, e @ w0, ray @ w0
+        den = aa * cc - bb * bb
+        t = 0.0 if den <= 1e-18 else float(np.clip((bb * ee - cc * dd) / den, 0.0, 1.0))
+        q = a + t * e
+        qxy, qok = camera.project(q[None, :], width, height)
+        dist = float(np.linalg.norm(qxy[0] - cursor)) if qok[0] else np.inf
+        if dist <= radius and (best is None or dist < best[0]):
+            best = (dist, q)
+    if best is not None:
+        return best[1], "edge"
+    return np.asarray(hit.point, float), "surface"
 
 
 def support_distance(lo, hi, direction) -> float:
