@@ -52,6 +52,8 @@ def gl_available(qapp) -> bool:
 @pytest.fixture
 def requires_gl(gl_available):
     if not gl_available or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        if os.environ.get("PSIM_REQUIRE_GL"):        # CI jobs that provide OpenGL must not skip silently
+            pytest.fail("PSIM_REQUIRE_GL is set but no OpenGL 3.3 context could be created")
         pytest.skip("OpenGL 3.3 display not available (run under xvfb-run on headless Linux)")
 
 

@@ -12,7 +12,7 @@ on:
 
 jobs:
   test:
-    name: test (${{ matrix.os }}${{ matrix.fallback && ', NumPy fallback' || '' }}${{ matrix.scale == 2 && ', 2x scale' || '' }})
+    name: test (${{ matrix.os }}${{ matrix.fallback && ', NumPy fallback' || '' }}${{ matrix.scale == 2 && ', 2x scale' || '' }}${{ matrix.gl && ', OpenGL' || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,6 +20,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         fallback: [false]
         scale: [1]                  # an axis, so the 2x entry below adds a job instead of changing the Linux one
+        gl: [false]                 # Windows/macOS: true runs the OpenGL tests (software rendering) as well
         include:
           - os: ubuntu-latest
             fallback: true
@@ -27,6 +28,14 @@ jobs:
           - os: ubuntu-latest
             fallback: false
             scale: 2
+          # the rendering, picking and viewport tests on Windows (Mesa llvmpipe as opengl32.dll) and on macOS
+          # (the runner's desktop session with Apple's software OpenGL 4.1 core renderer)
+          - os: windows-latest
+            fallback: false
+            gl: true
+          - os: macos-latest
+            fallback: false
+            gl: true
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -48,9 +57,36 @@ jobs:
         env:
           PSIM_FORCE_PYTHON_NUMERICS: ${{ matrix.fallback && '1' || '' }}
           QT_SCALE_FACTOR: ${{ matrix.scale || '1' }}
-        run: xvfb-run -a -s "-screen 0 1920x1080x24" python -m pytest -q -rfs tests -p no:cacheprovider --junitxml=report.xml
+          PSIM_REQUIRE_GL: "1"
+        run: |
+          xvfb-run -a -s "-screen 0 1920x1080x24" python .github/scripts/gl_info.py
+          xvfb-run -a -s "-screen 0 1920x1080x24" python -m pytest -q -rfs tests -p no:cacheprovider --junitxml=report.xml
+      - name: Mesa software OpenGL (Windows)
+        if: runner.os == 'Windows' && matrix.gl
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # llvmpipe from the mesa-dist-win release, placed next to python.exe: Qt and PyOpenGL then both load
+          # this opengl32.dll instead of the runner's OpenGL 1.1 GDI implementation
+          $rel = gh api repos/pal1000/mesa-dist-win/releases/latest | ConvertFrom-Json
+          $asset = $rel.assets | Where-Object { $_.name -match '^mesa3d-.*-release-msvc\.7z$' } | Select-Object -First 1
+          if (-not $asset) { throw "No MSVC release archive in mesa-dist-win $($rel.tag_name)" }
+          Write-Host "::notice title=Mesa::mesa-dist-win $($rel.tag_name) ($($asset.name))"
+          Invoke-WebRequest $asset.browser_download_url -OutFile mesa.7z
+          7z x mesa.7z -omesa "x64\*.dll" | Out-Null
+          $py = python -c "import os, sys; print(os.path.dirname(sys.executable))"
+          Copy-Item mesa\x64\*.dll $py
+          "GALLIUM_DRIVER=llvmpipe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Tests (OpenGL)
+        if: runner.os != 'Linux' && matrix.gl
+        env:
+          PSIM_REQUIRE_GL: "1"
+        run: |
+          python .github/scripts/gl_info.py
+          python -m pytest -q -rfs tests -p no:cacheprovider --junitxml=report.xml
       - name: Tests (offscreen)
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && !matrix.gl
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q -rf tests -p no:cacheprovider --junitxml=report.xml
