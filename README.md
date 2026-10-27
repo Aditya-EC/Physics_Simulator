@@ -947,4 +947,7 @@ Key design decisions:
 
 1. Run the test suite on Windows with a hardware GPU.
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
-3. Physics: a spatial grid broadphase for very large scenes; oblique cut planes for convex parts.
+3. Physics: a better decomposition for curved concave meshes (a torus keeps 16 % excess volume with
+   axis-aligned cuts; adding diagonal cut planes was tried and gave 12 % at 3–4× the cost, so a
+   voxel- or concavity-guided method would be needed); a spatial grid broadphase only matters for
+   scenes of thousands of bodies (500 boxes take 8 ms per step today).

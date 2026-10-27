@@ -195,7 +195,8 @@ def test_resting_contact_holds_with_every_integrator(scene, integrator):
     ph._contacts = counting
     run(eng)
     assert not any(missing), [k for k, x in enumerate(missing) if x][:10]      # in contact at every step
-    tol = 1e-3 if integrator == "explicit_euler" else 1e-6     # explicit Euler: a slow creep (0.2 mm/s)
+    # explicit Euler: one shift of 0.16 mm (within the contact slop) when the box–box manifold changes, then still
+    tol = 1e-3 if integrator == "explicit_euler" else 1e-6
     for b in (flat, slope):
         p = rec.column((b.id, "com"))
         assert np.linalg.norm(p[-1] - p[0]) < tol
