@@ -154,8 +154,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling and spinning resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **603 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 517 pass and 86 native-comparison tests are skipped. This was measured on
+Current result: **604 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 518 pass and 86 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -940,13 +940,22 @@ Key design decisions:
   until restart. Menus, toolbar, library, inspector and outliner refresh immediately.
 - The renderer issues one draw call per object (no instancing). It is comfortable for scenes of
   hundreds of objects but not tuned for tens of thousands.
+- `.github/workflows/ci.yml` builds and tests the project on Linux (Xvfb + Mesa, native core and NumPy
+  fallback), Windows and macOS (offscreen: the OpenGL tests skip there), then builds the packages on
+  each and uploads them (the Windows job builds the Inno Setup installer when Inno Setup is present).
+  It has been written and checked for syntax here but **has not run yet**: no repository is
+  attached to this environment. In preparation, the C++ core compiles cleanly as strict ISO C++17
+  (`-pedantic-errors`), a missing `<utility>` include was added for MSVC, all text files are opened
+  as UTF-8, and `psim-batch` no longer fails on consoles without Unicode (e.g. a redirected Windows
+  code page; tested).
 - Developed and tested on Linux with software OpenGL (Mesa llvmpipe). The code is
   platform-neutral (Qt, CMake/MSVC-safe C++), but **it has not been run on Windows in this
   environment**.
 
 ## 6. Next steps
 
-1. Run the test suite on Windows with a hardware GPU.
+1. Push the repository to GitHub so that the CI workflow runs on Windows and macOS, and run the
+   suite on Windows with a hardware GPU (the CI runners have no OpenGL 3.3).
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
 3. Physics: a better decomposition for curved concave meshes (a torus keeps 16 % excess volume with
    axis-aligned cuts; adding diagonal cut planes was tried and gave 12 % at 3–4× the cost, so a

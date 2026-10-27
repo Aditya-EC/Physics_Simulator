@@ -398,7 +398,19 @@ def _print_summary(res: BatchResult, log) -> None:
         log(f"ERROR: {res.error}")
 
 
+def _safe_console() -> None:
+    """Messages contain non-ASCII symbols (Δt, ω, ≡, …). A console or pipe whose encoding lacks them (e.g. a
+    Windows code page when the output is redirected) gets replacement characters instead of a UnicodeEncodeError."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _safe_console()
     p = argparse.ArgumentParser(prog="psim-batch", description="Run a PSim project headless and export results.")
     p.add_argument("project")
     p.add_argument("--duration", type=float, help="simulated seconds (default: project setting)")

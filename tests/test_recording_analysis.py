@@ -121,9 +121,9 @@ def test_exports_and_report(scene, tmp_path):
     assert rows[0] == ["time [s]", "Ball: Velocity x [km/h]", "Ball: Position y rel. Rim [m]"]
     assert float(rows[1][1]) == pytest.approx(3.6)
     export_trajectory_csv(str(tmp_path / "traj.csv"), ev, ball.id, fid)
-    assert len(list(csv.reader(open(tmp_path / "traj.csv")))) == rec.n + 1
+    assert len(list(csv.reader(open(tmp_path / "traj.csv", encoding="utf-8")))) == rec.n + 1
     export_json(str(tmp_path / "all.json"), rec)
-    data = json.load(open(tmp_path / "all.json"))
+    data = json.load(open(tmp_path / "all.json", encoding="utf-8"))
     assert data["recording"]["samples"] == rec.n and len(data["time"]) == rec.n
     assert f"{ball.id}/origin" in data["channels"] and data["events"][-1]["kind"] == "warning"
     report = tmp_path / "report.html"

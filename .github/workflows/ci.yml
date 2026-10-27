@@ -1,0 +1,91 @@
+# Build and test PSim Studio on Linux, Windows and macOS, then build the distributable packages.
+#
+# Linux runs the whole suite under Xvfb with Mesa (software OpenGL 3.3), with the native core and with the
+# NumPy fallback. Windows and macOS runners have no usable OpenGL 3.3 display, so the suite runs with Qt's
+# offscreen platform there: the tests that need OpenGL skip themselves (tests/conftest.py, requires_gl).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}${{ matrix.fallback && ', NumPy fallback' || '' }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        fallback: [false]
+        include:
+          - os: ubuntu-latest
+            fallback: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Linux packages (Xvfb, Mesa, Qt platform libraries)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 libegl1 libgl1-mesa-dri libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xfixes0 libfontconfig1 libdbus-1-3
+      - name: Python packages
+        run: python -m pip install -r requirements.txt
+      - name: Build and test the native C++ core
+        run: python build_native.py
+      - name: Tests (Linux, Xvfb)
+        if: runner.os == 'Linux'
+        env:
+          PSIM_FORCE_PYTHON_NUMERICS: ${{ matrix.fallback && '1' || '' }}
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" python -m pytest -q -rfs tests -p no:cacheprovider
+      - name: Tests (offscreen)
+        if: runner.os != 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q -rf tests -p no:cacheprovider
+
+  package:
+    name: package (${{ matrix.os }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Linux packages (Qt platform libraries, dpkg-deb)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libfontconfig1 libdbus-1-3
+      - name: Python packages
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Inno Setup on PATH (Windows installer)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          if (Test-Path "$iscc\ISCC.exe") { Add-Content $env:GITHUB_PATH $iscc }
+          else { Write-Warning "Inno Setup not found: only the .zip archive will be built" }
+      - name: Build the packages (native core, freeze, smoke test, archives)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python packaging/build_dist.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: psim-studio-${{ runner.os }}
+          path: |
+            packaging/dist/*.zip
+            packaging/dist/*.tar.gz
+            packaging/dist/*.deb
+            packaging/dist/*.exe
+          if-no-files-found: error

@@ -102,7 +102,7 @@ def test_controller_saves_and_restores_through_a_file(scene, qapp, qtbot, tmp_pa
             ctl.step()
         qtbot.waitUntil(lambda: ctl.last_stats is not None and ctl.last_stats.steps == 30, timeout=5000)
         assert ctl.save_state(path) == pytest.approx(0.3)
-        assert json.load(open(path))["format"] == "psim-simulation-state"
+        assert json.load(open(path, encoding="utf-8"))["format"] == "psim-simulation-state"
         ctl.start()
         qtbot.waitUntil(lambda: ctl.state == "finished", timeout=10000)
         ctl.stop()

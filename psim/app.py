@@ -36,6 +36,8 @@ def configure_opengl(samples: int = 4) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .batch import _safe_console
+    _safe_console()                 # no UnicodeEncodeError on consoles without Δ, ω, …
     parser = argparse.ArgumentParser(prog="psim-studio", description=f"{APP_NAME} {__version__}")
     parser.add_argument("project", nargs="?", help="project file to open")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")

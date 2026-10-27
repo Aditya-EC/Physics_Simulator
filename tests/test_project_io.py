@@ -89,7 +89,7 @@ def test_invalid_projects_are_rejected(scene, mutate, message):
 
 def test_malformed_files(tmp_path):
     bad = tmp_path / "bad.psim"
-    bad.write_text("{not json")
+    bad.write_text("{not json", encoding="utf-8")
     with pytest.raises(ser.ProjectError, match="JSON"):
         ser.read_project_file(str(bad))
     with pytest.raises(ser.ProjectError, match="not found"):
@@ -115,7 +115,7 @@ def test_project_file_contains_no_code(tmp_path, scene):
     _populate(s, e)
     path = tmp_path / "p.psim"
     ser.save_project(str(path), s, UnitRegistry(), ser.ProjectData())
-    raw = json.loads(path.read_text())
+    raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["format"] == "psim-project" and raw["format_version"] == ser.FORMAT_VERSION
 
     def walk(x):

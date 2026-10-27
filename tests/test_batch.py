@@ -49,10 +49,10 @@ def test_batch_run_exports_csv_json_report_and_state(scene, tmp_path, capsys):
     t, z, v = rows[-1]
     assert t == pytest.approx(1.0) and z == pytest.approx(20 - G / 2, abs=1e-9) and v == pytest.approx(G, abs=1e-9)
     assert len(rows) == 101
-    assert json.load(open(out["json"]))["recording"]["samples"] == 101
+    assert json.load(open(out["json"], encoding="utf-8"))["recording"]["samples"] == 101
     assert "<html" in open(out["html"], encoding="utf-8").read()[:200].lower()
-    assert json.load(open(out["psimstate"]))["clock"]["steps"] == 100
-    summary = json.load(open(out["summary"]))
+    assert json.load(open(out["psimstate"], encoding="utf-8"))["clock"]["steps"] == 100
+    summary = json.load(open(out["summary"], encoding="utf-8"))
     assert summary["steps"] == 100 and summary["finished"] and summary["profile_ms_per_step"]["steps"] == 100
     assert "Finished at t = 1 s after 100 steps" in capsys.readouterr().out
 
@@ -78,9 +78,9 @@ def test_global_override_and_stop_condition(scene, tmp_path):
         {"name": "Low", "expression": 'object("OBJ-000001").position.z < 15[m]', "action": "stop"}])
     summary = str(tmp_path / "s.json")
     assert batch.main([path, "--quiet", "--summary-json", summary]) == 0
-    fired = json.load(open(summary))["stop_conditions"]
+    fired = json.load(open(summary, encoding="utf-8"))["stop_conditions"]
     assert fired[0]["name"] == "Low" and fired[0]["time"] == pytest.approx((2 * 5 / G) ** 0.5, abs=0.011)
-    assert json.load(open(summary))["time"] == pytest.approx(fired[0]["time"])     # the run ended there
+    assert json.load(open(summary, encoding="utf-8"))["time"] == pytest.approx(fired[0]["time"])     # the run ended there
     assert batch.main([path, "--quiet", "--global", "gz=-1"]) == 0          # valid override
     assert batch.main([path, "--quiet", "--global", "gz=[1,2]"]) == batch.EXIT_INPUT
 
@@ -102,7 +102,7 @@ def test_invalid_input_exits_with_2(scene, tmp_path, capsys, args, message):
 
 def test_unreadable_project_and_numerical_failure(scene, tmp_path, capsys):
     bad = tmp_path / "bad.psim"
-    bad.write_text("{not json")
+    bad.write_text("{not json", encoding="utf-8")
     assert batch.main([str(bad)]) == batch.EXIT_INPUT
     s, e = scene
     a = e.add_new("body.point_mass", position=[0, 0, 0])
@@ -196,3 +196,13 @@ def test_sweep_reports_bad_runs_and_bad_input(scene, tmp_path, capsys):
     assert batch.main([path, "--quiet", "--sweep", "nothing=1,2"]) == batch.EXIT_INPUT
     assert batch.main([path, "--quiet", "--sweep", "k=1:2:0"]) == batch.EXIT_INPUT
     assert batch.main([path, "--quiet", "--jobs", "2"]) == batch.EXIT_INPUT         # --jobs needs --sweep
+
+
+def test_batch_output_survives_a_console_without_unicode(scene, tmp_path):
+    """Run with an ASCII-only stdout (like a redirected Windows code page): no UnicodeEncodeError."""
+    path, _ = _project(scene, tmp_path)
+    env = dict(os.environ, PYTHONIOENCODING="ascii", PYTHONUTF8="0")
+    r = subprocess.run([sys.executable, "-m", "psim.batch", path, "--duration", "0.1"], cwd=ROOT, capture_output=True,
+                       env=env, timeout=120)
+    assert r.returncode == 0, r.stderr.decode("ascii", "replace")
+    assert b"t = ? s" not in r.stdout and b"Running" in r.stdout and b"?t = " in r.stdout   # Δ replaced, not fatal
