@@ -13,6 +13,9 @@ Quantities with an object:
     angular_velocity, angular_acceleration, euler  (frame-capable)
     speed, displacement, distance, momentum, angular_momentum, kinetic_energy,
     net_force (m·a), net_torque (I·α, as integrated by the solver), mass
+    contact_force, contact_torque, joint_force, joint_torque   (constraint loads on a simulated body: world axes,
+                                                    torques about its COM, mean over each step; runs with
+                                                    contacts or joints only)
     custom.<key>                                   (custom properties written by update processes)
     proc:<uid>:acceleration | force | angular_acceleration | torque   (contribution of one assignment)
 
@@ -56,7 +59,13 @@ QUANTITIES: dict[str, QuantityInfo] = {
     "net_force": QuantityInfo("Net force", "force", True),
     "net_torque": QuantityInfo("Net torque", "torque", True),
     "mass": QuantityInfo("Mass", "mass", False),
+    "contact_force": QuantityInfo("Contact force", "force", True),
+    "contact_torque": QuantityInfo("Contact torque", "torque", True),
+    "joint_force": QuantityInfo("Joint force", "force", True),
+    "joint_torque": QuantityInfo("Joint torque", "torque", True),
 }
+LOAD_CHANNELS = {"contact_force": "f_contact", "contact_torque": "t_contact", "joint_force": "f_joint",
+                 "joint_torque": "t_joint"}
 PROCESS_OUTPUTS = {"acceleration": ("acceleration", "acc"), "force": ("force", "acc"),
                    "angular_acceleration": ("angular_acceleration", "alpha"), "torque": ("torque", "alpha")}
 
@@ -310,6 +319,12 @@ class Evaluator:
             return acc * m if m > 0 else np.full_like(acc, np.nan)
         if q == "net_torque":
             return self._torque(oid, self._col((oid, "alpha")))
+        if q in LOAD_CHANNELS:
+            key = (oid, LOAD_CHANNELS[q])
+            if not self.rec.has(key):
+                raise VariableError(f"{QUANTITIES[q].label} of {oid} was not recorded (only simulated bodies in "
+                                    "runs with contacts or joints have it)")
+            return self._col(key)
         raise VariableError(f"Unknown quantity '{q}'")
 
     def _inertia_world_times(self, oid: str, vec: np.ndarray) -> np.ndarray:
@@ -364,7 +379,8 @@ def recorded_objects(rec: Recording) -> list[str]:
 
 def object_quantities(rec: Recording, oid: str) -> list[str]:
     """Quantities available for an object in this recording."""
-    out = [q for q in QUANTITIES if q not in ("time", "step")]
+    out = [q for q in QUANTITIES if q not in ("time", "step")
+           and (q not in LOAD_CHANNELS or rec.has((oid, LOAD_CHANNELS[q])))]
     for k in rec.keys():
         if len(k) == 2 and k[0] == oid and k[1].startswith("custom."):
             out.append(k[1])

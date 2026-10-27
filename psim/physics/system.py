@@ -105,6 +105,9 @@ class PhysicsSystem:
                 self._static_origin[i] = p
         self.joint_entries = list(setup.joints)
         self._spring_load: dict[str, float] = {}         # joint id → spring force / torque of the current step
+        # impulses of the last step per solver body, about the COM, world axes: contact (force, torque) and
+        # joint (force, torque); see last_forces()
+        self._imp = np.zeros((4, n, 3))
         self.broken: list[str] = []                     # ids of joints that broke during the run, in order
         self.new_breaks: list[tuple] = []               # (joint id, name, force, torque) for the event log
         # collider data that does not change during the run (placed in the world every step)
@@ -218,6 +221,7 @@ class PhysicsSystem:
         st = self.settings
         origin, com, R, v, w, inv_i = self._gather(s)
         v_start, w_start = v.copy(), w.copy()
+        self._imp[:] = 0.0
         if self._springs and dt > 0:                 # spring impulses first: contacts and joints see their effect
             self._apply_springs(origin, com, R, v, w, inv_i, dt)
         crows = self._contacts(origin, com, R, v, w, dt, start)
@@ -245,6 +249,12 @@ class PhysicsSystem:
         lam = numerics.pgs_solve(ia, ib, J, rhs, lo, hi, rows["parent"], rows["mu"], block, self.inv_mass, inv_i,
                                  v1, w1, st.iterations, B)
         dv, dw = v1 - v_start, w1 - w_start         # constraint and spring velocity change of the step
+        n_contact = len(rows["ia"]) - (len(jrows["ia"]) if jrows is not None else 0)   # joint rows come last
+        D = J if B is None else B                   # impulse directions (contact rows: B = J)
+        self._add_impulses(self._imp[0], self._imp[1], ia[:n_contact], ib[:n_contact], D[:n_contact],
+                           lam[:n_contact])
+        self._add_impulses(self._imp[2], self._imp[3], ia[n_contact:], ib[n_contact:], D[n_contact:],
+                           lam[n_contact:])
         self._last_dv, self._last_dw = dv, dw
         # position pass on pseudo-velocities: remaining error after the Δv·Δt displacement
         jd = self._row_velocities(ia, ib, J, dv, dw)
@@ -264,23 +274,48 @@ class PhysicsSystem:
                                vp, wp, st.position_iterations)
         self._last = (crows, lam) if crows is not None else None
         if self._breakable and dt > 0:
-            first = len(rows["ia"]) - (len(jrows["ia"]) if jrows is not None else 0)   # joint rows come last
-            self._check_breaks(jrows, lam[first:], dt)
-        touching = None
-        if crows is not None and len(crows["ia"]):
-            touching = np.unique(np.r_[crows["ia"], crows["ib"]])
-            touching = touching[touching >= 0]
+            self._check_breaks(jrows, lam[n_contact:], dt)
+        # bodies held by one-sided rows (contacts, taut ropes, joint limits) take the semi-implicit pose (see _apply)
+        one_sided = np.zeros(len(ia), bool)
+        one_sided[:n_contact] = True
+        one_sided[n_contact:] = mode[n_contact:] == 1
+        touching = np.unique(np.r_[ia[one_sided], ib[one_sided]])
+        touching = touching[touching >= 0]
         return self._apply(s, dv, dw, vp, wp, dt, start, touching)
+
+    @staticmethod
+    def _add_impulses(f, t, ia, ib, D, lam) -> None:
+        """Accumulate the impulses of solver rows on their bodies: linear D[0:3]·λ and angular D[3:6]·λ (about the
+        COM) on body a, D[6:9]·λ and D[9:12]·λ on body b (a missing body has index < 0)."""
+        if not len(lam):
+            return
+        Dl = D * lam[:, None]
+        has_a, has_b = ia >= 0, ib >= 0
+        np.add.at(f, ia[has_a], Dl[has_a, 0:3])
+        np.add.at(t, ia[has_a], Dl[has_a, 3:6])
+        np.add.at(f, ib[has_b], Dl[has_b, 6:9])
+        np.add.at(t, ib[has_b], Dl[has_b, 9:12])
+
+    def last_forces(self, n_eng: int, dt: float) -> np.ndarray:
+        """(4, n_eng, 3): contact force, contact torque, joint force, joint torque of the last step on each engine
+        body (world axes, torques about the COM, spring loads count as joint forces). Mean values over the step:
+        impulse / Δt. The position pass (pseudo-velocities) applies no force and is not included."""
+        out = np.zeros((4, n_eng, 3))
+        if dt > 0:
+            sim = self._sim_rows
+            out[:, self.engine_rows[sim]] = self._imp[:, sim] / dt
+        return out
 
     def _apply(self, s, dv, dw, vp, wp, dt, start=None, touching=None):
         """Add the velocity changes to the dynamic bodies of `s` and move them by (Δv + position pass)·Δt.
 
-        Bodies in contact (`touching`, solver indices) instead end the step at x₀ + Δt·v' (and q₀ turned by Δt·ω')
-        from the start state: the semi-implicit Euler step with the constrained velocity v'. Adding Δv·Δt to a
-        higher-order integrator's end pose would leave the free-flight curvature in it (½ g Δt² for velocity Verlet
-        or RK4): a resting body would rise by that much every step, lose its contact every other step and never
-        hold by static friction. Bodies without contacts (joints only, free flight) keep their integrator's
-        accuracy."""
+        Bodies in contact or held by another one-sided row (`touching`, solver indices: taut ropes, joint limits)
+        instead end the step at x₀ + Δt·v' (and q₀ turned by Δt·ω') from the start state: the semi-implicit Euler
+        step with the constrained velocity v'. Adding Δv·Δt to a higher-order integrator's end pose would leave the
+        free-flight curvature in it (½ g Δt² for velocity Verlet or RK4): a resting body would rise by that much
+        every step, lose its contact (or slacken its rope) every other step and never hold by static friction; its
+        constraint force would alternate between 0 and twice the load. Bodies held only by two-sided joint rows,
+        and those in free flight, keep their integrator's accuracy."""
         n_eng = len(s.v)
         dv_eng, dw_eng = np.zeros((n_eng, 3)), np.zeros((n_eng, 3))
         dyn = np.flatnonzero(self.dynamic)
@@ -336,6 +371,7 @@ class PhysicsSystem:
         already advanced by Δt·ẋ, so with the start-of-step coordinate x − Δt·ẋ the backward Euler impulse is
         λ = −Δt (k (x − x₀) + c ẋ) / (1 + Δt (k Δt + c) m⁻¹): stable for any stiffness."""
         self._spring_load = {}
+        jf, jt = self._imp[2], self._imp[3]
         for je in self._springs:
             row = self._spring_row(je, origin, com, R)
             if row is None:
@@ -355,9 +391,13 @@ class PhysicsSystem:
             self._spring_load[je.joint.id] = abs(lam) / dt          # force (N) or, for a hinge, torque (N·m)
             v[a] += self.inv_mass[a] * Jr[:3] * lam
             w[a] += inv_i[a] @ Jr[3:6] * lam
+            jf[a] += Jr[:3] * lam
+            jt[a] += Jr[3:6] * lam
             if b >= 0:
                 v[b] += self.inv_mass[b] * Jr[6:9] * lam
                 w[b] += inv_i[b] @ Jr[9:] * lam
+                jf[b] += Jr[6:9] * lam
+                jt[b] += Jr[9:] * lam
 
     def _check_breaks(self, jrows: dict | None, lam: np.ndarray | None, dt: float) -> None:
         """Break the joints whose transmitted force or torque exceeded their limit: their rows' impulses / Δt,

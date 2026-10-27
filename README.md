@@ -67,8 +67,9 @@ Implemented so far:
   - contact materials: static friction, rolling resistance and spinning resistance
   - editing and measuring: *Place Relative To…*, measurements between surface points with snapping
   - batch: parameter sweeps with parallel runs
-  - a fix for resting contacts with higher-order integrators, a *mechanisms* demo, and a
-    cross-platform CI workflow
+  - recording: contact and joint forces and torques per body as plot variables
+  - a fix for resting contacts, taut ropes and joint limits with higher-order integrators, a
+    *mechanisms* demo, and a cross-platform CI workflow
 
 ![Main window](docs/screenshot_main.png)
 
@@ -513,8 +514,11 @@ administrators. Even so, a determined local administrator can change anything.
 **Variables** (`variables.py`). Plots, statistics and exports read **recorded data only**.
 - Per object: position, centre of mass, velocity, acceleration, angular velocity and angular
   acceleration, Euler angles, speed, displacement, distance travelled, momentum, angular
-  momentum, kinetic energy, net force (m·a), net torque (I·α), mass, custom properties, and
-  per-process force/torque/acceleration contributions.
+  momentum, kinetic energy, net force (m·a), net torque (I·α), mass, custom properties,
+  per-process force/torque/acceleration contributions, and (runs with contacts or joints) the
+  **contact force/torque** and **joint force/torque** on each simulated body: the solver's
+  impulses of each step divided by Δt, world axes, torques about the COM, spring loads counted as
+  joint loads (the position-correction pass applies no force and is excluded).
 - Components x/y/z or magnitude can be selected.
 - Kinematic quantities can be measured **relative to any frame** (object, parent, named frame),
   using the Phase 5 relative-motion formulas, vectorised over samples.
@@ -644,11 +648,13 @@ reference `psim/physics/joint_kernel.py`).
   3–6-row block (exact for the joint, robust to large mass ratios).
 - A split-impulse position pass removes penetration and joint drift without adding velocity, so
   it never injects energy.
-- Bodies in contact end the step at x₀ + Δt·v′ with their constrained velocity v′ (semi-implicit
-  Euler for those bodies), whatever the integrator. Adding Δv·Δt to a higher-order integrator's end
-  pose left the free-flight curvature in it: resting bodies rose ½gΔt² per step, lost their contact
-  every other step and could not be held by static friction. Bodies without contacts keep the
-  integrator's accuracy (tested for all six integrators).
+- Bodies in contact, or held by another one-sided row (a taut rope, a joint at its limit), end the
+  step at x₀ + Δt·v′ with their constrained velocity v′ (semi-implicit Euler for those bodies),
+  whatever the integrator. Adding Δv·Δt to a higher-order integrator's end pose left the
+  free-flight curvature in it: resting bodies rose ½gΔt² per step, lost their contact (or slackened
+  their rope) every other step and could not be held by static friction; the recorded constraint
+  force alternated between 0 and twice the load. Other bodies keep the integrator's accuracy
+  (tested for all six integrators).
 - Joint impulses act along the Jacobian of the **midpoint configuration of the step**. This turns
   the velocity with the joint instead of projecting it onto the end-of-step tangent space. A
   plain projection loses about KE·ω²Δt per second; a large-swing pendulum lost 20 % of its energy
@@ -783,11 +789,12 @@ Each item is tested on both numerical backends unless noted. Details are in the 
 | Joint rows in C++ (5× faster jointed scenes) | §3f *Joints*; `native/src/joints.cpp` | `test_joint_kernel.py` |
 | **Joint springs** (revolute, prismatic, distance; implicit, stable for any stiffness) and **breakable joints** (force/torque limits, events, saved states, GUI) | §3f *Joints*; Joints dialog | `test_joint_springs.py`, `test_simulation_session.py` |
 | **Static friction**, **rolling resistance**, **spinning resistance** | §3f *Collision geometry*; inspector *Collision & Joints* | `test_physics.py`, `test_contact_kernel.py` |
-| Resting contacts held with every integrator (no chatter with Verlet, RK4, …) | §3f *Solver* | `test_physics.py` |
+| Resting contacts, taut ropes and joint limits held with every integrator (no chatter with Verlet, RK4, …) | §3f *Solver* | `test_physics.py`, `test_constraint_loads.py` |
 | **Place Relative To…** (offset from an object, frame or the origin; rigid groups) | §3 editing; *Objects* menu | `test_placement.py` |
 | **Measurements between surface points**, snapped to corners and real edges | §3g *Measurements* | `test_measurements.py`, `test_phase8_gui.py` |
 | **Parameter sweeps** in `psim-batch` (grids, final values, `--jobs`) | §3g *Batch execution*; user guide §9 | `test_batch.py` |
 | Faster contact bookkeeping and a sweep axis chosen by spread | §5 performance figures | `test_contact_kernel.py` |
+| **Contact and joint forces / torques** per body as recorded variables (plots, statistics, `--var`) | §3e *Variables* | `test_constraint_loads.py` |
 | *Mechanisms* example and template | `examples/mechanisms_demo.psim` | `test_joint_springs.py` |
 | Cross-platform CI (Linux, Windows, macOS; packages) — written, **not yet run** | `.github/workflows/ci.yml` | — |
 

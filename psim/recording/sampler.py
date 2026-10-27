@@ -25,6 +25,9 @@ from ..simulation.state import SimState, origins
 from .recording import Recording
 
 OBJECT_CHANNELS = (("origin", 3), ("q", 4), ("com", 3), ("v", 3), ("w", 3), ("acc", 3), ("alpha", 3))
+# constraint loads on simulated bodies (world axes, torques about the COM), in the order of
+# PhysicsSystem.last_forces; recorded when the run has contacts or joints
+FORCE_CHANNELS = ("f_contact", "t_contact", "f_joint", "t_joint")
 
 
 class EngineSampler:
@@ -43,6 +46,9 @@ class EngineSampler:
                 if d != ref:
                     self.followers.append((world.ids[ref], ref, world.ref_to_body[d]))
         specs = [((oid, ch), w) for oid in self.body_ids + [f[0] for f in self.followers] for ch, w in OBJECT_CHANNELS]
+        self.forces = eng.physics is not None
+        if self.forces:
+            specs += [((oid, ch), 3) for oid in self.body_ids for ch in FORCE_CHANNELS]
         self.proc_targets: list[tuple[object, str, int]] = []
         if self.process_outputs:
             for p in eng.plan.contributions:
@@ -158,6 +164,11 @@ class EngineSampler:
             values[(oid, "w")] = s.w[k]
             values[(oid, "acc")] = acc[k]
             values[(oid, "alpha")] = alpha[k]
+        if self.forces:
+            loads = eng.constraint_forces
+            for k, oid in enumerate(self.body_ids):
+                for c, ch in enumerate(FORCE_CHANNELS):
+                    values[(oid, ch)] = loads[c, k] if loads is not None else np.zeros(3)
         world = eng.world
         if world is not None and (self.followers or self.custom_keys):
             world.set_stage(s.x, s.q, s.v, s.w)

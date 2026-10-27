@@ -7,8 +7,8 @@ be changed in *Tools ▸ Keyboard Shortcuts*.
 
 Recent additions, described in their sections below: convex parts for concave shapes (§3, §6),
 joint springs and breakable joints (§6), static friction and rolling/spinning resistance (§3),
-*Place Relative To…* (§2), measuring between snapped surface points (§7), parameter sweeps (§9)
-and the *mechanisms* example (§1).
+*Place Relative To…* (§2), measuring between snapped surface points (§7), parameter sweeps (§9),
+contact and joint forces as plot variables (§8) and the *mechanisms* example (§1).
 
 ## 1. Starting
 
@@ -218,6 +218,11 @@ reached the recorder thins out older data, keeps a recent window or stops, as co
   - logarithmic axes, fixed limits and synchronized time cursors
   - export as PNG or CSV
   *Plots ▸ Quick Plot of Selection* creates the common ones in one click.
+- In runs with contacts or joints, every simulated body also has **contact force**, **contact
+  torque**, **joint force** and **joint torque**: the loads the solver applied over each step (world
+  axes, torques about the centre of mass, spring forces count as joint forces). A box resting on the
+  floor shows its weight as contact force; a pendulum shows its rod tension. They can be plotted,
+  compared in the *Recording* panel and named in `psim-batch --var` (e.g. `Box:contact_force.z`).
 - The *Recording* panel shows statistics per object. It exports CSV (display units) and JSON (SI,
   all channels), and writes a self-contained HTML report.
 

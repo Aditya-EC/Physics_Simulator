@@ -85,6 +85,7 @@ class SimulationEngine:
         self._pinned_setup()
         self._physics_setup()
         self.constraint_acc = None   # (Δv/Δt, Δω/Δt) of the last step's contacts and joints
+        self.constraint_forces = None   # (4, n, 3) contact force, contact torque, joint force, joint torque
         self.state = self._apply_prescribed(0.0, state)
         self.finished = False
         self.sampler = None     # EngineSampler when data recording is attached
@@ -167,6 +168,7 @@ class SimulationEngine:
         """Collisions and joints (the native rigid-body constraint stage), if the plan uses them."""
         setup = getattr(self.plan, "physics", None)
         self.physics = None
+        self.constraint_acc = self.constraint_forces = None     # loads of the previous plan's bodies
         if self.settings.physics_enabled and setup is not None and setup.has_work:
             from ..physics.system import PhysicsSettings, PhysicsSystem
             s = self.settings
@@ -218,6 +220,7 @@ class SimulationEngine:
             dv, dw = self.physics.step(new, dt, old)
             if dt > 0:     # contact and joint forces are part of the total acceleration of this step
                 self.constraint_acc = (dv / dt, dw / dt)
+                self.constraint_forces = self.physics.last_forces(len(new.v), dt)
                 acc, alpha = acc + dv / dt, alpha + dw / dt
             if self.sampler is not None:
                 for a, b in self.physics.take_new_contacts():
