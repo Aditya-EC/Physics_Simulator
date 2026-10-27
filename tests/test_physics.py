@@ -202,6 +202,22 @@ def test_resting_contact_holds_with_every_integrator(scene, integrator):
         assert np.linalg.norm(p[-1] - p[0]) < tol
 
 
+def test_prescribed_rotation_of_a_resting_body_is_kept(scene):
+    """A dynamic box resting on the ground whose orientation is prescribed (turntable-like) follows the
+    prescription exactly while in contact."""
+    s, e = scene
+    _ground(e)
+    box = _box(e, [0, 0, 0.2])
+    _gravity(e, box)
+    e.assign_process("rot.fixed_axis", TargetFilter(ids=[box.id]), {"axis": [0, 0, 1], "angular_speed": 2.0})
+    rec = Recording()
+    run(make_engine(scene, rec, delta_time=0.004, duration=1.0, integrator="rk4"))
+    q = rec.column((box.id, "q"))[-1]
+    expected = numerics.quat_from_axis_angle([0, 0, 1], 2.0 * rec.times()[-1])
+    assert abs(abs(float(np.dot(q, expected))) - 1.0) < 1e-12
+    assert rec.column((box.id, "com"))[-1, 2] == pytest.approx(0.2, abs=1e-4)
+
+
 def test_stack_of_boxes_is_stable(scene):
     s, e = scene
     _ground(e)

@@ -155,11 +155,26 @@ def _decomposition(verts: np.ndarray, tris: np.ndarray) -> list:
     return parts
 
 
+_SHAPE_CACHE: dict[bytes, ColliderShape] = {}
+
+
 def _convex(obj, scale: np.ndarray, auto: bool, parts_requested: bool) -> ColliderShape:
+    """Convex hull or convex parts of the scaled mesh, cached by its exact geometry and the mode (the overlay asks
+    for the collider of every shown object at every frame)."""
+    verts, tris = _mesh_arrays(obj, scale)
+    key = verts.tobytes() + tris.tobytes() + bytes([auto, parts_requested])
+    shape = _SHAPE_CACHE.get(key)
+    if shape is None:
+        if len(_SHAPE_CACHE) > 256:
+            _SHAPE_CACHE.clear()
+        shape = _SHAPE_CACHE[key] = _convex_shape(verts, tris, auto, parts_requested)
+    return shape
+
+
+def _convex_shape(verts: np.ndarray, tris: np.ndarray, auto: bool, parts_requested: bool) -> ColliderShape:
     from .. import numerics
     from .decompose import chain_volume
     from .hull import mesh_hull, translated
-    verts, tris = _mesh_arrays(obj, scale)
     hull = mesh_hull(verts)
     volume = chain_volume(verts[tris]) if len(tris) else 0.0
     exact_hull = float(numerics.hull_volume(verts))

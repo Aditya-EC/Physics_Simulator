@@ -381,7 +381,10 @@ class SimulationEngine:
         self.acc, self.alpha = np.zeros((n, 3)), np.zeros((n, 3))
         self._gyro_setup()
         self._pinned_setup()
+        broken = list(self.physics.broken) if self.physics is not None else []
         self._physics_setup()
+        if self.physics is not None and broken:      # joints that broke stay broken after a live edit
+            self.physics.restore_broken(broken)
         self.state = self._apply_prescribed(self.clock.time, state)
         if self.sampler is not None:
             self.sampler.refresh_schema()

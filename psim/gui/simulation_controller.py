@@ -374,6 +374,8 @@ class SimulationController(QObject):
         if not self.session_active and not self.start(paused=True):
             raise SimulationError("The simulation could not be started (see Errors & Warnings)")
         self.runner.call(lambda eng: eng.import_state(data))
+        # joints broken in the saved state are not new breaks: the next snapshot must not announce them
+        self.scene.broken_joints = set((data.get("physics") or {}).get("broken", []))
         t = float(data.get("time", 0.0))
         self.info.emit(f"Restored the simulation state of t = {t:.6g} s from {path}")
         return t

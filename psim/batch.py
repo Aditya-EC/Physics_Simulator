@@ -278,7 +278,7 @@ def parse_sweep(spec: str) -> tuple[str, list]:
             a, b, n = (float(x) for x in text.split(":"))
         except ValueError:
             raise BatchError(f"--sweep {name}: START:STOP:COUNT needs numbers, got '{text}'") from None
-        if n < 1 or n != int(n) or not (math.isfinite(a) and math.isfinite(b)):
+        if not all(math.isfinite(x) for x in (a, b, n)) or n < 1 or n != int(n):
             raise BatchError(f"--sweep {name}: COUNT must be a positive integer and the ends finite")
         n = int(n)
         values = [a + (b - a) * k / (n - 1) for k in range(n)] if n > 1 else [a]

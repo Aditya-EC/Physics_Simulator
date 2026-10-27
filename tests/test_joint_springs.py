@@ -169,3 +169,40 @@ def test_mechanisms_demo_behaves_as_described(scene):
     v_free = np.linalg.norm(last("Rolling Ball (b = 0)", "v"))
     assert v_free == pytest.approx(2.5, abs=0.01) and v_resisted < 2.5 - 0.3
     assert last("Sprung Platform")[2] < 1.0 - 0.05                                  # sagged on its spring
+
+
+def test_damper_alone_keeps_the_rod(scene):
+    s, e = scene
+    ball = e.add_new("body.point_mass", position=[0, 0, 1.0])
+    e.assign_process("dyn.gravity", TargetFilter(ids=[ball.id]))
+    e.set_property([ball.id], "linear_velocity", [1.0, 0, 0])
+    e.add_joint("distance", ball.id, None, [0, 0, 1.0], anchor_world_b=[0, 0, 2.0], spring_damping=5.0)
+    rec = Recording()
+    run(make_engine(scene, rec, delta_time=0.002, duration=1.0))
+    r = np.linalg.norm(rec.column((ball.id, "com")) - [0, 0, 2.0], axis=1)
+    np.testing.assert_allclose(r, 1.0, atol=1e-3)                                  # still a rod of length 1
+
+
+def test_spring_force_counts_toward_breaking(scene):
+    """A soft rope has no solver rows: its spring force (≈ m g at rest) alone breaks it."""
+    s, e = scene
+    ball = e.add_new("body.point_mass", position=[0, 0, 1.0])
+    e.assign_process("dyn.gravity", TargetFilter(ids=[ball.id]))
+    m = ball.mass_properties()["mass"]
+    jid = e.add_joint("distance", ball.id, None, [0, 0, 1.0], anchor_world_b=[0, 0, 2.0], spring_stiffness=1000.0,
+                      spring_damping=50.0, break_force=0.5 * m * G)
+    eng = make_engine(scene, None, delta_time=0.002, duration=0.5)
+    run(eng)
+    assert eng.physics.broken == [jid]
+
+
+def test_collider_shapes_are_cached(scene):
+    from psim.physics.colliders import collider_for
+    s, e = scene
+    tor = e.add_new("basic.torus", params={"segments": 24})
+    e.set_property([tor.id], "physics.collider", "auto")
+    first = collider_for(tor)
+    assert collider_for(tor) is first                                              # no recomputation per frame
+    e.set_property([tor.id], "scale", [2.0, 1.0, 1.0])
+    assert collider_for(tor) is not first and collider_for(tor).half_extents[0] == pytest.approx(
+        2 * first.half_extents[0], rel=1e-6)                                       # new geometry, new shape

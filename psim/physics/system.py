@@ -24,7 +24,7 @@ import numpy as np
 from .. import numerics
 from .contact_kernel import COLLIDER_CODES
 from .hull import box_hull, pack_hulls
-from .joint_kernel import pack_joints
+from .joint_kernel import _Geo, hinge_angle, pack_joints, slider_travel
 from .setup import PhysicsSetup
 
 E3 = np.eye(3)
@@ -93,6 +93,7 @@ class PhysicsSystem:
                     self.inv_mass[i] = bodies.inv_mass[e]
                 if self.dynamic[i] and rot[e]:
                     self.inv_inertia_local[i] = bodies.inv_inertia_local[e]
+        self._rotates = np.any(self.inv_inertia_local != 0.0, axis=(1, 2))   # rotation integrated (not prescribed)
         # static bodies never move: their poses are computed once
         self._sim_rows = np.flatnonzero(self.engine_rows >= 0)
         self._static_R = np.tile(E3, (n, 1, 1))
@@ -103,6 +104,7 @@ class PhysicsSystem:
                 self._static_R[i] = _quat_matrices(np.asarray(q, float)[None, :])[0]
                 self._static_origin[i] = p
         self.joint_entries = list(setup.joints)
+        self._spring_load: dict[str, float] = {}         # joint id → spring force / torque of the current step
         self.broken: list[str] = []                     # ids of joints that broke during the run, in order
         self.new_breaks: list[tuple] = []               # (joint id, name, force, torque) for the event log
         # collider data that does not change during the run (placed in the world every step)
@@ -232,6 +234,8 @@ class PhysicsSystem:
             self._last = None
             zero = np.zeros_like(v)
             self._last_dv, self._last_dw = v - v_start, w - w_start
+            if self._breakable and dt > 0:              # springs alone (e.g. soft distance joints) may break
+                self._check_breaks(None, None, dt)
             return self._apply(s, self._last_dv, self._last_dw, zero, zero, dt)
         ia, ib, J, rhs, lo, hi = (rows[k] for k in ("ia", "ib", "J", "rhs", "lo", "hi"))
         block = rows["block"]
@@ -259,8 +263,8 @@ class PhysicsSystem:
             numerics.pgs_solve(ia, ib, J, rhs_p, lo_p, hi_p, par_p, np.zeros(len(err)), block, self.inv_mass, inv_i,
                                vp, wp, st.position_iterations)
         self._last = (crows, lam) if crows is not None else None
-        if self._breakable and jrows is not None and dt > 0:
-            first = len(rows["ia"]) - len(jrows["ia"])          # joint rows follow the contact rows
+        if self._breakable and dt > 0:
+            first = len(rows["ia"]) - (len(jrows["ia"]) if jrows is not None else 0)   # joint rows come last
             self._check_breaks(jrows, lam[first:], dt)
         touching = None
         if crows is not None and len(crows["ia"]):
@@ -295,37 +299,32 @@ class PhysicsSystem:
             if len(c):
                 ec = self.engine_rows[c]
                 s.x[ec] = start.x[ec] + (s.v[ec] + vp[c]) * dt
-                q = np.ascontiguousarray(start.q[ec], float).copy()
-                numerics.quat_integrate(q, np.ascontiguousarray(s.w[ec] + wp[c]), dt)
-                s.q[ec] = q
+                spun = c[self._rotates[c]]           # orientations of prescribed rotations stay as written
+                if len(spun):
+                    es = self.engine_rows[spun]
+                    q = np.ascontiguousarray(start.q[es], float).copy()
+                    numerics.quat_integrate(q, np.ascontiguousarray(s.w[es] + wp[spun]), dt)
+                    s.q[es] = q
         dv_eng[e], dw_eng[e] = dv[dyn], dw[dyn]
         return dv_eng, dw_eng
 
     # ---- joint springs and breaking ----------------------------------------------------------------------------------
     def _spring_row(self, je, origin, com, R):
         """(Jacobian (12,), coordinate, rest value) of a joint spring, or None when it does not act (a slack
-        rope)."""
-        from .joint_kernel import perp
+        rope). The coordinates are those of the joint kernel's limits and motors."""
         j = je.joint
         a = self.index[je.body_a]
         b = self.index[je.body_b] if je.body_b else -1
-        Ra = R[a]
-        Rb = R[b] if b >= 0 else E3
-        pa = origin[a] + Ra @ je.anchor_a
-        pb = origin[b] + Rb @ je.anchor_b if b >= 0 else np.asarray(je.anchor_b, float)
-        d, ra = pb - pa, pa - com[a]
-        rb = pb - com[b] if b >= 0 else np.zeros(3)
-        aw = Ra @ je.axis_a
+        g = _Geo(a, b, je.anchor_a, je.anchor_b, je.axis_a, je.axis_b, origin, com, R)
+        d, ra, rb, aw = g.d, g.ra, g.rb, g.aw
         zero = np.zeros(3)
-        if j.type == "revolute":                     # angle of A relative to B about the hinge (as joint_kernel)
-            ua_l = perp(np.asarray(je.axis_a, float))[0]
-            ua, ub = Ra @ ua_l, Rb @ (je.ref_rot.T @ ua_l)
-            x = -math.atan2(float(np.cross(ua, ub) @ aw), float(ua @ ub))
+        if j.type == "revolute":
+            x = hinge_angle(g, je.axis_a, je.ref_rot)
             x = j.spring_rest + math.remainder(x - j.spring_rest, 2 * math.pi)   # nearest turn
             return np.concatenate([zero, aw, zero, -aw]), x, j.spring_rest
-        if j.type == "prismatic":                    # travel of A's anchor relative to B's along the axis
+        if j.type == "prismatic":
             n = -aw
-            return np.concatenate([-n, -np.cross(ra + d, n), n, np.cross(rb, n)]), -float(d @ aw), j.spring_rest
+            return np.concatenate([-n, -np.cross(ra + d, n), n, np.cross(rb, n)]), slider_travel(g), j.spring_rest
         length = float(np.linalg.norm(d))            # distance joint: the anchor distance, rest = its length
         if j.rope and length <= j.length:
             return None                              # a slack rope does not pull
@@ -336,6 +335,7 @@ class PhysicsSystem:
         """Implicit (backward Euler) spring-damper impulses along each spring's joint coordinate. The poses are
         already advanced by Δt·ẋ, so with the start-of-step coordinate x − Δt·ẋ the backward Euler impulse is
         λ = −Δt (k (x − x₀) + c ẋ) / (1 + Δt (k Δt + c) m⁻¹): stable for any stiffness."""
+        self._spring_load = {}
         for je in self._springs:
             row = self._spring_row(je, origin, com, R)
             if row is None:
@@ -352,21 +352,31 @@ class PhysicsSystem:
                 continue
             k, c = je.joint.spring_stiffness, je.joint.spring_damping
             lam = -dt * (k * (x - rest) + c * rate) / (1 + dt * (k * dt + c) * minv)
+            self._spring_load[je.joint.id] = abs(lam) / dt          # force (N) or, for a hinge, torque (N·m)
             v[a] += self.inv_mass[a] * Jr[:3] * lam
             w[a] += inv_i[a] @ Jr[3:6] * lam
             if b >= 0:
                 v[b] += self.inv_mass[b] * Jr[6:9] * lam
                 w[b] += inv_i[b] @ Jr[9:] * lam
 
-    def _check_breaks(self, jrows: dict, lam: np.ndarray, dt: float) -> None:
-        """Break the joints whose transmitted force or torque (row impulses / Δt) exceeded their limit."""
-        linear = np.any(jrows["J"][:, :3] != 0.0, axis=1) | np.any(jrows["J"][:, 6:9] != 0.0, axis=1)
+    def _check_breaks(self, jrows: dict | None, lam: np.ndarray | None, dt: float) -> None:
+        """Break the joints whose transmitted force or torque exceeded their limit: their rows' impulses / Δt,
+        together with their spring's force (or a hinge spring's torque)."""
+        if jrows is not None and len(jrows["ia"]):
+            linear = np.any(jrows["J"][:, :3] != 0.0, axis=1) | np.any(jrows["J"][:, 6:9] != 0.0, axis=1)
         broke = []
         for k, je in self._breakable:
-            sel = jrows["joint"] == k
-            force = float(np.linalg.norm(lam[sel & linear])) / dt
-            torque = float(np.linalg.norm(lam[sel & ~linear])) / dt
             j = je.joint
+            force = torque = 0.0
+            if jrows is not None and len(jrows["ia"]):
+                sel = jrows["joint"] == k
+                force = float(np.linalg.norm(lam[sel & linear])) / dt
+                torque = float(np.linalg.norm(lam[sel & ~linear])) / dt
+            spring = self._spring_load.get(j.id, 0.0)
+            if j.type == "revolute":
+                torque = math.hypot(torque, spring)
+            else:
+                force = math.hypot(force, spring)
             if (j.break_force > 0 and force > j.break_force) or (j.break_torque > 0 and torque > j.break_torque):
                 broke.append(j.id)
                 self.new_breaks.append((j.id, j.name, force, torque))

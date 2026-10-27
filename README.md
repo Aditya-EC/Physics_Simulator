@@ -154,8 +154,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling and spinning resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **598 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 512 pass and 86 native-comparison tests are skipped. This was measured on
+Current result: **603 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 517 pass and 86 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -888,7 +888,8 @@ Key design decisions:
     no Stribeck curve). Rolling and spinning resistance are constant lengths (no speed dependence).
   - Joint springs are linear in the joint coordinate and act on its one free coordinate only (no
     springs on ball or fixed joints). A joint breaks at the end of the step in which its limit was
-    exceeded; it does not weaken gradually.
+    exceeded; it does not weaken gradually. Its bodies may collide from the next step on, so parts
+    that overlapped at the joint are pushed apart.
   - The semi-implicit Euler integrator has a first-order energy lag (−½g²Δt² per step in free
     fall) that the position correction does not give back. A 1.6 m bar hinged at one end and
     released horizontally loses about 40 % of its swing energy in 30 s at Δt = 5 ms. Use

@@ -17,9 +17,9 @@ world): the rotation of A about the axis (right-hand rule), or the displacement 
 * ``distance``  — the anchor distance equals ``length`` (rod), or stays ≤ ``length`` (rope)
 
 Springs act on the free coordinate of revolute (angle), prismatic (travel) and distance joints (anchor
-distance): force (or torque) = −stiffness·(coordinate − rest) − damping·rate. A distance joint with a spring is
-soft: the spring replaces the rigid rod (a rope with a spring pulls only when stretched beyond its length, its
-rest value). A joint with a break force or torque > 0 breaks when the force or torque it transmits exceeds it.
+distance): force (or torque) = −stiffness·(coordinate − rest) − damping·rate. A distance joint with a stiffness
+is soft: the spring replaces the rigid rod (a rope with a spring pulls only when stretched beyond its length, its
+rest value); a damper alone keeps the rod. A joint with a break force or torque > 0 breaks when the force or torque it transmits exceeds it.
 """
 from __future__ import annotations
 
@@ -94,6 +94,11 @@ class Joint:
     @property
     def has_spring(self) -> bool:
         return self.type in SPRING_TYPES and (self.spring_stiffness > 0 or self.spring_damping > 0)
+
+    @property
+    def is_soft(self) -> bool:
+        """A distance joint whose spring replaces the rigid rod (a damper alone keeps the rod)."""
+        return self.type == "distance" and self.spring_stiffness > 0
 
     def to_dict(self) -> dict:
         return {k: (list(v) if isinstance(v, list) else v) for k, v in self.__dict__.items()}

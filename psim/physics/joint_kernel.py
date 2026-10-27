@@ -77,6 +77,20 @@ def rotvec(r) -> np.ndarray:
     return q[1:] / s * 2.0 * math.atan2(s, q[0])
 
 
+def hinge_angle(g, axis_a_local, ref_rot) -> float:
+    """Rotation of A relative to B about the hinge axis (the revolute joint coordinate; its rate is
+    aw·(ω_a − ω_b))."""
+    ua_l = perp(np.asarray(axis_a_local, float))[0]
+    ua = g.Ra @ ua_l
+    ub = g.Rb @ (np.asarray(ref_rot, float).T @ ua_l)
+    return -math.atan2(float(_cross(ua, ub) @ g.aw), float(ua @ ub))
+
+
+def slider_travel(g) -> float:
+    """Displacement of A's anchor relative to B's along the slider axis (the prismatic joint coordinate)."""
+    return -float(g.d @ g.aw)
+
+
 class _Geo:
     """Anchor geometry of one joint in one configuration."""
     __slots__ = ("Ra", "Rb", "ra", "rb", "d", "aw", "bw")
@@ -180,18 +194,13 @@ def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot
             aw = g.aw
             for tv in perp(aw):
                 ang(transported(tv), err=float(_cross(aw, g.bw) @ tv))
-            ua_l = perp(axis_a[j])[0]
-            ua = g.Ra @ ua_l
-            ub = g.Rb @ (ref_rot[j].T @ ua_l)
-            # joint coordinate: rotation of A relative to B about the hinge axis (row ang(-aw) = dθ/dt)
-            angle = -math.atan2(float(_cross(ua, ub) @ aw), float(ua @ ub))
+            angle = hinge_angle(g, axis_a[j], ref_rot[j])          # row ang(-aw) = dθ/dt
             limits_and_motor(angle, lambda **kw: ang(lambda x: -x.aw, **kw), lambda **kw: ang(lambda x: x.aw, **kw))
         if t == 3:
             aw = g.aw
             for tv in perp(aw):
                 lin(transported(tv), extra=True, err=float(d @ tv))
-            # joint coordinate: displacement of A's anchor relative to B's along the axis
-            travel = -float(d @ aw)
+            travel = slider_travel(g)
             limits_and_motor(travel, lambda **kw: lin(lambda x: -x.aw, extra=True, **kw),
                              lambda **kw: lin(lambda x: x.aw, extra=True, **kw))
         if t == 4:
@@ -227,7 +236,7 @@ def pack_joints(entries, index: dict) -> dict:
     out["ref_rot"] = np.array([je.ref_rot for je in entries], float).reshape(n, 3, 3)
     out["flags"] = np.array([(FLAG_LIMIT if je.joint.limit_enabled else 0) | (FLAG_ROPE if je.joint.rope else 0)
                              | (FLAG_MOTOR if je.joint.motor_enabled else 0)
-                             | (FLAG_SPRING if je.joint.has_spring else 0) for je in entries], np.int64)
+                             | (FLAG_SPRING if je.joint.is_soft else 0) for je in entries], np.int64)
     for key in ("lower", "upper", "motor_speed", "motor_max", "length"):
         out[key] = np.array([float(getattr(je.joint, key)) for je in entries], float)
     return out

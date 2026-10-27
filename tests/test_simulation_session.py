@@ -278,3 +278,28 @@ def test_broken_joint_is_reported_and_no_longer_drawn(session, qtbot):
     ctl.reset()
     assert s.broken_joints == set() and len(physics_overlay.joint_lines(s, 0.05)[0]) == 1
     assert [j.id for j in s.joints] == [jid]                               # the joint itself is unchanged
+
+
+def test_broken_joint_stays_broken_after_a_live_edit(session, qtbot):
+    s, e, ctl, settings, msgs = session
+    settings.duration = 5.0
+    ball = e.add_new("body.point_mass", position=[0, 0, 1.0])
+    other = e.add_new("body.point_mass", position=[3, 0, 1.0])
+    e.assign_process("dyn.gravity", TargetFilter(ids=[ball.id, other.id]))
+    m = ball.mass_properties()["mass"]
+    jid = e.add_joint("ball", ball.id, None, [0, 0, 1.0], name="Weak Hook", break_force=0.5 * m * 9.80665)
+    e.add_joint("ball", other.id, None, [3, 0, 1.0], name="Strong Hook")
+    assert ctl.start(paused=True)
+    for _ in range(5):
+        ctl.step()
+    qtbot.waitUntil(lambda: s.broken_joints == {jid}, timeout=5000)
+    physics = ctl.runner.engine.physics
+    e.set_property([other.id], "mass_input", 2.0)                          # a live edit that rebuilds the solver
+    qtbot.waitUntil(lambda: ctl.runner.engine.physics is not physics, timeout=5000)
+    assert ctl.runner.engine.physics.broken == [jid]                       # the rebuilt solver keeps it broken
+    for _ in range(5):
+        ctl.step()
+    qtbot.wait(200)
+    assert s.broken_joints == {jid}                                         # still broken, not re-attached
+    assert sum("Weak Hook" in m and "broke" in m for m in msgs["info"]) == 1      # announced once
+    assert s.world_pose(ball.id)[0][2] < 1.0 - 1e-3                         # and the ball keeps falling

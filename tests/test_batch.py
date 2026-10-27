@@ -130,7 +130,8 @@ def test_sweep_specs_grid_and_file_names():
     assert batch.parse_sweep("k=0.2:0.9:4")[1][-1] == 0.9                       # exact end
     assert batch.parse_sweep("Ball.restitution = 0.5, 0.9")[1] == [0.5, 0.9]
     assert batch.parse_sweep("Ball.linear_velocity=[[1,0,0],[0,2,0]]")[1] == [[1, 0, 0], [0, 2, 0]]
-    for bad, msg in (("k", "NAME=VALUES"), ("k=1:2:0", "COUNT"), ("k=a:b:3", "numbers"), ("k=[1,", "JSON")):
+    for bad, msg in (("k", "NAME=VALUES"), ("k=1:2:0", "COUNT"), ("k=a:b:3", "numbers"), ("k=[1,", "JSON"),
+                     ("k=0:1:inf", "COUNT"), ("k=0:1:nan", "COUNT"), ("k=0:inf:3", "COUNT")):
         with pytest.raises(batch.BatchError, match=msg):
             batch.parse_sweep(bad)
     grid = batch.sweep_grid([("a", [1, 2]), ("b", ["x", "y", "z"])])
