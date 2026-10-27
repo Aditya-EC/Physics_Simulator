@@ -104,3 +104,26 @@ def test_settings_validation_and_serialization():
     assert len(errors) == 3
     good = SimulationSettings(delta_time=0.002, update_rate_hz=500, duration=3, pacing=PacingMode.AS_FAST_AS_POSSIBLE)
     assert SimulationSettings.from_dict(good.to_dict()) == good
+
+
+def test_platform_timing_helpers_are_safe_everywhere():
+    """macOS: a run declares a latency-critical activity (no App Nap throttling) and ends it again; Windows: 1 ms
+    timer resolution. Elsewhere both are no-ops."""
+    import sys
+    import threading
+
+    from psim.simulation.runner import _MacOSActivity, _WindowsTimerResolution
+
+    seen = {}
+
+    def worker():                                   # the runner enters them on its worker thread
+        with _WindowsTimerResolution() as win, _MacOSActivity() as mac:
+            seen["win"], seen["mac"] = win._ok, mac._token
+        seen["after"] = mac._token
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join(10)
+    assert seen["win"] == (sys.platform == "win32")
+    assert bool(seen["mac"]) == (sys.platform == "darwin")
+    assert seen["after"] is None

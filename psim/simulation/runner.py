@@ -74,6 +74,64 @@ class _WindowsTimerResolution:
             ctypes.windll.winmm.timeEndPeriod(1)
 
 
+class _MacOSActivity:
+    """Declare a user-initiated, latency-critical activity on macOS while a run is active.
+
+    Without it App Nap and timer coalescing throttle the process whenever its window is not in front: timers fire
+    late, a real-time run falls behind its schedule and the GUI updates in bursts. The activity is the one Apple
+    recommends for such work (NSProcessInfo beginActivityWithOptions:reason:); idle system sleep stays allowed.
+    Called through the Objective-C runtime with ctypes, so no extra package is needed; any failure leaves the run
+    as it would be without it."""
+
+    # NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical
+    OPTIONS = (0x00FFFFFF & ~(1 << 20)) | 0xFF00000000
+    REASON = b"PSim Studio simulation run"
+
+    def __enter__(self):
+        self._token = None
+        if sys.platform != "darwin":
+            return self
+        try:
+            import ctypes
+            from ctypes import CFUNCTYPE, c_char_p, c_uint64, c_void_p
+            ctypes.cdll.LoadLibrary("/System/Library/Frameworks/Foundation.framework/Foundation")
+            objc = ctypes.cdll.LoadLibrary("/usr/lib/libobjc.A.dylib")
+            objc.objc_getClass.restype, objc.objc_getClass.argtypes = c_void_p, [c_char_p]
+            objc.sel_registerName.restype, objc.sel_registerName.argtypes = c_void_p, [c_char_p]
+            objc.objc_autoreleasePoolPush.restype = c_void_p
+            objc.objc_autoreleasePoolPop.argtypes = [c_void_p]
+            send = ctypes.cast(objc.objc_msgSend, c_void_p).value
+            # objc_msgSend must be called through the exact prototype of each method (arm64)
+            self._send0 = CFUNCTYPE(c_void_p, c_void_p, c_void_p)(send)
+            self._send1 = CFUNCTYPE(c_void_p, c_void_p, c_void_p, c_void_p)(send)
+            send_str = CFUNCTYPE(c_void_p, c_void_p, c_void_p, c_char_p)(send)
+            send_begin = CFUNCTYPE(c_void_p, c_void_p, c_void_p, c_uint64, c_void_p)(send)
+            self._objc, sel = objc, objc.sel_registerName
+            pool = objc.objc_autoreleasePoolPush()          # the worker thread has no autorelease pool of its own
+            try:
+                self._info = self._send0(objc.objc_getClass(b"NSProcessInfo"), sel(b"processInfo"))
+                reason = send_str(objc.objc_getClass(b"NSString"), sel(b"stringWithUTF8String:"), self.REASON)
+                token = send_begin(self._info, sel(b"beginActivityWithOptions:reason:"), self.OPTIONS, reason)
+                if token:
+                    self._token = self._send0(token, sel(b"retain"))
+            finally:
+                objc.objc_autoreleasePoolPop(pool)
+        except (OSError, AttributeError, ValueError):
+            self._token = None
+        return self
+
+    def __exit__(self, *exc):
+        if self._token:
+            objc, sel = self._objc, self._objc.sel_registerName
+            pool = objc.objc_autoreleasePoolPush()
+            try:
+                self._send1(self._info, sel(b"endActivity:"), self._token)
+                self._send0(self._token, sel(b"release"))
+            finally:
+                objc.objc_autoreleasePoolPop(pool)
+            self._token = None
+
+
 BACKPRESSURE_WAIT = 0.1   # s: longest wait for the GUI before a snapshot is published anyway
 
 
@@ -330,7 +388,7 @@ class SimulationRunner(QObject):
             except Exception as exc:  # invalid live change: report and keep the previous configuration
                 self.errorOccurred.emit(f"Change not applied: {exc}")
 
-        with _WindowsTimerResolution():
+        with _WindowsTimerResolution(), _MacOSActivity():
             publish(force=True)
             while not stop:
                 running = self._state == RunState.RUNNING
