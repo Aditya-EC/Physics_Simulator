@@ -60,6 +60,15 @@ Implemented so far:
     a Linux `.tar.gz` and `.deb` (built and tested here), and an Inno Setup script for Windows
     (not built here)
   - a user guide, developer guide and file-format reference in `docs/`
+- **Later additions** (after Phase 8; details in §3h):
+  - collision: convex-hull colliders, convex parts for concave meshes, and joint rows, convex
+    decomposition and Quickhull in C++
+  - joints: springs (torsion, slider, soft rod, bungee) and breakable joints
+  - contact materials: static friction, rolling resistance and spinning resistance
+  - editing and measuring: *Place Relative To…*, measurements between surface points with snapping
+  - batch: parameter sweeps with parallel runs
+  - a fix for resting contacts with higher-order integrators, a *mechanisms* demo, and a
+    cross-platform CI workflow
 
 ![Main window](docs/screenshot_main.png)
 
@@ -763,6 +772,24 @@ static friction slides, and two rolling balls of which only the one with rolling
 down; with three ready-made plots. `examples/measurements_demo.psim` and the matching template: a 60° pendulum with live
 swing-angle and distance measurements, and a stop condition that pauses at the bottom of the swing.
 The measured period of 2.638 s agrees with the large-amplitude formula (2.637 s).
+
+## 3h. Later additions (after Phase 8)
+
+Each item is tested on both numerical backends unless noted. Details are in the sections named.
+
+| Addition | Where | Tests |
+|---|---|---|
+| Convex-hull colliders (`auto` for convex meshes) and **convex parts** for concave meshes (exact plane cuts, C++ decomposition, Quickhull) | §3f *Collision geometry*; `psim/physics/hull.py`, `decompose.py`, `native/src/decompose.cpp` | `test_hulls.py`, `test_decompose.py` |
+| Joint rows in C++ (5× faster jointed scenes) | §3f *Joints*; `native/src/joints.cpp` | `test_joint_kernel.py` |
+| **Joint springs** (revolute, prismatic, distance; implicit, stable for any stiffness) and **breakable joints** (force/torque limits, events, saved states, GUI) | §3f *Joints*; Joints dialog | `test_joint_springs.py`, `test_simulation_session.py` |
+| **Static friction**, **rolling resistance**, **spinning resistance** | §3f *Collision geometry*; inspector *Collision & Joints* | `test_physics.py`, `test_contact_kernel.py` |
+| Resting contacts held with every integrator (no chatter with Verlet, RK4, …) | §3f *Solver* | `test_physics.py` |
+| **Place Relative To…** (offset from an object, frame or the origin; rigid groups) | §3 editing; *Objects* menu | `test_placement.py` |
+| **Measurements between surface points**, snapped to corners and real edges | §3g *Measurements* | `test_measurements.py`, `test_phase8_gui.py` |
+| **Parameter sweeps** in `psim-batch` (grids, final values, `--jobs`) | §3g *Batch execution*; user guide §9 | `test_batch.py` |
+| Faster contact bookkeeping and a sweep axis chosen by spread | §5 performance figures | `test_contact_kernel.py` |
+| *Mechanisms* example and template | `examples/mechanisms_demo.psim` | `test_joint_springs.py` |
+| Cross-platform CI (Linux, Windows, macOS; packages) — written, **not yet run** | `.github/workflows/ci.yml` | — |
 
 ## 4. Architecture
 

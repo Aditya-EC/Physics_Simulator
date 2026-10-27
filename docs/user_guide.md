@@ -5,6 +5,11 @@ properties, processes, simulation, measurements and results. Every menu command 
 in the application. *Help ▸ Controls & Shortcuts* lists the keyboard and mouse bindings, and they can
 be changed in *Tools ▸ Keyboard Shortcuts*.
 
+Recent additions, described in their sections below: convex parts for concave shapes (§3, §6),
+joint springs and breakable joints (§6), static friction and rolling/spinning resistance (§3),
+*Place Relative To…* (§2), measuring between snapped surface points (§7), parameter sweeps (§9)
+and the *mechanisms* example (§1).
+
 ## 1. Starting
 
 - **Installed:** start *PSim Studio* from the Start menu or application launcher, or run
