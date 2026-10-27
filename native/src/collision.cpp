@@ -646,16 +646,32 @@ std::vector<std::pair<int64_t, int64_t>> candidate_pairs(const ShapeSet& s, doub
     }
     for (int64_t p : planes)
         for (int64_t i : finite) out.emplace_back(std::min(p, i), std::max(p, i));
-    // sort and sweep along x: intervals [cx − r, cx + r] (extended by the margin)
+    // sort and sweep along the axis on which the centres are most spread out (fewest overlapping intervals):
+    // intervals [c − r, c + r] (extended by the margin). The exact sphere test decides, so the axis only
+    // changes the cost, never the pairs (which are sorted at the end).
+    int axis = 0;
+    if (finite.size() > 2) {
+        double sum[3] = {0, 0, 0}, sq[3] = {0, 0, 0}, best = -1.0;
+        for (int64_t i : finite)
+            for (int k = 0; k < 3; ++k) {
+                sum[k] += shapes[i].c[k];
+                sq[k] += shapes[i].c[k] * shapes[i].c[k];
+            }
+        const double n = static_cast<double>(finite.size());
+        for (int k = 0; k < 3; ++k) {
+            const double var = sq[k] / n - (sum[k] / n) * (sum[k] / n);
+            if (var > best) best = var, axis = k;
+        }
+    }
     std::sort(finite.begin(), finite.end(), [&](int64_t a, int64_t b) {
-        return shapes[a].c.x - rad[a] < shapes[b].c.x - rad[b];
+        return shapes[a].c[axis] - rad[a] < shapes[b].c[axis] - rad[b];
     });
     for (size_t u = 0; u < finite.size(); ++u) {
         const int64_t i = finite[u];
-        const double hi = shapes[i].c.x + rad[i] + margin;
+        const double hi = shapes[i].c[axis] + rad[i] + margin;
         for (size_t t = u + 1; t < finite.size(); ++t) {
             const int64_t j = finite[t];
-            if (shapes[j].c.x - rad[j] > hi) break;
+            if (shapes[j].c[axis] - rad[j] > hi) break;
             if (norm(shapes[j].c - shapes[i].c) <= rad[i] + rad[j] + margin)
                 out.emplace_back(std::min(i, j), std::max(i, j));
         }

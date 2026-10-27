@@ -134,9 +134,13 @@ class PhysicsSystem:
         self.excluded_index = np.array([sorted(self.index[k] for k in pair) for pair in connected
                                         if all(k in self.index for k in pair) and len(pair) == 2],
                                        np.int64).reshape(-1, 2)
-        self.touching: set[frozenset] = set()
+        # touching object pairs as integer keys a·S + b (a < b indices into self.sources)
+        self.sources = list(dict.fromkeys(c.source for c in cols))
+        src = {k: i for i, k in enumerate(self.sources)}
+        self.col_source = np.array([src[c.source] for c in cols], np.int64)
+        self._touching_keys = np.zeros(0, np.int64)
         self.new_contacts: list[tuple[str, str]] = []   # newly touching collider pairs (for the event log)
-        self.last_contacts: list = []                   # (source a, source b, point, normal, depth, impulse)
+        self._last = None                               # contact arrays and impulses of the last step
         self._last_dv, self._last_dw = np.zeros((n, 3)), np.zeros((n, 3))   # constraint Δv, Δω of the last step
 
     # ---- state -------------------------------------------------------------------------------------------------
@@ -185,7 +189,7 @@ class PhysicsSystem:
         """
         st = self.settings
         origin, com, R, v, w, inv_i = self._gather(s)
-        contacts, crows = self._contacts(origin, com, R, v, w, dt, start)
+        crows = self._contacts(origin, com, R, v, w, dt, start)
         jrows = None
         if self.setup.joints:
             ja = self.joint_arrays
@@ -198,7 +202,7 @@ class PhysicsSystem:
         n_eng = len(s.v)
         dv_eng, dw_eng = np.zeros((n_eng, 3)), np.zeros((n_eng, 3))
         if not len(rows["ia"]):
-            self.last_contacts = []
+            self._last = None
             self._last_dv, self._last_dw = np.zeros_like(self._last_dv), np.zeros_like(self._last_dw)
             return dv_eng, dw_eng
         ia, ib, J, rhs, lo, hi = (rows[k] for k in ("ia", "ib", "J", "rhs", "lo", "hi"))
@@ -238,7 +242,7 @@ class PhysicsSystem:
             numerics.quat_integrate(q, np.ascontiguousarray(spin[turning]), dt)
             s.q[e[turning]] = q
         dv_eng[e], dw_eng[e] = dv[dyn], dw[dyn]
-        self.last_contacts = [(c[0], c[1], c[2], c[3], c[4], float(lam[c[5]])) for c in contacts]
+        self._last = (crows, lam) if crows is not None else None
         return dv_eng, dw_eng
 
     @staticmethod
@@ -251,13 +255,41 @@ class PhysicsSystem:
         return out
 
     # ---- contacts ------------------------------------------------------------------------------------------------
-    def _contacts(self, origin, com, R, v, w, dt, start=None) -> tuple[list, dict | None]:
+    @property
+    def last_contacts(self) -> list:
+        """Contacts of the last step: (source a, source b, point, normal, depth, normal impulse)."""
+        if self._last is None:
+            return []
+        d, lam = self._last
+        names = self.sources
+        sa, sb = self.col_source[d["shape_a"]], self.col_source[d["shape_b"]]
+        return [(names[a], names[b], d["point"][k], d["normal"][k], float(d["depth"][k]), float(lam[r]))
+                for k, (a, b, r) in enumerate(zip(sa.tolist(), sb.tolist(), d["row"].tolist()))]
+
+    @property
+    def touching(self) -> set[frozenset]:
+        """Object pairs whose colliders touched in the last step."""
+        n = max(len(self.sources), 1)
+        return {frozenset((self.sources[k // n], self.sources[k % n])) for k in self._touching_keys.tolist()}
+
+    @touching.setter
+    def touching(self, pairs) -> None:
+        n = max(len(self.sources), 1)
+        index = {k: i for i, k in enumerate(self.sources)}
+        keys = []
+        for pair in pairs:
+            ids = sorted(index[k] for k in pair if k in index)
+            if len(ids) == 2:
+                keys.append(ids[0] * n + ids[1])
+        self._touching_keys = np.unique(np.array(keys, np.int64))
+
+    def _contacts(self, origin, com, R, v, w, dt, start=None) -> dict | None:
         """Contacts of all colliders and their rows (numerics.contact_rows: C++ or the NumPy kernel)."""
         st = self.settings
         entries = self.setup.colliders
         if not entries:
-            self.touching = set()
-            return [], None
+            self._touching_keys = np.zeros(0, np.int64)
+            return None
         b = self.col_body
         rot = np.einsum("nij,njk->nik", R[b], self.col_rel_rot)
         center = origin[b] + np.einsum("nij,nj->ni", R[b], self.col_rel_pos) + np.einsum("nij,nj->ni", rot,
@@ -275,17 +307,18 @@ class PhysicsSystem:
                                   self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
                                   self.excluded_index, com, v, w, st.slop, st.restitution_threshold, sweep, dt,
                                   center0, rot0, com0, self.col_hull_id, self.hulls)
-        touching = set()
-        for p, q in d["pairs"].tolist():
-            pair = frozenset((entries[p].source, entries[q].source))
-            touching.add(pair)
-            if pair not in self.touching:
+        # touching object pairs; pairs that were not touching in the previous step are logged, in pair order
+        n = max(len(self.sources), 1)
+        sa, sb = self.col_source[d["pairs"][:, 0]], self.col_source[d["pairs"][:, 1]]
+        keys = np.minimum(sa, sb) * n + np.maximum(sa, sb)
+        new = ~np.isin(keys, self._touching_keys)
+        if new.any():
+            _, first = np.unique(keys[new], return_index=True)
+            for k in np.sort(first):
+                p, q = d["pairs"][new][k]
                 self.new_contacts.append((entries[p].source, entries[q].source))
-        self.touching = touching
-        found = [(entries[p].source, entries[q].source, d["point"][k], d["normal"][k], float(d["depth"][k]), int(r))
-                 for k, (p, q, r) in enumerate(zip(d["shape_a"].tolist(), d["shape_b"].tolist(),
-                                                   d["row"].tolist()))]
-        return found, d
+        self._touching_keys = np.unique(keys)
+        return d
 
     def take_new_contacts(self) -> list[tuple[str, str]]:
         out, self.new_contacts = self.new_contacts, []

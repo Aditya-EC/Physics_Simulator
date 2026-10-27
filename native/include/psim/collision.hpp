@@ -60,7 +60,7 @@ struct ContactOutput {
 };
 
 // Candidate pairs (i < j, lexicographic order) whose bounding spheres overlap; planes pair with all non-planes.
-// Uses a sort-and-sweep on the x extent, then sorts the result, so the order equals the all-pairs loop.
+// Uses a sort-and-sweep along the axis of largest spread, then sorts the result, so the order equals the all-pairs loop.
 std::vector<std::pair<int64_t, int64_t>> candidate_pairs(const ShapeSet& s, double margin);
 
 // Broadphase + narrowphase + rows (see contact_kernel.py for the layout). `excluded` holds body pairs.

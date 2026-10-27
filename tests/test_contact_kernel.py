@@ -75,6 +75,20 @@ def test_sweep_broadphase_equals_all_pairs():
         assert ref == sorted(ref) and all(i < j for i, j in ref)
 
 
+@native
+@pytest.mark.parametrize("stretch", [(6, 1, 1), (1, 6, 1), (1, 1, 6), (1, 1, 1)])
+def test_sweep_axis_follows_the_spread_without_changing_pairs(stretch):
+    """Scenes stretched along x, y or z (the sweep runs along the axis of largest spread) keep exactly the
+    reference's pairs and contacts."""
+    args = list(_scene(7, n=80, spread=2.0))
+    args[2] = args[2] * np.asarray(stretch, float)
+    ref = reference(*args)
+    nat = numerics.contact_rows(*args)
+    assert len(ref["pairs"]) > 5
+    np.testing.assert_array_equal(nat["pairs"], ref["pairs"])
+    np.testing.assert_allclose(nat["point"], ref["point"], rtol=1e-9, atol=1e-11)
+
+
 def test_reference_kernel_reproduces_the_pairwise_narrowphase():
     args = _scene(3)
     kind, body, center, rot, radius, half, half_len = args[:7]
