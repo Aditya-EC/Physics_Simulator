@@ -139,3 +139,36 @@ def test_example_projects_load():
         s = Scene()
         data = ser.load_project(f, s, UnitRegistry())
         assert len(s) > 0 and data.warnings == []
+
+
+def test_atomic_write_retries_a_briefly_locked_target(tmp_path, monkeypatch):
+    """Windows refuses os.replace while another process holds the target open; the write waits and retries,
+    and gives up (leaving no temporary file) if the target stays locked."""
+    import json
+    import os
+
+    from psim.project import serialization as ser
+
+    path = tmp_path / "p.json"
+    path.write_text("{}", encoding="utf-8")
+    real, calls = os.replace, []
+
+    def locked(n):
+        def replace(src, dst):
+            calls.append(dst)
+            if len(calls) <= n:
+                raise PermissionError(13, "The process cannot access the file", dst)
+            real(src, dst)
+        return replace
+
+    monkeypatch.setattr(ser, "REPLACE_WAIT", 0.0)
+    monkeypatch.setattr(ser.os, "replace", locked(3))
+    ser.write_json_atomic(str(path), {"a": 1})
+    assert len(calls) == 4 and json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
+    calls.clear()
+    monkeypatch.setattr(ser.os, "replace", locked(10 ** 6))
+    with pytest.raises(PermissionError):
+        ser.write_json_atomic(str(path), {"a": 2})
+    assert len(calls) == ser.REPLACE_ATTEMPTS
+    assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
+    assert [p.name for p in tmp_path.iterdir()] == ["p.json"]

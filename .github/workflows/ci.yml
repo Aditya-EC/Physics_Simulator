@@ -12,16 +12,21 @@ on:
 
 jobs:
   test:
-    name: test (${{ matrix.os }}${{ matrix.fallback && ', NumPy fallback' || '' }})
+    name: test (${{ matrix.os }}${{ matrix.fallback && ', NumPy fallback' || '' }}${{ matrix.scale == 2 && ', 2x scale' || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         fallback: [false]
+        scale: [1]                  # an axis, so the 2x entry below adds a job instead of changing the Linux one
         include:
           - os: ubuntu-latest
             fallback: true
+          # high-DPI rendering and picking (as on Retina / 200 % Windows displays), with real OpenGL under Xvfb
+          - os: ubuntu-latest
+            fallback: false
+            scale: 2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,6 +47,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           PSIM_FORCE_PYTHON_NUMERICS: ${{ matrix.fallback && '1' || '' }}
+          QT_SCALE_FACTOR: ${{ matrix.scale || '1' }}
         run: xvfb-run -a -s "-screen 0 1920x1080x24" python -m pytest -q -rfs tests -p no:cacheprovider
       - name: Tests (offscreen)
         if: runner.os != 'Linux'

@@ -33,9 +33,15 @@ def window(qapp, requires_gl, tmp_path):
 
 
 def _render(w):
+    """The viewport image in logical pixels (widget coordinates), also on high-DPI screens, where the framebuffer
+    has devicePixelRatio times as many pixels (nearest-neighbour: colours are not blended)."""
     w.viewport.update()
     QTest.qWait(80)
-    return w.viewport.grabFramebuffer()
+    img = w.viewport.grabFramebuffer()
+    if img.width() != w.viewport.width():
+        img = img.scaled(w.viewport.width(), w.viewport.height(), Qt.AspectRatioMode.IgnoreAspectRatio,
+                         Qt.TransformationMode.FastTransformation)
+    return img
 
 
 def _screen_pos(w, world):

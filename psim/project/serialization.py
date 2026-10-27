@@ -35,6 +35,7 @@ import datetime as _dt
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 
 from .. import __version__
@@ -108,6 +109,23 @@ def save_project(path: str, scene: Scene, units: UnitRegistry, data: ProjectData
     write_json_atomic(path, payload)
 
 
+REPLACE_ATTEMPTS = 10           # × REPLACE_WAIT seconds: Windows refuses to replace a file another process holds
+REPLACE_WAIT = 0.05
+
+
+def _replace(src: str, dst: str) -> None:
+    """os.replace, retried briefly on PermissionError: on Windows a virus scanner, search indexer or sync client
+    that has just opened the target makes the replace fail for a moment (POSIX never refuses it)."""
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_WAIT)
+
+
 def write_json_atomic(path: str, payload: dict) -> None:
     directory = os.path.dirname(os.path.abspath(path)) or "."
     os.makedirs(directory, exist_ok=True)
@@ -125,7 +143,7 @@ def write_json_atomic(path: str, payload: dict) -> None:
             os.umask(umask)
             mode = 0o666 & ~umask
         os.chmod(tmp, mode)
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)

@@ -164,9 +164,10 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling and spinning resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **604 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 518 pass and 86 native-comparison tests are skipped. This was measured on
-Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
+Current result: **616 Python tests and the C++ test executable pass** with the native core, also at
+a 2× scale factor. With the NumPy fallback, 530 pass and 86 native-comparison tests are skipped.
+This was measured on Linux with Mesa llvmpipe under Xvfb. Windows and macOS have not been tested
+yet; see §5 and §6.
 
 ## 3. What Phase 1 implements
 
@@ -977,14 +978,23 @@ Key design decisions:
 - `.github/workflows/ci.yml` builds and tests the project on Linux (Xvfb + Mesa, native core and NumPy
   fallback), Windows and macOS (offscreen: the OpenGL tests skip there), then builds the packages on
   each and uploads them (the Windows job builds the Inno Setup installer when Inno Setup is present).
-  It has been written and checked for syntax here but **has not run yet**: no repository is
-  attached to this environment. In preparation, the C++ core compiles cleanly as strict ISO C++17
-  (`-pedantic-errors`), a missing `<utility>` include was added for MSVC, all text files are opened
-  as UTF-8, and `psim-batch` no longer fails on consoles without Unicode (e.g. a redirected Windows
-  code page; tested).
-- Developed and tested on Linux with software OpenGL (Mesa llvmpipe). The code is
-  platform-neutral (Qt, CMake/MSVC-safe C++), but **it has not been run on Windows in this
-  environment**.
+  A further Linux job runs the suite at a 2× scale factor (high-DPI). The workflow has been written
+  and checked for syntax here but **has not run yet**: no repository is attached to this
+  environment.
+- Developed and tested on Linux with software OpenGL (Mesa llvmpipe). **It has not been run on
+  Windows or macOS.** What has been checked here, on Linux, towards those platforms:
+  - the C++ core builds without warnings with GCC and with Clang (`-Wall -Wextra`; macOS uses
+    Clang), compiles as strict ISO C++17 (`-pedantic-errors`), and the whole test suite passes with
+    the Clang-built module; every header compiles on its own and every file includes the standard
+    headers it uses (MSVC does not include them indirectly as libstdc++ does);
+  - high-DPI screens (Retina, 200 % Windows scaling): the whole suite, including the OpenGL rendering
+    and picking tests, passes at `QT_SCALE_FACTOR=2` (the render tests now sample the framebuffer in
+    logical pixels);
+  - the viewport requests an OpenGL 3.3 *core* profile and uses only core calls (VAOs, no wide
+    lines), which is what macOS requires;
+  - all text files are opened as UTF-8, file names contain no `:`, `psim-batch` does not fail on
+    consoles without Unicode, and saves retry briefly when Windows refuses to replace a file that
+    another process (virus scanner, indexer, sync client) has open (tested).
 
 ## 6. Next steps
 
