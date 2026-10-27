@@ -240,6 +240,7 @@ class SimulationController(QObject):
         self._initial = None
         self._body_ids = []
         self.contacts = []
+        self.scene.broken_joints = set()
         self.scene.runtime = {}
         self.scene.simulating = False
         self.editor.recording = True
@@ -308,6 +309,11 @@ class SimulationController(QObject):
                 if oid not in changed:
                     changed.append(oid)
             self.contacts = list(snap.contacts or [])
+            broken = set(snap.broken or [])
+            for jid in sorted(broken - self.scene.broken_joints):
+                j = next((x for x in self.scene.joints if x.id == jid), None)
+                self.info.emit(f"Joint {j.name if j else jid} ({jid}) broke at t = {snap.time:.4g} s")
+            self.scene.broken_joints = broken
             for msg in snap.warnings or []:
                 if msg not in self._reported and len(self._reported) < 200:
                     self._reported.add(msg)

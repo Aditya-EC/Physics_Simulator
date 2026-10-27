@@ -57,6 +57,7 @@ class Snapshot:
     custom: dict = None       # object id -> {key: value} custom properties written by update processes
     warnings: list = None     # skipped evaluations (error policy "skip") since the previous snapshot
     contacts: list = None     # contact points of the last step: (point, normal from A to B, normal force N)
+    broken: list = None       # ids of the joints that have broken so far in this run
 
 
 class SimulationEngine:
@@ -488,4 +489,4 @@ class SimulationEngine:
                         for c in getattr(self.physics, "last_contacts", [])]
         return Snapshot(list(self.bodies.ids), origins(self.bodies, s), s.q.copy(), s.v.copy(), s.w.copy(),
                         self.acc.copy(), self.alpha.copy(), self.clock.time, self.clock.steps, custom, warnings,
-                        contacts)
+                        contacts, list(self.physics.broken) if self.physics is not None else [])

@@ -57,6 +57,7 @@ class Scene(QObject):
         # values produced by a running simulation that are not object properties
         # (e.g. current total acceleration); cleared when a session ends
         self.runtime: dict[str, dict] = {}
+        self.broken_joints: set[str] = set()       # joints that broke in the running simulation (not drawn)
 
     # ---- basic access --------------------------------------------------------------
     def __len__(self) -> int:
@@ -89,6 +90,7 @@ class Scene(QObject):
         self.next_measurement_number = 1
         self.simulating = False
         self.runtime = {}
+        self.broken_joints = set()
         self.sceneReset.emit()
 
     # ---- process assignments ----------------------------------------------------------------

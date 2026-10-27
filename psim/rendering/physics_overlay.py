@@ -87,9 +87,13 @@ def collider_lines(scene, show_all: bool) -> tuple[list[np.ndarray], list[np.nda
 
 
 def joint_lines(scene, marker: float) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """Anchor crosses, the A–B anchor link and the axis of each enabled joint at the current poses."""
+    """Anchor crosses, the A–B anchor link and the axis of each enabled joint at the current poses (joints that
+    broke in the running simulation are not drawn)."""
     pts, cols = [], []
+    broken = scene.broken_joints
     for j in scene.joints:
+        if j.id in broken:
+            continue
         try:
             pa, qa = scene.world_pose(j.body_a)
             ra = np.asarray(numerics.quat_to_matrix(qa), float)

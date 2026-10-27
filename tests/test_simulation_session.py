@@ -260,3 +260,21 @@ def test_session_records_data_and_events(session, qtbot):
     settings.duration = 0.1
     assert ctl.start()
     assert ctl.recording is None
+
+
+def test_broken_joint_is_reported_and_no_longer_drawn(session, qtbot):
+    from psim.rendering import physics_overlay
+    s, e, ctl, settings, msgs = session
+    ball = e.add_new("body.point_mass", position=[0, 0, 1.0])
+    e.assign_process("dyn.gravity", TargetFilter(ids=[ball.id]))
+    m = ball.mass_properties()["mass"]
+    jid = e.add_joint("ball", ball.id, None, [0, 0, 1.0], name="Weak Hook", break_force=0.5 * m * 9.80665)
+    assert len(physics_overlay.joint_lines(s, 0.05)[0]) == 1
+    assert ctl.start()
+    qtbot.waitUntil(lambda: ctl.state == "finished", timeout=10000)
+    qtbot.waitUntil(lambda: s.broken_joints == {jid}, timeout=5000)
+    assert any("Weak Hook" in m and "broke" in m for m in msgs["info"])
+    assert physics_overlay.joint_lines(s, 0.05)[0] == []                  # a broken joint is not drawn
+    ctl.reset()
+    assert s.broken_joints == set() and len(physics_overlay.joint_lines(s, 0.05)[0]) == 1
+    assert [j.id for j in s.joints] == [jid]                               # the joint itself is unchanged
