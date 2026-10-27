@@ -19,6 +19,15 @@ if(MSVC)
 else()
     target_compile_options(psim_core PRIVATE -Wall -Wextra -O2)
 endif()
+# No fused multiply-add contraction: a*b + c rounds twice, as in the NumPy reference. Compilers fuse by default
+# where the CPU has FMA (Clang on Apple silicon / ARM64), which changes results in the last bit and lets the two
+# backends take different branches (e.g. a different point count in the convex decomposition of a torus).
+# PUBLIC: the bindings and the C++ tests are compiled the same way. MSVC's default /fp:precise does not contract.
+if(MSVC)
+    target_compile_options(psim_core PUBLIC /fp:precise)
+else()
+    target_compile_options(psim_core PUBLIC -ffp-contract=off)
+endif()
 
 # Python extension module
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)

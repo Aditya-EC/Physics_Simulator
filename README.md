@@ -983,6 +983,10 @@ Key design decisions:
   environment.
 - Developed and tested on Linux with software OpenGL (Mesa llvmpipe). **It has not been run on
   Windows or macOS.** What has been checked here, on Linux, towards those platforms:
+  - the C++ core is compiled without fused multiply-add contraction (`-ffp-contract=off`): Clang
+    fuses by default on Apple silicon, which changed rounding enough for the native convex
+    decomposition of a torus to differ from the NumPy reference by one point (found by CI on macOS,
+    reproduced here with an FMA-enabled Clang build, fixed);
   - the C++ core builds without warnings with GCC and with Clang (`-Wall -Wextra`; macOS uses
     Clang), compiles as strict ISO C++17 (`-pedantic-errors`), and the whole test suite passes with
     the Clang-built module; every header compiles on its own and every file includes the standard

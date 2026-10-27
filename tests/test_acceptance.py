@@ -472,13 +472,19 @@ def test_at27_the_gui_remains_responsive_while_simulating(window):
     QTest.qWait(1500)                     # a real event loop, as in the application
     timer.stop()
     steps = w.sim.last_stats.steps
+    frame = w.viewport._paint_cost        # smoothed wall time of one viewport frame
     w.sim.stop()
     gaps = np.diff(ticks)
-    # The event loop keeps being served while the engine thread works: no gap is longer than about one frame.
-    # (Under software OpenGL a frame of this scene costs ~0.1 s; the runner's backpressure and the viewport's
-    # frame pacing keep the worker from starving the GUI thread of Python's interpreter lock.)
-    assert steps >= 10 and len(ticks) > 10, (steps, len(ticks))     # the engine keeps progressing
-    assert np.percentile(gaps, 95) < 0.2 and gaps.max() < 0.3, (np.percentile(gaps, 95), gaps.max())
+    # The event loop keeps being served while the engine thread works: no gap is longer than about one frame, and
+    # frame pacing leaves at least as much idle time as a frame takes. (Under software OpenGL a frame of this
+    # scene costs ~0.1 s, ~0.25 s at a 2x scale factor on a CI runner; the runner's backpressure and the
+    # viewport's frame pacing keep the worker from starving the GUI thread of Python's interpreter lock.) The
+    # bounds are those of a 0.1 s frame, scaled up for slower frames.
+    slow = max(frame / 0.1, 1.0)
+    assert steps >= 10, steps                                         # the engine keeps progressing
+    assert len(ticks) > 10 / slow, (len(ticks), frame)
+    assert np.percentile(gaps, 95) < 0.2 * slow and gaps.max() < 0.3 * slow, \
+        (np.percentile(gaps, 95), gaps.max(), frame)
 
 
 def test_at28_long_simulations_record_without_excessive_memory(scene):
