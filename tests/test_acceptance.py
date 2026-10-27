@@ -30,7 +30,7 @@ from psim.scene.scene_manager import Scene
 from psim.simulation.settings import PacingMode
 from psim.units.unit_registry import UnitRegistry
 
-from test_gui import _render, window  # noqa: F401  (window fixture)
+from test_gui import _render, _size_factor, window  # noqa: F401  (window fixture)
 from test_recording import make_engine, run
 
 G = 9.80665
@@ -85,7 +85,8 @@ def test_at02_multiple_genuine_3d_object_types_render(window):
     w.scene.set_selection([])
     w.viewport.frame_objects(None)
     img = _render(w)
-    assert _pixels_changed(empty, img) > 500
+    changed = _pixels_changed(empty, img)
+    assert changed > 500 * _size_factor(w) ** 2, (changed, w.viewport.size())     # framed objects: an area
     for o in w.scene.objects.values():              # every object is visible where the camera projects it
         xy, ok = w.viewport.camera.project(np.array([w.scene.world_pose(o.id)[0]]), w.viewport.width(),
                                            w.viewport.height())
@@ -339,7 +340,7 @@ def test_at19_trajectories_display_using_the_configured_color(window):
     img = _render(w)
     magenta = sum(1 for x in range(0, img.width(), 2) for y in range(0, img.height(), 2)
                   if (lambda c: c.red() > 180 and c.blue() > 180 and c.green() < 90)(img.pixelColor(x, y)))
-    assert magenta > 30
+    assert magenta > 30 * _size_factor(w), (magenta, w.viewport.size())          # a line: scales with length
 
 
 def test_at20_2d_plots_support_configurable_axes_and_multiple_objects(window):
@@ -481,7 +482,7 @@ def test_at27_the_gui_remains_responsive_while_simulating(window):
     # viewport's frame pacing keep the worker from starving the GUI thread of Python's interpreter lock.) The
     # bounds are those of a 0.1 s frame, scaled up for slower frames.
     slow = max(frame / 0.1, 1.0)
-    assert steps >= 10, steps                                         # the engine keeps progressing
+    assert steps >= 10, (steps, len(ticks), frame, gaps.max() if len(gaps) else None)   # the engine progresses
     assert len(ticks) > 10 / slow, (len(ticks), frame)
     assert np.percentile(gaps, 95) < 0.2 * slow and gaps.max() < 0.3 * slow, \
         (np.percentile(gaps, 95), gaps.max(), frame)

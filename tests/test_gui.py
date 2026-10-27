@@ -44,6 +44,17 @@ def _render(w):
     return img
 
 
+REFERENCE_VIEWPORT = (810, 529)      # viewport of the 1500 × 950 test window on a large screen
+
+
+def _size_factor(w) -> float:
+    """Linear size of the viewport relative to REFERENCE_VIEWPORT, at most 1. Smaller screens (CI runners on
+    Windows and macOS) shrink the test window, and pixel-count thresholds scale with this factor (lines) or its
+    square (filled areas); larger viewports keep the reference thresholds."""
+    vp = w.viewport
+    return min(vp.width() / REFERENCE_VIEWPORT[0], vp.height() / REFERENCE_VIEWPORT[1], 1.0)
+
+
 def _screen_pos(w, world):
     vp = w.viewport
     xy, ok = vp.camera.project(np.asarray(world, float)[None, :], vp.width(), vp.height())
@@ -290,7 +301,7 @@ def test_reference_frames_render_and_menu(window):
     after = _render(w)
     diff = sum(before.pixel(x, y) != after.pixel(x, y) for x in range(0, before.width(), 4)
                for y in range(0, before.height(), 4))
-    assert diff > 50
+    assert diff > 50 * _size_factor(w), (diff, w.viewport.size())        # axis lines: scale with length
     w.editor.update_frame(fid, visible=False)
     hidden = _render(w)
     assert sum(before.pixel(x, y) != hidden.pixel(x, y) for x in range(0, before.width(), 4)

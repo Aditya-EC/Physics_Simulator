@@ -112,9 +112,15 @@ def test_measuring_between_surface_points_in_the_viewport(window):  # noqa: F811
     assert vp.picking_points and "click the first point" in w.statusBar().currentMessage()
     click(QPoint(2, 2))                                             # empty space: nothing picked
     assert vp.picking_points and not vp._point_pick["points"]
+    # each cube is framed before its click, so the face centre lies far from its edges (beyond the snap radius)
+    # whatever the window size
+    vp.frame_objects([a.id])
+    _render(w)
     click(_screen_pos(w, [-1.5, 0, 1.0]))                           # top face of A
     assert "second point" in w.statusBar().currentMessage()
     vp.grab_image()                                                 # paints the pending marker
+    vp.frame_objects([b.id])
+    _render(w)
     click(_screen_pos(w, [1.5, 0, 1.0]))                            # top face of B
     assert not vp.picking_points and len(w.scene.measurements) == 1
     m = w.scene.measurements[0]
