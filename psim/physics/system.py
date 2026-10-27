@@ -132,6 +132,8 @@ class PhysicsSystem:
         self.col_static = static if np.any(static > self.col_friction) else None
         rolling = np.array([c.rolling for c in cols], float)
         self.col_rolling = rolling if np.any(rolling > 0) else None
+        spinning = np.array([c.spinning for c in cols], float)
+        self.col_spinning = spinning if np.any(spinning > 0) else None
         self.col_bound = np.array([0.0 if c.shape.kind == "plane" else c.shape.bounding_radius() for c in cols],
                                   float)
         self._set_joints()
@@ -417,7 +419,7 @@ class PhysicsSystem:
                                   self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
                                   self.excluded_index, com, v, w, st.slop, st.restitution_threshold, sweep, dt,
                                   center0, rot0, com0, self.col_hull_id, self.hulls, self.col_static, v0, w0,
-                                  self.col_rolling)
+                                  self.col_rolling, self.col_spinning)
         # touching object pairs; pairs that were not touching in the previous step are logged, in pair order
         n = max(len(self.sources), 1)
         sa, sb = self.col_source[d["pairs"][:, 0]], self.col_source[d["pairs"][:, 1]]

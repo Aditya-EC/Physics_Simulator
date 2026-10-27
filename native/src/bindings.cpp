@@ -298,7 +298,7 @@ PYBIND11_MODULE(_psim_native, m) {
                              const py::object& sweep, double dt, const py::object& center0,
                              const py::object& rot0, const py::object& com0, const py::object& hull_id,
                              const py::object& hulls, const py::object& static_friction, const py::object& v0,
-                             const py::object& w0, const py::object& rolling) {
+                             const py::object& w0, const py::object& rolling, const py::object& spinning) {
         const int64_t n = kind.size(), nb = dynamic.size();
         if (body.size() != n || center.size() != 3 * n || rot.size() != 9 * n || radius.size() != n ||
             half.size() != 3 * n || half_len.size() != n || restitution.size() != n || friction.size() != n)
@@ -369,10 +369,15 @@ PYBIND11_MODULE(_psim_native, m) {
         }
         DArr sf_arr, v0_arr, w0_arr, roll_arr;   // (a default array_t is an empty array, not null: use the flags)
         const bool has_sf = !static_friction.is_none(), has_v0 = !v0.is_none() || !w0.is_none();
-        const bool has_roll = !rolling.is_none();
+        const bool has_roll = !rolling.is_none(), has_spin = !spinning.is_none();
         if (has_roll) {
             roll_arr = DArr::ensure(rolling);
             if (!roll_arr || roll_arr.size() != n) throw std::invalid_argument("rolling needs one value per shape");
+        }
+        DArr spin_arr;
+        if (has_spin) {
+            spin_arr = DArr::ensure(spinning);
+            if (!spin_arr || spin_arr.size() != n) throw std::invalid_argument("spinning needs one value per shape");
         }
         if (has_sf) {
             sf_arr = DArr::ensure(static_friction);
@@ -386,7 +391,7 @@ PYBIND11_MODULE(_psim_native, m) {
         }
         ShapeSet s{n, kind.data(), body.data(), center.data(), rot.data(), radius.data(), half.data(),
                    half_len.data(), restitution.data(), friction.data(), has_sf ? sf_arr.data() : nullptr,
-                   has_roll ? roll_arr.data() : nullptr, sweep_ptr,
+                   has_roll ? roll_arr.data() : nullptr, has_spin ? spin_arr.data() : nullptr, sweep_ptr,
                    start ? c0.data() : nullptr, start ? r0.data() : nullptr, hid_ptr, hid_ptr ? &hs : nullptr};
         BodySet b{nb, dynamic.data(), com.data(), v.data(), w.data(), start ? m0.data() : nullptr,
                   has_v0 ? v0_arr.data() : nullptr, has_v0 ? w0_arr.data() : nullptr};
@@ -420,7 +425,7 @@ PYBIND11_MODULE(_psim_native, m) {
        py::arg("sweep") = py::none(), py::arg("dt") = 0.0, py::arg("center0") = py::none(),
        py::arg("rot0") = py::none(), py::arg("com0") = py::none(), py::arg("hull_id") = py::none(),
        py::arg("hulls") = py::none(), py::arg("static_friction") = py::none(), py::arg("v0") = py::none(),
-       py::arg("w0") = py::none(), py::arg("rolling") = py::none());
+       py::arg("w0") = py::none(), py::arg("rolling") = py::none(), py::arg("spinning") = py::none());
 
     m.def("joint_rows", [](const IArr& kind, const IArr& body_a, const IArr& body_b, const DArr& anchor_a,
                            const DArr& anchor_b, const DArr& axis_a, const DArr& axis_b, const DArr& ref_rot,

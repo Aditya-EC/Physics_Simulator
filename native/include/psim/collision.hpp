@@ -37,6 +37,7 @@ struct ShapeSet {
     const double* friction = nullptr;
     const double* static_friction = nullptr;   // optional: static coefficients (values below `friction` are raised)
     const double* rolling = nullptr;           // optional: rolling resistance lengths (m); a pair uses the larger
+    const double* spinning = nullptr;          // optional: spinning resistance lengths (m) about the normal
     const double* sweep = nullptr;        // optional: how far each shape's surface can move this step (CCD)
     const double* center0 = nullptr;      // optional: start-of-step centres and rotations (speculative pairs)
     const double* rot0 = nullptr;

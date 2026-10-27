@@ -53,7 +53,7 @@ take their defaults.
   "tags": ["…"], "visible": true, "locked": false,
   "overlays": {"name": true, …}, "trajectory": { … }, "label_units": { … }, "arrow_scales": { … },
   "physics": {"collider": "auto", "restitution": 0.75, "friction": 0.4, "static_friction": 0.6,
-              "rolling_resistance": 0.001, …},
+              "rolling_resistance": 0.001, "spinning_resistance": 0.002, …},
                                        // only non-default values
                                        // collider: auto | none | sphere | box | capsule | plane | convex | convex_parts
   "custom": [{"key": "drag_cd", "name": "Drag coefficient", "type": "float", "value": 0.47, …}]

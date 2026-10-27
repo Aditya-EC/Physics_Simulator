@@ -727,6 +727,7 @@ void contact_rows(const ShapeSet& s, const BodySet& bodies, const int64_t* exclu
             mu_s = std::sqrt(std::max(std::max(s.static_friction[p], s.friction[p]), 0.0) *
                              std::max(std::max(s.static_friction[q], s.friction[q]), 0.0));
         const double rolling = s.rolling ? std::max(std::max(s.rolling[p], s.rolling[q]), 0.0) : 0.0;
+        const double spinning = s.spinning ? std::max(std::max(s.spinning[p], s.spinning[q]), 0.0) : 0.0;
         const double* com = speculative && bodies.com0 ? bodies.com0 : bodies.com;
         const Vec3 ca = vec(com, a), cb = vec(com, b);
         const Vec3 va = vec(bodies.v, a), vb = vec(bodies.v, b), wa = vec(bodies.w, a), wb = vec(bodies.w, b);
@@ -765,6 +766,10 @@ void contact_rows(const ShapeSet& s, const BodySet& bodies, const int64_t* exclu
                 const Vec3 zero{0, 0, 0};
                 for (const Vec3* t : {&t1, &t2})
                     add_row(a, b, zero, -*t, zero, *t, 0.0, -kInf, kInf, k, rolling, 0.0, 2);
+            }
+            if (spinning > 0) {  // spinning (drilling) resistance: torque about the normal up to b·N
+                const Vec3 zero{0, 0, 0};
+                add_row(a, b, zero, -n, zero, n, 0.0, -kInf, kInf, k, spinning, 0.0, 2);
             }
             out.shape_a.push_back(p);
             out.shape_b.push_back(q);

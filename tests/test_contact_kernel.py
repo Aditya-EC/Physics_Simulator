@@ -86,6 +86,13 @@ def test_rolling_resistance_matches_the_reference(seed):
     rolling[::3] = 0.0
     ref = reference(*args, rolling=rolling)
     nat = numerics.contact_rows(*args, rolling=rolling)
+    spin = dict(rolling=rolling, spinning=rolling[::-1].copy())
+    ref2, nat2 = reference(*args, **spin), numerics.contact_rows(*args, **spin)
+    for key in ("row", "parent", "mode"):
+        np.testing.assert_array_equal(nat2[key], ref2[key], err_msg=key)
+    np.testing.assert_allclose(nat2["J"], ref2["J"], rtol=1e-12, atol=1e-14)
+    np.testing.assert_allclose(nat2["mu"], ref2["mu"], rtol=1e-12)
+    assert len(ref2["ia"]) > len(ref["ia"])                                    # the spinning rows
     for key in ("row", "parent", "mode", "ia", "ib"):
         np.testing.assert_array_equal(nat[key], ref[key], err_msg=key)
     for key in ("J", "mu", "lo", "hi"):

@@ -143,6 +143,25 @@ def test_rolling_resistance_decelerates_a_rolling_ball(scene, b):
     assert w * r == pytest.approx(v, abs=1e-3)                                # still rolling
 
 
+def test_spinning_resistance_slows_a_spinning_ball(scene):
+    """A ball spinning in place about the vertical: torque b·m·g, so α = b m g / I."""
+    s, e = scene
+    r, b = 0.1, 0.002
+    g = _ground(e)
+    ball = e.add_new("basic.sphere", position=[0, 0, r], params={"radius": r})
+    e.set_property([ball.id], "physics.collider", "auto")
+    e.set_property([ball.id], "angular_velocity", [0, 0, 10.0])
+    e.set_property([ball.id], "physics.spinning_resistance", b)
+    _gravity(e, ball)
+    rec = Recording()
+    run(make_engine(scene, rec, delta_time=0.002, duration=1.0))
+    w = rec.column((ball.id, "w"))[-1]
+    mp = ball.mass_properties()                                               # (a faceted sphere: I ≈ 0.4 m r²)
+    assert w[2] == pytest.approx(10.0 - b * mp["mass"] * G / mp["inertia"][2, 2] * 1.0, abs=0.005)
+    assert np.linalg.norm(rec.column((ball.id, "com"))[-1, :2]) < 1e-6          # spins in place
+    assert g
+
+
 def test_stack_of_boxes_is_stable(scene):
     s, e = scene
     _ground(e)
