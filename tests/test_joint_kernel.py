@@ -39,7 +39,7 @@ def _joints(seed: int, n: int = 40, nb: int = 8):
 
 
 def _compare(nat, ref):
-    for key in ("ia", "ib", "mode", "block"):
+    for key in ("ia", "ib", "mode", "block", "joint"):
         np.testing.assert_array_equal(nat[key], ref[key], err_msg=key)
     for key in ("J", "B", "rhs", "lo", "hi", "err"):
         np.testing.assert_allclose(nat[key], ref[key], rtol=1e-9, atol=1e-11, err_msg=key)

@@ -221,8 +221,12 @@ class SimulationEngine:
             if self.sampler is not None:
                 for a, b in self.physics.take_new_contacts():
                     self.sampler.rec.log(t + dt, step + 1, "contact", f"Contact {a} ↔ {b}")
+                for jid, name, force, torque in self.physics.take_breaks():
+                    self.sampler.rec.log(t + dt, step + 1, "joint", f"Joint {name} ({jid}) broke: "
+                                         f"{force:.4g} N, {torque:.4g} N·m")
             else:
                 self.physics.take_new_contacts()
+                self.physics.take_breaks()
         c4 = perf_counter()
         self._check_finite(new, t + dt)
         if self.sampler is not None:
@@ -397,7 +401,7 @@ class SimulationEngine:
         if self.physics is not None:
             physics = {"touching": sorted(sorted(p) for p in self.physics.touching),
                        "last_dv": self.physics._last_dv.tolist(), "last_dw": self.physics._last_dw.tolist(),
-                       "keys": list(self.physics.keys)}
+                       "keys": list(self.physics.keys), "broken": list(self.physics.broken)}
         return {"format": STATE_FORMAT, "version": STATE_VERSION, "time": self.clock.time,
                 "clock": self.clock.export(), "integrator": self.settings.integrator, "bodies": bodies,
                 "custom": custom, "physics": physics, "conditions": {c.name: c.was_true for c in self.conditions}}
@@ -448,6 +452,7 @@ class SimulationEngine:
             self.physics.touching = set()
             self.physics._last_dv[:] = 0.0
             self.physics._last_dw[:] = 0.0
+            self.physics.restore_broken(list(ph.get("broken", [])) if ph else [])
             if ph and list(ph.get("keys", [])) == list(self.physics.keys):
                 self.physics.touching = {frozenset(p) for p in ph.get("touching", [])}
                 self.physics._last_dv[:] = np.asarray(ph["last_dv"], float)

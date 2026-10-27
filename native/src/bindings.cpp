@@ -467,6 +467,7 @@ PYBIND11_MODULE(_psim_native, m) {
         d["err"] = to_array(out.err);
         d["mode"] = to_array(out.mode);
         d["block"] = to_array(out.block);
+        d["joint"] = to_array(out.joint);
         return d;
     }, py::arg("kind"), py::arg("body_a"), py::arg("body_b"), py::arg("anchor_a"), py::arg("anchor_b"),
        py::arg("axis_a"), py::arg("axis_b"), py::arg("ref_rot"), py::arg("flags"), py::arg("lower"), py::arg("upper"),

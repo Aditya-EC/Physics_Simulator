@@ -167,6 +167,10 @@ parameters, Δt, the rate and the duration.
   - **revolute** (hinge): optional angle limits and a motor
   - **prismatic** (slider): optional travel limits and a motor
   - **distance**: a rod, or a rope
+  Revolute, prismatic and distance joints can have a **spring** (stiffness, damping and rest
+  angle or travel; a distance spring rests at the joint's length and replaces the rigid rod).
+  Any joint can **break**: give it a break force and/or torque, and it comes apart in the step in
+  which it transmits more (logged as a *joint* event).
   Anchors and axes are entered in world coordinates. Limits and motors act on body A relative to B.
 - A body moved only by force processes is pushed by contacts and joints. A body with prescribed
   motion pushes others but is not pushed. Objects without processes stay fixed.

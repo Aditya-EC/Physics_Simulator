@@ -86,6 +86,8 @@ is kept, but disabled, with a warning.
  "anchor_a": [ … ], "anchor_b": [ … ], "axis_a": [ … ], "axis_b": [ … ],  // in each body's local frame
  "ref_orientation": [w, x, y, z], "limit_enabled": false, "lower": 0.0, "upper": 0.0,
  "motor_enabled": false, "motor_speed": 0.0, "motor_max": 0.0, "length": 1.0, "rope": false,
+ "spring_stiffness": 0.0, "spring_damping": 0.0, "spring_rest": 0.0,   // revolute, prismatic, distance
+ "break_force": 0.0, "break_torque": 0.0,                                 // 0 = unbreakable
  "collide_connected": false, "enabled": true, "description": ""}
 
 {"id": "MSR-0001", "name": "Gap", "kind": "distance" | "angle",
@@ -127,7 +129,8 @@ a run is planned; they are never evaluated as code.
   "integrator": "rk4",
   "bodies": {"OBJ-000002": {"x": [ … ], "q": [w, x, y, z], "v": [ … ], "w": [ … ], "acc": [ … ], "alpha": [ … ]}, …},
   "custom": {"OBJ-000002": {"energy": 12.5}},       // custom properties written by update processes
-  "physics": {"keys": [ … ], "touching": [[a, b], …], "last_dv": [ … ], "last_dw": [ … ]} | null,
+  "physics": {"keys": [ … ], "touching": [[a, b], …], "last_dv": [ … ], "last_dw": [ … ],
+              "broken": ["JNT-0002", …]} | null,             // joints that broke during the run
   "conditions": {"Ground": false},                  // so a true condition does not fire again
   "saved": {"objects": 3, "application": "PSim Studio"}
 }

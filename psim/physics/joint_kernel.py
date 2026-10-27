@@ -17,7 +17,9 @@ Rows per joint type (the equality rows of one joint form one block, solved toget
   distance   1 row along the anchor separation (a rope only when nearly taut, as an inequality)
 
 Output dict: ia, ib, J (R, 12), B (R, 12), rhs, lo, hi, err, mode (0 = equality, 1 = inequality with position
-correction, 2 = no position correction: motors), block (1 scalar, k at the first of k block rows, 0 inside).
+correction, 2 = no position correction: motors), block (1 scalar, k at the first of k block rows, 0 inside),
+joint (index of the joint each row belongs to). Distance joints with FLAG_SPRING have no row (the spring, applied
+by the solver set-up, replaces the rod).
 """
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ import numpy as np
 
 JOINT_CODES = {"fixed": 0, "ball": 1, "revolute": 2, "prismatic": 3, "distance": 4}
 BLOCK_SIZE = {0: 6, 1: 3, 2: 5, 3: 5, 4: 0}
-FLAG_LIMIT, FLAG_MOTOR, FLAG_ROPE = 1, 2, 4
+FLAG_LIMIT, FLAG_MOTOR, FLAG_ROPE, FLAG_SPRING = 1, 2, 4, 8
 LIMIT_MARGIN = 0.05             # limit rows are added when the coordinate is this close to a limit
 INF = 1e30
 E3 = np.eye(3)
@@ -105,7 +107,7 @@ def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot
     if mid:
         mid_origin, mid_com = np.asarray(mid_origin, float).reshape(-1, 3), np.asarray(mid_com, float).reshape(-1, 3)
         mid_R = np.asarray(mid_R, float).reshape(-1, 3, 3)
-    out = {k: [] for k in ("ia", "ib", "J", "B", "rhs", "lo", "hi", "err", "mode", "block")}
+    out = {k: [] for k in ("ia", "ib", "J", "B", "rhs", "lo", "hi", "err", "mode", "block", "joint")}
     pending = [0, 0]                 # [block size to open on the next row, rows left inside the open block]
 
     for j in range(len(kind)):
@@ -125,8 +127,8 @@ def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot
             else:
                 out["block"].append(1)
             row = np.concatenate(jac(g))
-            for k, x in zip(("ia", "ib", "J", "B", "rhs", "lo", "hi", "err", "mode"),
-                            (a, b, row, row if h is g else np.concatenate(jac(h)), rhs, lo, hi, err, mode)):
+            for k, x in zip(("ia", "ib", "J", "B", "rhs", "lo", "hi", "err", "mode", "joint"),
+                            (a, b, row, row if h is g else np.concatenate(jac(h)), rhs, lo, hi, err, mode, j)):
                 out[k].append(x)
 
         def lin(dir_of, extra=False, **kw):
@@ -197,7 +199,9 @@ def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot
                 n = math.sqrt(float(x.d @ x.d))
                 return x.d / n if n > 1e-9 else x.aw
             dist = math.sqrt(float(d @ d))
-            if flags[j] & FLAG_ROPE:
+            if flags[j] & FLAG_SPRING:
+                pass                                 # a soft distance joint: the spring replaces the rod
+            elif flags[j] & FLAG_ROPE:
                 if dist > length[j] - slop:          # near taut: may extend only up to the length
                     slack = float(length[j] - dist)
                     lin(lambda x: -along(x), rhs=-max(slack, 0.0) / dt, lo=0.0, hi=INF, err=slack, mode=1)
@@ -209,7 +213,7 @@ def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot
             "J": np.array(out["J"], float).reshape(m, 12), "B": np.array(out["B"], float).reshape(m, 12),
             "rhs": np.array(out["rhs"], float), "lo": np.array(out["lo"], float), "hi": np.array(out["hi"], float),
             "err": np.array(out["err"], float), "mode": np.array(out["mode"], np.int64),
-            "block": np.array(out["block"], np.int64)}
+            "block": np.array(out["block"], np.int64), "joint": np.array(out["joint"], np.int64)}
 
 
 def pack_joints(entries, index: dict) -> dict:
@@ -222,7 +226,8 @@ def pack_joints(entries, index: dict) -> dict:
         out[key] = np.array([getattr(je, key) for je in entries], float).reshape(n, 3)
     out["ref_rot"] = np.array([je.ref_rot for je in entries], float).reshape(n, 3, 3)
     out["flags"] = np.array([(FLAG_LIMIT if je.joint.limit_enabled else 0) | (FLAG_ROPE if je.joint.rope else 0)
-                             | (FLAG_MOTOR if je.joint.motor_enabled else 0) for je in entries], np.int64)
+                             | (FLAG_MOTOR if je.joint.motor_enabled else 0)
+                             | (FLAG_SPRING if je.joint.has_spring else 0) for je in entries], np.int64)
     for key in ("lower", "upper", "motor_speed", "motor_max", "length"):
         out[key] = np.array([float(getattr(je.joint, key)) for je in entries], float)
     return out

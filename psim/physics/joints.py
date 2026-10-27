@@ -15,6 +15,11 @@ Types (constrained degrees of freedom):
 Joint coordinates, limits and motor speeds describe the motion of body A relative to body B (or the
 world): the rotation of A about the axis (right-hand rule), or the displacement of A's anchor along it.
 * ``distance``  — the anchor distance equals ``length`` (rod), or stays ≤ ``length`` (rope)
+
+Springs act on the free coordinate of revolute (angle), prismatic (travel) and distance joints (anchor
+distance): force (or torque) = −stiffness·(coordinate − rest) − damping·rate. A distance joint with a spring is
+soft: the spring replaces the rigid rod (a rope with a spring pulls only when stretched beyond its length, its
+rest value). A joint with a break force or torque > 0 breaks when the force or torque it transmits exceeds it.
 """
 from __future__ import annotations
 
@@ -30,7 +35,9 @@ JOINT_ID = re.compile(r"^JNT-(\d{4,})$")
 JOINT_TYPES = ("fixed", "ball", "revolute", "prismatic", "distance")
 JOINT_KEYS = {"id", "name", "type", "body_a", "body_b", "anchor_a", "anchor_b", "axis_a", "axis_b",
               "ref_orientation", "limit_enabled", "lower", "upper", "motor_enabled", "motor_speed", "motor_max",
-              "length", "rope", "collide_connected", "enabled", "description"}
+              "length", "rope", "collide_connected", "enabled", "description", "spring_stiffness", "spring_damping",
+              "spring_rest", "break_force", "break_torque"}
+SPRING_TYPES = ("revolute", "prismatic", "distance")
 
 
 class JointError(ValueError):
@@ -78,6 +85,15 @@ class Joint:
     collide_connected: bool = False
     enabled: bool = True
     description: str = ""
+    spring_stiffness: float = 0.0   # N/m or N·m/rad on the joint coordinate (0 = no spring)
+    spring_damping: float = 0.0     # N·s/m or N·m·s/rad
+    spring_rest: float = 0.0        # rest angle (rad) or travel (m); distance joints use `length`
+    break_force: float = 0.0        # N; the joint breaks above it (0 = unbreakable)
+    break_torque: float = 0.0       # N·m
+
+    @property
+    def has_spring(self) -> bool:
+        return self.type in SPRING_TYPES and (self.spring_stiffness > 0 or self.spring_damping > 0)
 
     def to_dict(self) -> dict:
         return {k: (list(v) if isinstance(v, list) else v) for k, v in self.__dict__.items()}
@@ -120,6 +136,16 @@ class Joint:
             raise JointError(f"{jid}: the lower limit must not exceed the upper limit")
         if fmax < 0 or length < 0:
             raise JointError(f"{jid}: motor force and length must not be negative")
+        extra = {}
+        for key in ("spring_stiffness", "spring_damping", "spring_rest", "break_force", "break_torque"):
+            try:
+                extra[key] = float(d.get(key, 0.0))
+            except (TypeError, ValueError):
+                raise JointError(f"{jid}: {key.replace('_', ' ')} must be a number") from None
+            if not math.isfinite(extra[key]) or (key != "spring_rest" and extra[key] < 0):
+                raise JointError(f"{jid}: {key.replace('_', ' ')} must be finite and not negative")
+        if (extra["spring_stiffness"] > 0 or extra["spring_damping"] > 0) and jtype not in SPRING_TYPES:
+            raise JointError(f"{jid}: springs act on revolute, prismatic and distance joints only")
         return Joint(jid, name, jtype, a, b or None, _vec(d.get("anchor_a", [0, 0, 0]), 3, f"{jid}: anchor A"),
                      _vec(d.get("anchor_b", [0, 0, 0]), 3, f"{jid}: anchor B"),
                      _unit(d.get("axis_a", [0, 0, 1]), f"{jid}: axis A"), _unit(d.get("axis_b", [0, 0, 1]),
@@ -127,7 +153,7 @@ class Joint:
                      [float(x) for x in q / np.linalg.norm(q)], bool(d.get("limit_enabled", False)), lower, upper,
                      bool(d.get("motor_enabled", False)), speed, fmax, length, bool(d.get("rope", False)),
                      bool(d.get("collide_connected", False)), bool(d.get("enabled", True)),
-                     str(d.get("description", "")))
+                     str(d.get("description", "")), **extra)
 
 
 def validate_joints(data: list) -> list[Joint]:

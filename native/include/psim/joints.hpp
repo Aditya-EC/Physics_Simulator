@@ -8,7 +8,7 @@
 namespace psim {
 
 enum JointKind : int64_t { kFixed = 0, kBall = 1, kRevolute = 2, kPrismatic = 3, kDistance = 4 };
-enum JointFlag : int64_t { kLimit = 1, kMotor = 2, kRope = 4 };
+enum JointFlag : int64_t { kLimit = 1, kMotor = 2, kRope = 4, kSpring = 8 };
 
 struct JointSet {
     int64_t n = 0;
@@ -36,7 +36,7 @@ struct BodyConfig {
 };
 
 struct JointOutput {
-    std::vector<int64_t> ia, ib, mode, block;   // mode: 0 equality, 1 inequality, 2 no position correction
+    std::vector<int64_t> ia, ib, mode, block, joint;   // mode: 0 equality, 1 inequality, 2 no position correction
     std::vector<double> J, B, rhs, lo, hi, err;
 };
 

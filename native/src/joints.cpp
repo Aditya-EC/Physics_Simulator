@@ -102,7 +102,7 @@ struct Direction {
 
 struct Emitter {
     JointOutput& out;
-    int64_t a, b;
+    int64_t a, b, index;
     const Geo& g;
     const Geo* h;          // midpoint geometry or nullptr
     int64_t open = 0;      // block size to open on the next row
@@ -142,6 +142,7 @@ struct Emitter {
         }
         out.ia.push_back(a);
         out.ib.push_back(b);
+        out.joint.push_back(index);
         out.J.insert(out.J.end(), jr.begin(), jr.end());
         out.B.insert(out.B.end(), br.begin(), br.end());
         out.rhs.push_back(rhs);
@@ -173,7 +174,7 @@ void joint_rows(const JointSet& j, const BodyConfig& end, const BodyConfig* mid,
         const Geo g = geometry(j, k, a, b, end);
         Geo hm;
         if (mid) hm = geometry(j, k, a, b, *mid);
-        Emitter em{out, a, b, g, mid ? &hm : nullptr};
+        Emitter em{out, a, b, k, g, mid ? &hm : nullptr};
         const Vec3 d = g.d;
         const Vec3 E[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
         static const int64_t kBlock[5] = {6, 3, 5, 5, 0};
@@ -235,7 +236,9 @@ void joint_rows(const JointSet& j, const BodyConfig& end, const BodyConfig* mid,
         }
         if (type == kDistance) {
             const double dist = norm(d);
-            if (flags & kRope) {
+            if (flags & kSpring) {
+                // a soft distance joint: the spring, applied by the solver set-up, replaces the rod
+            } else if (flags & kRope) {
                 if (dist > j.length[k] - slop) {   // near taut: may extend only up to the length
                     const double slack = j.length[k] - dist;
                     em.lin({Dir::kNegAlong, {}}, false, slack, -std::max(slack, 0.0) / dt, 0.0, kInf, 1);

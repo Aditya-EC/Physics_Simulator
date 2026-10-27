@@ -147,12 +147,13 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
 | `test_decompose.py` | exact, closed cuts (volumes add up, caps close the pieces), hull volumes robust to coplanar points under rotation, decomposition quality (cylinder 1 part, I-beam, torus), C++ ≡ NumPy decomposition, compound colliders (auto/convex/convex parts, one solver entry per part), a ball falls through the hole of a torus that rests flat |
 | `test_hulls.py` | convex hulls (exact box/prism hulls, flat inputs, reduction of detailed meshes, packing), a cylinder on its side rolling at v = ω·r, a cone standing on its base, stacked cylinders at rest, C++ hull contacts ≡ NumPy reference |
+| `test_joint_springs.py` | torsion spring period 2π√(I/k), slider spring amplitude v₀/Ω and period, damped envelope A·e^(−ζΩt), soft distance joint stretching by mg/k, a 10¹² N/m spring staying stable, joints breaking above (not below) their force, a torque-limited cantilever and its saved state, validation |
 | `test_joint_kernel.py` | C++ joint rows ≡ NumPy reference for random joints of every type (limits near both ends, motors, ropes, world anchors, with and without the midpoint Jacobian), row counts and blocks per joint type, slack and taut ropes, rotation vectors, input validation |
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **575 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 492 pass and 83 native-comparison tests are skipped. This was measured on
+Current result: **584 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 501 pass and 83 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -612,6 +613,14 @@ reference `psim/physics/joint_kernel.py`).
   world coordinates and stored in the bodies' local frames.
 - Joint coordinates, limits and motor speeds describe **body A relative to body B**.
 - Connected bodies do not collide with each other unless that option is enabled.
+- **Springs** on the free coordinate of revolute (torsion spring), prismatic and distance joints
+  (a soft rod; a rope with a spring is a bungee that pulls only when stretched): stiffness,
+  damping and rest value. They are applied as implicit (backward Euler) impulses before the solve,
+  so even a 10¹² N/m spring stays stable; oscillation periods match 2π√(m/k) and 2π√(I/k) and
+  damping the exp(−c t / 2m) envelope (tested).
+- **Breakable joints:** a break force and/or torque. When the force or torque that a joint's rows
+  transmit in a step (impulse / Δt) exceeds it, the joint is removed for the rest of the run, the
+  bodies may collide again, a *joint* event is recorded, and simulation states remember it.
 
 **Solver** (`native/src/constraints.cpp`, NumPy fallback with the same algorithm).
 - All contacts and joints of a step become generic rows J·v = rhs with bounds. A C++ projected
@@ -861,7 +870,9 @@ Key design decisions:
   - Capsule–box contacts sample the capsule core and are approximate for deep edge contacts.
   - Friction is isotropic Coulomb friction, static below 1 cm/s and kinetic above (a sharp switch,
     no Stribeck curve), and there is no rolling resistance.
-  - Joints cannot break, and there are no joint springs (use the spring processes).
+  - Joint springs are linear in the joint coordinate and act on its one free coordinate only (no
+    springs on ball or fixed joints). A joint breaks at the end of the step in which its limit was
+    exceeded; it does not weaken gradually.
   - The semi-implicit Euler integrator has a first-order energy lag (−½g²Δt² per step in free
     fall) that the position correction does not give back. A 1.6 m bar hinged at one end and
     released horizontally loses about 40 % of its swing energy in 30 s at Δt = 5 ms. Use

@@ -67,6 +67,32 @@ def test_joints_dialog_creates_edits_and_undoes(scene, owned):  # noqa: F811
     assert "different" in dlg2.error.text() and dlg2.joints[0]["body_b"] is None
 
 
+def test_joints_dialog_spring_and_break_fields(scene, owned):  # noqa: F811
+    from psim.gui.dialogs.joints_dialog import JointsDialog
+    s, e = scene
+    box = e.add_new("body.rigid_box", position=[0, 0, 1])
+    s.set_selection([box.id])
+    dlg = JointsDialog(s, e, UnitRegistry())
+    owned(dlg)
+    dlg._add()                                              # a revolute joint: torsion spring fields
+    assert dlg.stiffness.isVisibleTo(dlg) and dlg.rest.isVisibleTo(dlg) and "N·m/rad" in dlg.stiffness_label.text()
+    dlg.stiffness.committed.emit(120.0)
+    dlg.damping.committed.emit(3.0)
+    dlg.rest.committed.emit(0.25)
+    dlg.break_torque.committed.emit(500.0)
+    assert dlg.apply()
+    j = s.joints[0]
+    assert (j.spring_stiffness, j.spring_damping, j.spring_rest, j.break_torque) == (120.0, 3.0, 0.25, 500.0)
+    dlg.type.setCurrentText("ball")
+    dlg._store("type", "ball")                              # no spring on a ball joint, but it can break
+    assert not dlg.stiffness.isVisibleTo(dlg) and dlg.break_force.isVisibleTo(dlg)
+    assert dlg.apply() and s.joints[0].type == "ball"     # its spring was dropped with the type change
+    assert s.joints[0].spring_stiffness == 0 and s.joints[0].break_torque == 500.0
+    dlg.type.setCurrentText("distance")
+    dlg._store("type", "distance")
+    assert dlg.stiffness.isVisibleTo(dlg) and not dlg.rest.isVisibleTo(dlg) and "N/m" in dlg.stiffness_label.text()
+
+
 def test_inspector_collision_section(scene, owned):  # noqa: F811
     from PySide6.QtWidgets import QComboBox, QLabel, QPushButton
 

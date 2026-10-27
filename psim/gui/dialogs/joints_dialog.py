@@ -129,6 +129,28 @@ class JointsDialog(QDialog):
         self.fmax.committed.connect(lambda v: self._store("motor_max", float(v)))
         self.fmax_label = QLabel()
         form.addRow(self.fmax_label, self.fmax)
+        # spring on the joint coordinate (SI units: there are no display units for stiffness and damping)
+        self.stiffness = NumberField(None, None, 4, 0.0, 1e15)
+        self.stiffness.committed.connect(lambda v: self._store("spring_stiffness", float(v)))
+        self.stiffness_label = QLabel()
+        form.addRow(self.stiffness_label, self.stiffness)
+        self.damping = NumberField(None, None, 4, 0.0, 1e15)
+        self.damping.committed.connect(lambda v: self._store("spring_damping", float(v)))
+        self.damping_label = QLabel()
+        form.addRow(self.damping_label, self.damping)
+        self.rest = NumberField(units, None, 4, -1e7, 1e7)
+        self.rest.committed.connect(lambda v: self._store("spring_rest", float(v)))
+        self.rest_label = QLabel()
+        form.addRow(self.rest_label, self.rest)
+        fu, tu = units.preferred_unit("force"), units.preferred_unit("torque")
+        self.break_force = NumberField(units, fu, 4, 0.0, 1e15)
+        self.break_force.setToolTip("The joint breaks when the force it transmits exceeds this (0 = never)")
+        self.break_force.committed.connect(lambda v: self._store("break_force", float(v)))
+        form.addRow(f"Break force [{fu}]", self.break_force)
+        self.break_torque = NumberField(units, tu, 4, 0.0, 1e15)
+        self.break_torque.setToolTip("The joint breaks when the torque it transmits exceeds this (0 = never)")
+        self.break_torque.committed.connect(lambda v: self._store("break_torque", float(v)))
+        form.addRow(f"Break torque [{tu}]", self.break_torque)
         self.collide = QCheckBox("Connected bodies collide with each other")
         self.collide.toggled.connect(lambda v: self._store("collide_connected", bool(v)))
         form.addRow("", self.collide)
@@ -257,6 +279,11 @@ class JointsDialog(QDialog):
             self.upper.set_si(float(j.get("upper", 0.0)))
             self.speed.set_si(float(j.get("motor_speed", 0.0)))
             self.fmax.set_si(float(j.get("motor_max", 0.0)))
+            self.stiffness.set_si(float(j.get("spring_stiffness", 0.0)))
+            self.damping.set_si(float(j.get("spring_damping", 0.0)))
+            self.rest.set_si(float(j.get("spring_rest", 0.0)))
+            self.break_force.set_si(float(j.get("break_force", 0.0)))
+            self.break_torque.set_si(float(j.get("break_torque", 0.0)))
         finally:
             self._loading = False
 
@@ -284,6 +311,16 @@ class JointsDialog(QDialog):
         distance = t == "distance"
         for w in (self.anchor_b, self.anchor_b_label, self.length, self.length_label, self.rope):
             w.setVisible(distance)
+        spring = t in ("revolute", "prismatic", "distance")
+        lin = t != "revolute"
+        self.stiffness_label.setText("Spring stiffness [" + ("N/m" if lin else "N·m/rad") + "]")
+        self.damping_label.setText("Spring damping [" + ("N·s/m" if lin else "N·m·s/rad") + "]")
+        self.rest.set_unit(u)
+        self.rest_label.setText(f"Spring rest {what} [{u}]")
+        for w in (self.stiffness, self.stiffness_label, self.damping, self.damping_label):
+            w.setVisible(spring)
+        for w in (self.rest, self.rest_label):     # a distance spring rests at the joint's length
+            w.setVisible(limited)
         axis = t in ("revolute", "prismatic")
         self.axis.setVisible(axis)
         self.axis_label.setVisible(axis)
@@ -293,6 +330,8 @@ class JointsDialog(QDialog):
         if j is None or self._loading:
             return
         j[key] = value
+        if key == "type" and value not in ("revolute", "prismatic", "distance"):
+            j["spring_stiffness"] = j["spring_damping"] = 0.0     # this type has no spring (its fields are hidden)
         self.list.currentItem().setText(self._item_text(j))
         if key == "type":
             self._show(self.list.currentRow())
