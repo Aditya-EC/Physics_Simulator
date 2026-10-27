@@ -471,3 +471,15 @@ def joint_rows(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot
     from ..physics.joint_kernel import joint_rows as kernel
     return kernel(kind, body_a, body_b, anchor_a, anchor_b, axis_a, axis_b, ref_rot, flags, lower, upper,
                   motor_speed, motor_max, length, origin, com, R, dt, slop, mid_origin, mid_com, mid_R)
+
+
+def convex_decomposition(vertices, triangles, max_parts=16, tolerance=0.03, max_hull_points=0):
+    """Convex parts of a closed mesh (see psim/physics/decompose.py)."""
+    from ..physics.decompose import decompose
+    return decompose(vertices, triangles, max_parts, tolerance, max_hull_points)
+
+
+def hull_volume(points, max_points=0):
+    """Volume of the convex hull of (N, 3) points (see psim/physics/decompose.py)."""
+    from ..physics.decompose import hull_volume as kernel
+    return kernel(np.asarray(points, float).reshape(-1, 3), max_points)

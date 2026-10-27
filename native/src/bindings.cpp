@@ -11,6 +11,7 @@
 
 #include "psim/collision.hpp"
 #include "psim/constraints.hpp"
+#include "psim/decompose.hpp"
 #include "psim/integrators.hpp"
 #include "psim/joints.hpp"
 #include "psim/mesh_ops.hpp"
@@ -457,6 +458,36 @@ PYBIND11_MODULE(_psim_native, m) {
        py::arg("motor_speed"), py::arg("motor_max"), py::arg("length"), py::arg("origin"), py::arg("com"),
        py::arg("rot"), py::arg("dt"), py::arg("slop"), py::arg("mid_origin") = py::none(),
        py::arg("mid_com") = py::none(), py::arg("mid_rot") = py::none());
+
+    m.def("convex_decomposition", [](const DArr& vertices, const py::array_t<int64_t, py::array::c_style |
+                                     py::array::forcecast>& triangles, int64_t max_parts, double tolerance,
+                                     int64_t max_hull_points) {
+        if (vertices.ndim() != 2 || vertices.shape(1) != 3) throw std::invalid_argument("vertices must be (V, 3)");
+        if (triangles.ndim() != 2 || triangles.shape(1) != 3) throw std::invalid_argument("triangles must be (T, 3)");
+        if (max_parts < 1) throw std::invalid_argument("max_parts must be at least 1");
+        std::vector<std::vector<Point3>> parts;
+        {
+            py::gil_scoped_release release;
+            parts = convex_decomposition(vertices.data(), vertices.shape(0), triangles.data(), triangles.shape(0),
+                                         max_parts, tolerance, max_hull_points);
+        }
+        py::list out;
+        for (const auto& p : parts) {
+            py::array_t<double> a({static_cast<py::ssize_t>(p.size()), py::ssize_t(3)});
+            auto r = a.mutable_unchecked<2>();
+            for (size_t i = 0; i < p.size(); ++i)
+                for (int k = 0; k < 3; ++k) r(static_cast<py::ssize_t>(i), k) = p[i][k];
+            out.append(a);
+        }
+        return out;
+    }, py::arg("vertices"), py::arg("triangles"), py::arg("max_parts") = 16, py::arg("tolerance") = 0.03,
+       py::arg("max_hull_points") = 0);
+    m.def("hull_volume", [](const DArr& points, int64_t max_points) {
+        if (points.ndim() != 2 || points.shape(1) != 3) throw std::invalid_argument("points must be (N, 3)");
+        std::vector<Point3> p(static_cast<size_t>(points.shape(0)));
+        for (py::ssize_t i = 0; i < points.shape(0); ++i) p[i] = {points.at(i, 0), points.at(i, 1), points.at(i, 2)};
+        return hull_volume(std::move(p), max_points);
+    }, py::arg("points"), py::arg("max_points") = 0);
 
     m.def("mass_properties_shell", [](const FArr& v, const UArr& f, double areal_density) {
         check_mesh(v, f);

@@ -31,6 +31,8 @@ quat_normalize = _impl.quat_normalize
 # an older native build without the collision pipeline or joint rows falls back to the NumPy kernels for them
 contact_rows = getattr(_impl, "contact_rows", _fallback.contact_rows)
 joint_rows = getattr(_impl, "joint_rows", _fallback.joint_rows)
+convex_decomposition = getattr(_impl, "convex_decomposition", _fallback.convex_decomposition)
+hull_volume = getattr(_impl, "hull_volume", _fallback.hull_volume)
 quat_multiply = _impl.quat_multiply
 quat_conjugate = _impl.quat_conjugate
 quat_from_axis_angle = _impl.quat_from_axis_angle

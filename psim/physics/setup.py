@@ -115,8 +115,10 @@ def build_physics_setup(scene, body_ids: list[str], trans: np.ndarray, rot: np.n
             continue
         key = solver_body(obj.id)
         rel_pos, rel_rot = relative(obj.id, key)
-        colliders.append(ColliderEntry(key, obj.id, shape, rel_pos, rel_rot, float(obj.physics_setting("restitution")),
-                                       float(obj.physics_setting("friction"))))
+        for part in (shape.parts if shape.kind == "convex_parts" else [shape]):   # a compound: one entry per part
+            colliders.append(ColliderEntry(key, obj.id, part, rel_pos, rel_rot,
+                                           float(obj.physics_setting("restitution")),
+                                           float(obj.physics_setting("friction"))))
         if shape.kind == "plane" and bodies[key].role != "static":
             diag("error", f"{obj.id} ({obj.name}): plane colliders are infinite and must be static; use a box "
                           "collider for moving objects")

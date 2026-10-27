@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+HULL_EPS = 1e-9           # coplanarity tolerance relative to the size
 MAX_VERTICES = 100         # meshes with more distinct vertices are reduced to support points in REDUCED_DIRECTIONS
 REDUCED_DIRECTIONS = 64
 
@@ -53,8 +54,35 @@ def _dedupe(points: np.ndarray, tol: float) -> np.ndarray:
     return points[np.sort(idx)]
 
 
+def _horizon(faces, owner, region) -> list[tuple[int, int]] | None:
+    """Boundary edges of a set of faces, or None unless they form one simple loop."""
+    out = []
+    for k in sorted(region):
+        a, b, c = faces[k]
+        for e in ((a, b), (b, c), (c, a)):
+            if owner[(e[1], e[0])] not in region:
+                out.append(e)
+    nxt = dict(out)
+    if len(nxt) != len(out) or not out:
+        return None                                   # pinched: a vertex starts two boundary edges
+    v, steps = out[0][0], 0
+    while True:
+        v = nxt.get(v)
+        steps += 1
+        if v is None or steps > len(out):
+            return None
+        if v == out[0][0]:
+            return out if steps == len(out) else None  # several loops: a hole in the region
+
+
 def _triangle_hull(p: np.ndarray, eps: float) -> list[tuple[int, int, int]]:
-    """Incremental 3D convex hull: outward-oriented triangles over indices of p (≥ 4 non-coplanar points)."""
+    """Quickhull: outward-oriented triangles over indices of p (≥ 4 non-coplanar points).
+
+    Each face keeps the points above it; the farthest point above the first face that has any is added next,
+    replacing the faces it sees (reached from that face across edges, distance > eps). Points within eps of the
+    hull are dropped. Adding far points first keeps the hull robust with many (nearly) coplanar points. If the
+    replaced faces do not form a disc (a pinch or hole, only with noise near eps), nearly coplanar neighbours are
+    taken in as well; a point for which even that fails is left out."""
     n = len(p)
     # initial tetrahedron from extreme points
     i0 = int(np.argmin(p[:, 0]))
@@ -68,43 +96,84 @@ def _triangle_hull(p: np.ndarray, eps: float) -> list[tuple[int, int, int]]:
     if d2[i2] <= eps * np.linalg.norm(line) or d3[i3] <= eps * np.linalg.norm(nrm):
         raise HullError("points are coplanar")
     centre = p[[i0, i1, i2, i3]].mean(axis=0)
-    faces: list[list[int]] = []
+    faces: list[tuple[int, int, int]] = []        # by face id; removed faces stay, marked dead
+    normal: list[np.ndarray] = []
+    offset: list[float] = []
+    alive: list[bool] = []
+    outside: dict[int, np.ndarray] = {}           # live face → indices of the points above it
+    owner: dict[tuple[int, int], int] = {}        # directed edge → id of the live face that has it
 
-    def add(a, b, c):
-        n_ = np.cross(p[b] - p[a], p[c] - p[a])
-        if n_ @ (p[a] - centre) < 0:
+    def add(a, b, c) -> int:
+        nn = np.cross(p[b] - p[a], p[c] - p[a])
+        ln = float(np.linalg.norm(nn))
+        nn = nn / ln if ln > 0 else nn
+        k = len(faces)
+        faces.append((a, b, c))
+        normal.append(nn)
+        offset.append(float(nn @ p[a]))
+        alive.append(True)
+        owner[(a, b)] = owner[(b, c)] = owner[(c, a)] = k
+        return k
+
+    def assign(points: np.ndarray, new: list[int]) -> None:
+        """Give each point to the new face it is farthest above (points within eps are inside)."""
+        if not len(points) or not new:
+            return
+        d = p[points] @ np.array([normal[k] for k in new]).T - np.array([offset[k] for k in new])
+        best = np.argmax(d, axis=1)
+        above = d[np.arange(len(points)), best] > eps
+        for j, k in enumerate(new):
+            sel = points[above & (best == j)]
+            if len(sel):
+                outside[k] = sel
+
+    tet = []
+    for a, b, c in ((i0, i1, i2), (i0, i1, i3), (i0, i2, i3), (i1, i2, i3)):
+        if np.cross(p[b] - p[a], p[c] - p[a]) @ (p[a] - centre) < 0:
             b, c = c, b
-        faces.append([a, b, c])
+        tet.append(add(a, b, c))
+    assign(np.array([i for i in range(n) if i not in (i0, i1, i2, i3)], np.int64), tet)
+    while outside:
+        f0 = min(outside)
+        pts = outside[f0]
+        d = p[pts] @ normal[f0] - offset[f0]
+        i = int(pts[int(np.argmax(d))])
 
-    for t in ((i0, i1, i2), (i0, i1, i3), (i0, i2, i3), (i1, i2, i3)):
-        add(*t)
-    rest = [i for i in range(n) if i not in (i0, i1, i2, i3)]
-    rest.sort(key=lambda i: -float(np.linalg.norm(p[i] - centre)))   # far points first: fewer re-triangulations
-
-    def planes(fs):
-        f = np.asarray(fs, np.int64)
-        nn = np.cross(p[f[:, 1]] - p[f[:, 0]], p[f[:, 2]] - p[f[:, 0]])
-        ln = np.linalg.norm(nn, axis=1)
-        nn = nn / np.where(ln > 0, ln, 1.0)[:, None]
-        return nn, np.einsum("ij,ij->i", nn, p[f[:, 0]]), ln > 0
-
-    fn, fd, fok = planes(faces)
-    for i in rest:
-        visible = np.flatnonzero(fok & (fn @ p[i] - fd > eps)).tolist()
-        if not visible:
+        def dist(k):
+            return float(normal[k] @ p[i] - offset[k])
+        region = {f0}
+        stack = [f0]
+        while stack:                              # the faces the point sees, connected to f0
+            a, b, c = faces[stack.pop()]
+            for e in ((b, a), (c, b), (a, c)):
+                g = owner[e]
+                if g not in region and dist(g) > eps:
+                    region.add(g)
+                    stack.append(g)
+        horizon = _horizon(faces, owner, region)
+        for attempt in range(2):                  # repair a pinch or hole: nearly coplanar neighbours, then all
+            if horizon is not None:
+                break
+            near = {owner[(e[1], e[0])] for k in region for e in ((faces[k][0], faces[k][1]),
+                                                                   (faces[k][1], faces[k][2]),
+                                                                   (faces[k][2], faces[k][0]))}
+            region |= {g for g in near if g not in region and (attempt == 1 or dist(g) > -eps)}
+            horizon = _horizon(faces, owner, region)
+        freed = [outside.pop(k) for k in sorted(region) if k in outside]
+        freed = np.concatenate(freed) if freed else np.zeros(0, np.int64)
+        freed = freed[freed != i]
+        if horizon is None:                       # could not be repaired: leave the point out
+            assign(freed, sorted(region))
             continue
-        vis = set(visible)
-        edge_count: dict[tuple[int, int], int] = {}
-        for k in visible:
+        for k in region:
+            alive[k] = False
             a, b, c = faces[k]
             for e in ((a, b), (b, c), (c, a)):
-                edge_count[e] = edge_count.get(e, 0) + 1
-        horizon = [e for e in edge_count if (e[1], e[0]) not in edge_count]
-        faces = [f for k, f in enumerate(faces) if k not in vis]
-        for a, b in horizon:
-            faces.append([a, b, i])      # keeps the orientation of the removed visible face
-        fn, fd, fok = planes(faces)
-    return [tuple(f) for f in faces]
+                if owner.get(e) == k:
+                    del owner[e]
+        new = [add(a, b, i) for a, b in horizon]   # keeps the orientation of the removed faces
+        assign(freed, new)
+    return [f for f, ok in zip(faces, alive) if ok]
 
 
 def convex_hull(points, scale: float | None = None, max_vertices: int = MAX_VERTICES) -> Hull:
@@ -113,7 +182,7 @@ def convex_hull(points, scale: float | None = None, max_vertices: int = MAX_VERT
     if len(pts) < 1:
         raise HullError("no points")
     size = scale or float(np.max(np.ptp(pts, axis=0))) or 1.0
-    eps = 1e-9 * size
+    eps = HULL_EPS * size
     pts = _dedupe(pts, 1e-7 * size)
     reduced = False
     if len(pts) > max_vertices:
@@ -159,8 +228,7 @@ def convex_hull(points, scale: float | None = None, max_vertices: int = MAX_VERT
     groups: dict[int, list[int]] = {}
     for k in range(len(tris)):
         groups.setdefault(find(k), []).append(k)
-    normals, offsets, faces = [], [], []
-    face_of_edge = {}
+    loops, loop_normals = [], []
     for g in sorted(groups.values(), key=lambda g: min(g)):
         boundary = {}
         for k in g:
@@ -177,14 +245,23 @@ def convex_hull(points, scale: float | None = None, max_vertices: int = MAX_VERT
             loop.append(nxt[loop[-1]])
             if len(loop) > len(nxt):
                 raise HullError("could not order a hull face")
-        # drop collinear vertices (merged triangles leave them on edges)
-        clean = []
+        n_ = np.mean([tn[k] for k in g], axis=0)
+        loops.append(loop)
+        loop_normals.append(n_ / np.linalg.norm(n_))
+    # drop vertices that lie on an edge (merged triangles leave them), but only when they are collinear in every
+    # face that contains them, so that neighbouring faces keep matching edges
+    keep_vertex: dict[int, bool] = {}
+    for loop in loops:
         for i, v in enumerate(loop):
             pa, pb = verts[loop[i - 1]], verts[loop[(i + 1) % len(loop)]]
-            if np.linalg.norm(np.cross(verts[v] - pa, pb - verts[v])) > 1e-9 * size * size:
-                clean.append(v)
-        n_ = np.mean([tn[k] for k in g], axis=0)
-        n_ /= np.linalg.norm(n_)
+            corner = bool(np.linalg.norm(np.cross(verts[v] - pa, pb - verts[v])) > 1e-9 * size * size)
+            keep_vertex[v] = keep_vertex.get(v, False) or corner
+    normals, offsets, faces = [], [], []
+    face_of_edge = {}
+    for loop, n_ in zip(loops, loop_normals):
+        clean = [v for v in loop if keep_vertex[v]]
+        if len(clean) < 3:
+            clean = loop
         fi = len(faces)
         faces.append(clean)
         normals.append(n_)
@@ -200,7 +277,12 @@ def convex_hull(points, scale: float | None = None, max_vertices: int = MAX_VERT
             raise HullError("open hull edge")
         edges.append((a, b))
         edge_faces.append((fi, other))
-    return Hull(verts, np.array(normals), np.array(offsets), faces, np.array(edges, np.int64).reshape(-1, 2),
+    # keep only the vertices of the polygons (merging coplanar triangles leaves interior and edge points out)
+    used = sorted({v for f in faces for v in f})
+    remap = {old: new for new, old in enumerate(used)}
+    faces = [[remap[v] for v in f] for f in faces]
+    edges = [(remap[a], remap[b]) for a, b in edges]
+    return Hull(verts[used], np.array(normals), np.array(offsets), faces, np.array(edges, np.int64).reshape(-1, 2),
                 np.array(edge_faces, np.int64).reshape(-1, 2), reduced)
 
 

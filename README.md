@@ -145,13 +145,14 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport), measuring between surface points by clicking in the viewport (empty clicks ignored, Esc cancels, selection unchanged) |
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
+| `test_decompose.py` | exact, closed cuts (volumes add up, caps close the pieces), hull volumes robust to coplanar points under rotation, decomposition quality (cylinder 1 part, I-beam, torus), C++ ≡ NumPy decomposition, compound colliders (auto/convex/convex parts, one solver entry per part), a ball falls through the hole of a torus that rests flat |
 | `test_hulls.py` | convex hulls (exact box/prism hulls, flat inputs, reduction of detailed meshes, packing), a cylinder on its side rolling at v = ω·r, a cone standing on its base, stacked cylinders at rest, C++ hull contacts ≡ NumPy reference |
 | `test_joint_kernel.py` | C++ joint rows ≡ NumPy reference for random joints of every type (limits near both ends, motors, ropes, world anchors, with and without the midpoint Jacobian), row counts and blocks per joint type, slack and taut ropes, rotation vectors, input validation |
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **556 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 480 pass and 76 native-comparison tests are skipped. This was measured on
+Current result: **564 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 485 pass and 79 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -561,10 +562,20 @@ administrators. Even so, a determined local administrator can change anything.
   offset.
 - `auto` uses the exact shape where the type has one: sphere, cube/cuboid, rigid box, capsule,
   plane/disk and point mass. Every other type gets the **convex hull of its mesh**
-  (`psim/physics/hull.py`): exact for cylinders, cones, prisms, pyramids and wedges. It is marked
-  *approximate* in the inspector and the diagnostics when the mesh is not convex (a torus collides
-  as its filled hull) or has more than 100 vertices (curved meshes such as an ellipsoid are reduced
-  to their support points in 64 directions). `box` remains available as a cheaper bounding box.
+  (`psim/physics/hull.py`): exact for cylinders, cones, prisms, pyramids and wedges. Hulls of meshes
+  with more than 100 vertices (curved meshes such as an ellipsoid) are reduced to their support
+  points in 64 directions and marked *approximate*. `box` remains available as a cheaper bounding box.
+- **Concave meshes** (torus, gear, I-beam, pulley, imported meshes) get **convex parts**: an
+  approximate convex decomposition (`native/src/decompose.cpp`, NumPy reference
+  `psim/physics/decompose.py`). The solid is cut recursively by planes; each cut is exact (the
+  pieces are closed by caps on the cut plane) and is chosen to minimise the volume the pieces' hulls
+  add. A ring, which needs two cuts before its pieces improve, is handled with one step of lookahead,
+  and blocky shapes are also cut beside their vertex coordinates (an I-beam becomes exactly its three
+  plates). It stops at 16 parts or when the hulls exceed the solid's volume by less than 3 %. Each
+  part collides as a convex hull of the same body. Examples: I-beam 3 parts (exact), pulley 2 parts
+  (+2 %), gear 16 parts (+6 %), torus 16 parts (+16 %, with an open hole). The result is cached per
+  geometry; it takes 2–500 ms with the native core and up to several seconds with the NumPy
+  fallback. *Collision shape ▸ convex* still gives the single (filled) hull.
 - **Mass alone never makes an object collide.** Only the rigid-body types default to `auto`; every
   other object needs an explicit collider.
 - Per-object restitution (the larger value of a pair is used) and friction coefficient (geometric
@@ -833,10 +844,11 @@ Key design decisions:
     other within one step is tested at the start of the step, with shapes grown by how far they can
     move, and may close the gap but not cross it. A fast bounce therefore happens up to one step's
     gap before the surface, and fast rotation is bounded conservatively (|ω| × reach).
-  - Collision shapes are sphere, box, capsule, plane and convex hull. Concave meshes collide as
-    their convex hull (marked approximate); there is no convex decomposition and no triangle-mesh
-    collider. Hulls of meshes with more than 100 vertices are reduced to 64 support points, so a
-    curved surface is faceted (an ellipsoid rolls slightly unevenly).
+  - Collision shapes are sphere, box, capsule, plane, convex hull and convex parts. Convex parts
+    approximate a concave mesh with at most 16 axis-aligned cuts, so curved concave shapes keep some
+    excess volume (a torus's parts are 16 % larger than the torus; they are marked approximate).
+    There is no triangle-mesh collider. Hulls of meshes with more than 100 vertices are reduced to
+    64 support points, so a curved surface is faceted (an ellipsoid rolls slightly unevenly).
   - Capsule–box contacts sample the capsule core and are approximate for deep edge contacts.
   - Friction is isotropic Coulomb friction with one coefficient (no separate static coefficient,
     no rolling resistance).
@@ -899,4 +911,4 @@ Key design decisions:
 
 1. Run the test suite on Windows with a hardware GPU.
 2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
-3. Physics: convex decomposition of concave meshes; a spatial grid broadphase for very large scenes.
+3. Physics: a spatial grid broadphase for very large scenes; oblique cut planes for convex parts.

@@ -68,9 +68,10 @@ The **Inspector** edits the selection. Each value shows where it comes from: **U
 - **Physical properties:** mass from density or entered directly, centre of mass, inertia, initial
   velocities, applied force and torque. Vectors can be expressed in any frame.
 - **Collision & Joints:** the collision shape, which is separate from the visible mesh. `auto`
-  uses the exact shape where one exists and otherwise the convex hull of the mesh (exact for
-  cylinders, cones, prisms and wedges; marked approximate for concave or very detailed meshes).
-  `box` uses the bounding box instead. The section also holds restitution, friction, *Show collider* and the object's joints.
+  uses the exact shape where one exists, otherwise the convex hull of a convex mesh (exact for
+  cylinders, cones, prisms and wedges), and for a concave mesh (torus, gear, I-beam, imported
+  shapes) a set of convex parts, so that a ball can pass through the hole of a ring. `convex`
+  forces the single filled hull, `box` the bounding box. Approximations are marked in the inspector. The section also holds restitution, friction, *Show collider* and the object's joints.
   **An object collides only if it has a collider:** rigid-body types default to `auto`, all others
   to `none`.
 - **Custom properties** (*Objects ▸ Add Custom Property*): scalars, vectors, text and more, with units and

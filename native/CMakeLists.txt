@@ -12,7 +12,7 @@ endif()
 option(PSIM_BUILD_TESTS "Build the native C++ tests" ON)
 
 # Core numerical library (no Python dependency)
-add_library(psim_core STATIC src/mesh_ops.cpp src/integrators.cpp src/constraints.cpp src/collision.cpp src/joints.cpp)
+add_library(psim_core STATIC src/mesh_ops.cpp src/integrators.cpp src/constraints.cpp src/collision.cpp src/joints.cpp src/decompose.cpp)
 target_include_directories(psim_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(MSVC)
     target_compile_options(psim_core PRIVATE /W4 /O2)

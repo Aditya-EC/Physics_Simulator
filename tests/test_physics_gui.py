@@ -85,7 +85,7 @@ def test_inspector_collision_section(scene, owned):  # noqa: F811
     assert torus.physics_setting("collider") == "auto"
     panel._sync()
     texts = [lab.text() for lab in panel.findChildren(QLabel)]
-    assert any(t.startswith("Collides as: convex hull") and "approximate" in t for t in texts)   # a torus is concave
+    assert any(t.startswith("Collides as: ") and "convex parts" in t for t in texts)   # a torus is split into convex parts
     e.add_joint("ball", torus.id, None, [0, 0, 2])
     panel._sync()
     assert any("Ball 1" in lab.text() for lab in panel.findChildren(QLabel))

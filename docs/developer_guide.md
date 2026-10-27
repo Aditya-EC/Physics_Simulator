@@ -109,9 +109,9 @@ routine needs:
   prescribed motion, constraints (collisions and joints), recording and stop conditions.
 - **Headless:** `psim-batch project.psim --summary-json out.json` reports the same stage profile.
   Run it under `python -m cProfile -s cumtime -m psim.batch …` for function-level detail.
-- Collision detection (including convex hulls), contact rows, joint rows and the solver are
-  C++. The remaining Python work per step is vectorised array bookkeeping: about 0.8 ms per step
-  for the ten-body physics demo, and 5.3 ms for 216 stacked boxes.
+- Collision detection (including convex hulls), convex decomposition, contact rows, joint rows and
+  the solver are C++. The remaining Python work per step is vectorised array bookkeeping: about
+  0.8 ms per step for the ten-body physics demo, and 5.3 ms for 216 stacked boxes.
 - A new collision shape needs the same narrowphase in `psim/physics/collision.py` (the reference)
   and `native/src/collision.cpp`; a new joint type needs its rows in `psim/physics/joint_kernel.py`
   and `native/src/joints.cpp` (`tests/test_joint_kernel.py` compares them). Hulls reach C++
