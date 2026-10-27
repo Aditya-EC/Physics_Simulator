@@ -166,8 +166,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 
 Current result: **616 Python tests and the C++ test executable pass** with the native core, also at
 a 2× scale factor. With the NumPy fallback, 530 pass and 86 native-comparison tests are skipped.
-This was measured on Linux with Mesa llvmpipe under Xvfb. Windows and macOS have not been tested
-yet; see §5 and §6.
+This was measured on Linux with Mesa llvmpipe under Xvfb. GitHub Actions CI also passes on Windows
+and macOS, where the OpenGL rendering tests skip (no OpenGL 3.3 on those runners); see §5.
 
 ## 3. What Phase 1 implements
 
@@ -763,8 +763,10 @@ Batch runs are unaffected.
   `/opt/psim-studio`, adds commands in `/usr/bin`, a desktop entry, an icon and a `.psim` MIME type.
   It was installed, run and removed in this environment.
 - **Windows:** the same build plus an Inno Setup 6 installer (`packaging/windows/psim_studio.iss`)
-  with Start-menu entries, a `.psim` file association and an uninstaller. The installer script has
-  **not** been compiled or run here (no Windows machine).
+  with Start-menu entries, a `.psim` file association and an uninstaller. CI builds and
+  smoke-tests the frozen Windows and macOS executables and uploads the archives (and the installer,
+  when Inno Setup is present on the runner); the installer itself has not been run on a Windows
+  machine.
 
 **Documentation** (`docs/`).
 - `user_guide.md`: a walkthrough of the application
@@ -797,7 +799,7 @@ Each item is tested on both numerical backends unless noted. Details are in the 
 | Faster contact bookkeeping and a sweep axis chosen by spread | §5 performance figures | `test_contact_kernel.py` |
 | **Contact and joint forces / torques** per body as recorded variables (plots, statistics, `--var`) | §3e *Variables* | `test_constraint_loads.py` |
 | *Mechanisms* example and template | `examples/mechanisms_demo.psim` | `test_joint_springs.py` |
-| Cross-platform CI (Linux, Windows, macOS; packages) — written, **not yet run** | `.github/workflows/ci.yml` | — |
+| Cross-platform CI (Linux, Windows, macOS, 2× scale; packages) — **passing** on GitHub Actions | `.github/workflows/ci.yml` | — |
 
 ## 4. Architecture
 
@@ -882,8 +884,9 @@ Key design decisions:
 ## 5. Limitations (honest status)
 
 - Distribution limits (Phase 8):
-  - The Windows installer and the macOS archive are scripted but **not built or tested** here (Linux
-    only). The executables are not code-signed, so Windows SmartScreen and macOS Gatekeeper will warn.
+  - The Windows and macOS packages are built and smoke-tested by CI, but the Windows installer has
+    not been installed on a real machine. The executables are not code-signed, so Windows
+    SmartScreen and macOS Gatekeeper will warn.
   - The frozen bundle is about 250 MB, mostly Qt. Two executables share one `_internal` folder.
   - There is no automatic updater.
   - The GUI-responsiveness fix keeps input working, but under software OpenGL a single frame of a
@@ -978,11 +981,13 @@ Key design decisions:
 - `.github/workflows/ci.yml` builds and tests the project on Linux (Xvfb + Mesa, native core and NumPy
   fallback), Windows and macOS (offscreen: the OpenGL tests skip there), then builds the packages on
   each and uploads them (the Windows job builds the Inno Setup installer when Inno Setup is present).
-  A further Linux job runs the suite at a 2× scale factor (high-DPI). The workflow has been written
-  and checked for syntax here but **has not run yet**: no repository is attached to this
-  environment.
-- Developed and tested on Linux with software OpenGL (Mesa llvmpipe). **It has not been run on
-  Windows or macOS.** What has been checked here, on Linux, towards those platforms:
+  A further Linux job runs the suite at a 2× scale factor (high-DPI). **All jobs pass** on GitHub
+  Actions (Windows, macOS on Apple silicon, Linux with the native core, the NumPy fallback and 2×
+  scale), and the packaging jobs build and smoke-test the frozen application on all three. Failing
+  tests are reported as annotations on the run page.
+- Developed on Linux with software OpenGL (Mesa llvmpipe). On Windows and macOS the CI runners
+  have no OpenGL 3.3, so the rendering, picking and viewport tests skip there: **the 3D viewport has
+  not been run on Windows or macOS** with a real GPU. Platform issues found and fixed:
   - the C++ core is compiled without fused multiply-add contraction (`-ffp-contract=off`): Clang
     fuses by default on Apple silicon, which changed rounding enough for the native convex
     decomposition of a torus to differ from the NumPy reference by one point (found by CI on macOS,
@@ -1002,9 +1007,10 @@ Key design decisions:
 
 ## 6. Next steps
 
-1. Push the repository to GitHub so that the CI workflow runs on Windows and macOS, and run the
-   suite on Windows with a hardware GPU (the CI runners have no OpenGL 3.3).
-2. Build and test the Windows installer and a signed macOS `.app`; add code signing.
+1. Run the application and the suite on Windows and macOS machines with a hardware GPU (the CI
+   runners have no OpenGL 3.3, so the viewport is untested there).
+2. Install and test the Windows installer on a real machine; build a signed macOS `.app`; add code
+   signing.
 3. Physics: a better decomposition for curved concave meshes (a torus keeps 16 % excess volume with
    axis-aligned cuts; adding diagonal cut planes was tried and gave 12 % at 3–4× the cost, so a
    voxel- or concavity-guided method would be needed); a spatial grid broadphase only matters for
