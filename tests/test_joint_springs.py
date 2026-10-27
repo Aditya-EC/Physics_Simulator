@@ -145,3 +145,27 @@ def test_spring_and_break_validation():
         with pytest.raises(JointError, match=msg):
             validate_joints([bad])
     assert not validate_joints([dict(base, type="ball")])[0].has_spring
+
+
+def test_mechanisms_demo_behaves_as_described(scene):
+    """The 'mechanisms' template (examples/mechanisms_demo.psim): each station does what the docs say."""
+    from psim.project.templates import PROJECT_TEMPLATES
+    s, e = scene
+    PROJECT_TEMPLATES["mechanisms"][1](s, e)
+    by = {o.name: o for o in s.objects.values()}
+    rec = Recording()
+    eng = make_engine(scene, rec, delta_time=0.004, duration=2.5, integrator="velocity_verlet")
+    run(eng)
+
+    def last(name, key="com"):
+        return rec.column((by[name].id, key))[-1]
+    marble = last("Marble")
+    assert marble[2] == pytest.approx(0.12, abs=0.002) and math.hypot(marble[0] + 8.0, marble[1]) < 0.35 - 0.12
+    assert [j.name for j in s.joints if j.id in eng.physics.broken] == ["Breakable Rope"]
+    assert last("Hanging Crate")[2] == pytest.approx(0.2, abs=0.01)
+    sticky, slippery = (rec.column((by[n].id, "com")) for n in ("Sticky Block", "Slippery Block"))
+    assert np.linalg.norm(sticky[-1] - sticky[0]) < 1e-5 and np.linalg.norm(slippery[-1] - slippery[0]) > 1.0
+    v_resisted = np.linalg.norm(last("Rolling Ball (b = 5 mm)", "v"))
+    v_free = np.linalg.norm(last("Rolling Ball (b = 0)", "v"))
+    assert v_free == pytest.approx(2.5, abs=0.01) and v_resisted < 2.5 - 0.3
+    assert last("Sprung Platform")[2] < 1.0 - 0.05                                  # sagged on its spring

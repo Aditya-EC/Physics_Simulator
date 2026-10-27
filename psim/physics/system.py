@@ -262,10 +262,21 @@ class PhysicsSystem:
         if self._breakable and jrows is not None and dt > 0:
             first = len(rows["ia"]) - len(jrows["ia"])          # joint rows follow the contact rows
             self._check_breaks(jrows, lam[first:], dt)
-        return self._apply(s, dv, dw, vp, wp, dt)
+        touching = None
+        if crows is not None and len(crows["ia"]):
+            touching = np.unique(np.r_[crows["ia"], crows["ib"]])
+            touching = touching[touching >= 0]
+        return self._apply(s, dv, dw, vp, wp, dt, start, touching)
 
-    def _apply(self, s, dv, dw, vp, wp, dt):
-        """Add the velocity changes to the dynamic bodies of `s` and move them by (Δv + position pass)·Δt."""
+    def _apply(self, s, dv, dw, vp, wp, dt, start=None, touching=None):
+        """Add the velocity changes to the dynamic bodies of `s` and move them by (Δv + position pass)·Δt.
+
+        Bodies in contact (`touching`, solver indices) instead end the step at x₀ + Δt·v' (and q₀ turned by Δt·ω')
+        from the start state: the semi-implicit Euler step with the constrained velocity v'. Adding Δv·Δt to a
+        higher-order integrator's end pose would leave the free-flight curvature in it (½ g Δt² for velocity Verlet
+        or RK4): a resting body would rise by that much every step, lose its contact every other step and never
+        hold by static friction. Bodies without contacts (joints only, free flight) keep their integrator's
+        accuracy."""
         n_eng = len(s.v)
         dv_eng, dw_eng = np.zeros((n_eng, 3)), np.zeros((n_eng, 3))
         dyn = np.flatnonzero(self.dynamic)
@@ -279,6 +290,14 @@ class PhysicsSystem:
             q = np.ascontiguousarray(s.q[e[turning]])
             numerics.quat_integrate(q, np.ascontiguousarray(spin[turning]), dt)
             s.q[e[turning]] = q
+        if start is not None and touching is not None and len(touching):
+            c = np.intersect1d(dyn, touching)
+            if len(c):
+                ec = self.engine_rows[c]
+                s.x[ec] = start.x[ec] + (s.v[ec] + vp[c]) * dt
+                q = np.ascontiguousarray(start.q[ec], float).copy()
+                numerics.quat_integrate(q, np.ascontiguousarray(s.w[ec] + wp[c]), dt)
+                s.q[ec] = q
         dv_eng[e], dw_eng[e] = dv[dyn], dw[dyn]
         return dv_eng, dw_eng
 

@@ -1,0 +1,1738 @@
+{
+ "format": "psim-project",
+ "format_version": 2,
+ "app_version": "0.1.0",
+ "metadata": {
+  "title": "Springs, Breakable Joints & Contact Materials Demo",
+  "created": "2026-10-27T17:41:26+00:00",
+  "modified": "2026-10-27T17:41:26+00:00"
+ },
+ "id_counter": 14,
+ "objects": [
+  {
+   "id": "OBJ-000001",
+   "type": "basic.plane",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 22.0,
+    "width": 10.0
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Ground",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.3,
+    0.32,
+    0.36
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 5.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000002",
+   "type": "basic.torus",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "major_radius": 0.5,
+    "minor_radius": 0.15,
+    "segments": 64
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto",
+    "show_collider": true
+   },
+   "name": "Ring",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -8.0,
+    0.0,
+    0.15
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.65,
+    0.55,
+    0.85
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000003",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.12,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "trajectory": {
+    "enabled": true
+   },
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Marble",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -8.0,
+    0.0,
+    2.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.45,
+    0.2
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000004",
+   "type": "basic.cuboid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 1.0,
+    "width": 1.0,
+    "height": 0.1
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Sprung Platform",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -4.5,
+    0.0,
+    1.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.35,
+    0.75,
+    1.0
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 500.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000005",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.15,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "trajectory": {
+    "enabled": true
+   },
+   "physics": {
+    "collider": "auto",
+    "restitution": 0.6
+   },
+   "name": "Dropped Ball",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -4.5,
+    0.0,
+    3.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.8,
+    0.3
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000006",
+   "type": "basic.cuboid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 0.8,
+    "width": 0.05,
+    "height": 1.2
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Spring Door",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    -1.1,
+    0.0,
+    0.7
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.55,
+    0.85,
+    0.45
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 500.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    2.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000007",
+   "type": "basic.cube",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "size": 0.4
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Hanging Crate",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.5,
+    0.0,
+    1.8
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.8,
+    0.62,
+    0.35
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 500.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000008",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.15,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Hammer",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    1.55,
+    0.0,
+    4.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.75,
+    0.75,
+    0.8
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000009",
+   "type": "basic.cuboid",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "length": 3.0,
+    "width": 1.6,
+    "height": 0.1
+   },
+   "orientation": [
+    0.9762960071199334,
+    0.0,
+    0.21643961393810288,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto",
+    "friction": 0.3,
+    "static_friction": 0.6
+   },
+   "name": "Ramp",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    5.0,
+    0.0,
+    1.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.55,
+    0.57,
+    0.62
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000010",
+   "type": "basic.cube",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "size": 0.3
+   },
+   "orientation": [
+    0.9762960071199334,
+    0.0,
+    0.21643961393810288,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto",
+    "friction": 0.3,
+    "static_friction": 0.6
+   },
+   "name": "Sticky Block",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    5.08452365234814,
+    -0.4,
+    1.18126155740733
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.55,
+    0.2
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000011",
+   "type": "basic.cube",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "size": 0.3
+   },
+   "orientation": [
+    0.9762960071199334,
+    0.0,
+    0.21643961393810288,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "physics": {
+    "collider": "auto",
+    "friction": 0.3,
+    "static_friction": 0.3
+   },
+   "name": "Slippery Block",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    5.08452365234814,
+    0.4,
+    1.18126155740733
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.35,
+    0.75,
+    1.0
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000012",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.15,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "trajectory": {
+    "enabled": true
+   },
+   "physics": {
+    "collider": "auto",
+    "rolling_resistance": 0.005
+   },
+   "name": "Rolling Ball (b = 5 mm)",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    7.4,
+    -3.5,
+    0.15
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.85,
+    0.75,
+    0.95
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    2.5,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    -16.666666666666668,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  },
+  {
+   "id": "OBJ-000013",
+   "type": "basic.sphere",
+   "parent": null,
+   "tags": [],
+   "params": {
+    "radius": 0.15,
+    "segments": 48
+   },
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "overlays": {},
+   "custom": [],
+   "trajectory": {
+    "enabled": true
+   },
+   "physics": {
+    "collider": "auto"
+   },
+   "name": "Rolling Ball (b = 0)",
+   "description": "",
+   "visible": true,
+   "locked": false,
+   "position": [
+    8.2,
+    -3.5,
+    0.15
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "color": [
+    0.95,
+    0.95,
+    0.95
+   ],
+   "opacity": 1.0,
+   "material": "Matte Plastic",
+   "metallic": 0.0,
+   "roughness": 0.75,
+   "wireframe": false,
+   "show_surface": true,
+   "show_edges": false,
+   "label_color": [
+    0.92,
+    0.93,
+    0.95
+   ],
+   "mass_mode": "density",
+   "density": 1000.0,
+   "mass_input": 1.0,
+   "linear_velocity": [
+    0.0,
+    2.5,
+    0.0
+   ],
+   "linear_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angular_velocity": [
+    -16.666666666666668,
+    0.0,
+    0.0
+   ],
+   "angular_acceleration": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "force": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "local_axes_size": 0.0,
+   "label_font_size": 9,
+   "label_precision": 3,
+   "label_background": true,
+   "label_placement": "above"
+  }
+ ],
+ "processes": [
+  {
+   "uid": "PRC-0001",
+   "process": "dyn.gravity",
+   "targets": {
+    "ids": [
+     "OBJ-000003",
+     "OBJ-000004",
+     "OBJ-000005",
+     "OBJ-000006",
+     "OBJ-000007",
+     "OBJ-000008",
+     "OBJ-000010",
+     "OBJ-000011",
+     "OBJ-000012",
+     "OBJ-000013"
+    ],
+    "types": [],
+    "tags": []
+   },
+   "params": {
+    "g": [
+     0.0,
+     0.0,
+     -9.80665
+    ]
+   },
+   "enabled": true,
+   "label": "Earth gravity"
+  }
+ ],
+ "process_counter": 2,
+ "global_parameters": [],
+ "reference_frames": [],
+ "frame_counter": 1,
+ "joints": [
+  {
+   "id": "JNT-0001",
+   "name": "Suspension",
+   "type": "prismatic",
+   "body_a": "OBJ-000004",
+   "body_b": null,
+   "anchor_a": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anchor_b": [
+    -4.5,
+    0.0,
+    1.0
+   ],
+   "axis_a": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "axis_b": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "ref_orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "limit_enabled": false,
+   "lower": 0.0,
+   "upper": 0.0,
+   "motor_enabled": false,
+   "motor_speed": 0.0,
+   "motor_max": 0.0,
+   "length": 1.0,
+   "rope": false,
+   "collide_connected": false,
+   "enabled": true,
+   "description": "",
+   "spring_stiffness": 6000.0,
+   "spring_damping": 150.0,
+   "spring_rest": 0.0,
+   "break_force": 0.0,
+   "break_torque": 0.0
+  },
+  {
+   "id": "JNT-0002",
+   "name": "Door Hinge",
+   "type": "revolute",
+   "body_a": "OBJ-000006",
+   "body_b": null,
+   "anchor_a": [
+    -0.3999999999999999,
+    0.0,
+    0.0
+   ],
+   "anchor_b": [
+    -1.5,
+    0.0,
+    0.7
+   ],
+   "axis_a": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "axis_b": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "ref_orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "limit_enabled": false,
+   "lower": 0.0,
+   "upper": 0.0,
+   "motor_enabled": false,
+   "motor_speed": 0.0,
+   "motor_max": 0.0,
+   "length": 1.0,
+   "rope": false,
+   "collide_connected": false,
+   "enabled": true,
+   "description": "",
+   "spring_stiffness": 40.0,
+   "spring_damping": 1.5,
+   "spring_rest": 0.0,
+   "break_force": 0.0,
+   "break_torque": 0.0
+  },
+  {
+   "id": "JNT-0003",
+   "name": "Breakable Rope",
+   "type": "distance",
+   "body_a": "OBJ-000007",
+   "body_b": null,
+   "anchor_a": [
+    0.0,
+    0.0,
+    0.19999999999999996
+   ],
+   "anchor_b": [
+    1.5,
+    0.0,
+    3.0
+   ],
+   "axis_a": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "axis_b": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "ref_orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "limit_enabled": false,
+   "lower": 0.0,
+   "upper": 0.0,
+   "motor_enabled": false,
+   "motor_speed": 0.0,
+   "motor_max": 0.0,
+   "length": 1.0,
+   "rope": true,
+   "collide_connected": false,
+   "enabled": true,
+   "description": "",
+   "spring_stiffness": 0.0,
+   "spring_damping": 0.0,
+   "spring_rest": 0.0,
+   "break_force": 941.4384420855765,
+   "break_torque": 0.0
+  }
+ ],
+ "joint_counter": 4,
+ "measurements": [],
+ "measurement_counter": 1,
+ "assets": {
+  "meshes": {}
+ },
+ "units": {
+  "preferred": {},
+  "property_units": {},
+  "custom_units": []
+ },
+ "view": {
+  "grids": {
+   "XY": {
+    "plane": "XY",
+    "visible": true,
+    "color": [
+     0.55,
+     0.58,
+     0.64
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "YZ": {
+    "plane": "YZ",
+    "visible": false,
+    "color": [
+     0.62,
+     0.55,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   },
+   "XZ": {
+    "plane": "XZ",
+    "visible": false,
+    "color": [
+     0.55,
+     0.62,
+     0.55
+    ],
+    "opacity": 0.55,
+    "major_spacing": 1.0,
+    "subdivisions": 5,
+    "extent": 20.0,
+    "line_width": 1.0,
+    "show_labels": false,
+    "emphasize_origin": true
+   }
+  },
+  "axes": {
+   "visible": true,
+   "origin": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "length": 1.5,
+   "arrow_size": 1.0,
+   "line_width": 3.0,
+   "x_color": [
+    0.91,
+    0.3,
+    0.28
+   ],
+   "y_color": [
+    0.42,
+    0.8,
+    0.32
+   ],
+   "z_color": [
+    0.32,
+    0.55,
+    0.97
+   ],
+   "show_labels": true,
+   "show_origin_marker": true,
+   "show_view_triad": true
+  },
+  "snap": {
+   "grid_snap": true,
+   "translate_increment": 0.25,
+   "rotate_snap": false,
+   "rotate_increment_deg": 15.0,
+   "scale_snap": false,
+   "scale_increment": 0.1,
+   "surface_snap": true,
+   "work_plane": "XY",
+   "work_plane_offset": 0.0
+  },
+  "environment": {
+   "background_top": [
+    0.17,
+    0.18,
+    0.2
+   ],
+   "background_bottom": [
+    0.1,
+    0.105,
+    0.115
+   ],
+   "shadows": true,
+   "ground_shadow": true,
+   "ambient": 0.35,
+   "light_azimuth_deg": 35.0,
+   "light_elevation_deg": 55.0,
+   "light_intensity": 2.6,
+   "show_labels": true,
+   "show_local_axes": false,
+   "highlight_color": [
+    0.98,
+    0.62,
+    0.18
+   ],
+   "show_stats": true,
+   "show_colliders": false,
+   "show_joints": true,
+   "show_contacts": true,
+   "msaa_samples": 4
+  },
+  "camera": {
+   "target": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "distance": 9.0,
+   "azimuth_deg": -55.0,
+   "elevation_deg": 28.0,
+   "fov_deg": 45.0,
+   "orthographic": false
+  },
+  "bookmarks": {}
+ },
+ "simulation": {
+  "delta_time": 0.004,
+  "update_rate_hz": 100.0,
+  "duration": 8.0,
+  "render_fps": 60.0,
+  "pacing": "real_time",
+  "duration_policy": "final_partial_step",
+  "max_catch_up_steps": 10,
+  "record_every_n_steps": 5,
+  "record_enabled": true,
+  "record_max_mb": 256.0,
+  "record_overflow": "decimate",
+  "record_process_outputs": true,
+  "integrator": "velocity_verlet",
+  "adaptive_tolerance": 1e-08,
+  "gyroscopic": true,
+  "physics_enabled": true,
+  "solver_iterations": 20,
+  "position_iterations": 8,
+  "baumgarte": 1.0,
+  "contact_slop": 0.002,
+  "restitution_threshold": 0.2,
+  "continuous_collision": true,
+  "breakpoints": [],
+  "stop_conditions": [],
+  "min_delta_time": 1e-09,
+  "max_delta_time": 10.0,
+  "min_update_rate_hz": 0.1,
+  "max_update_rate_hz": 100000.0
+ },
+ "ui": {},
+ "plots": [
+  {
+   "title": "Sprung platform and dropped ball (height)",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000004",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "z": null,
+     "label": "platform",
+     "color": [
+      0.3,
+      0.62,
+      0.95
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000005",
+      "quantity": "com",
+      "component": "z",
+      "frame": null
+     },
+     "z": null,
+     "label": "ball",
+     "color": [
+      0.95,
+      0.55,
+      0.2
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  },
+  {
+   "title": "Spring door: angular velocity",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000006",
+      "quantity": "angular_velocity",
+      "component": "z",
+      "frame": null
+     },
+     "z": null,
+     "label": "",
+     "color": [
+      0.35,
+      0.8,
+      0.45
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  },
+  {
+   "title": "Rolling balls: speed",
+   "kind": "2d",
+   "series": [
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000012",
+      "quantity": "speed",
+      "component": "",
+      "frame": null
+     },
+     "z": null,
+     "label": "b = 5 mm",
+     "color": [
+      0.85,
+      0.35,
+      0.55
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    },
+    {
+     "x": {
+      "object": null,
+      "quantity": "time",
+      "component": "",
+      "frame": null
+     },
+     "y": {
+      "object": "OBJ-000013",
+      "quantity": "speed",
+      "component": "",
+      "frame": null
+     },
+     "z": null,
+     "label": "b = 0",
+     "color": [
+      0.65,
+      0.5,
+      0.95
+     ],
+     "width": 2.0,
+     "style": "solid",
+     "marker": "none",
+     "marker_size": 6.0
+    }
+   ],
+   "x_log": false,
+   "y_log": false,
+   "grid": true,
+   "legend": true,
+   "x_limits": null,
+   "y_limits": null,
+   "x_label": "",
+   "y_label": "",
+   "z_label": ""
+  }
+ ]
+}

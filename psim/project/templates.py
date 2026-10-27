@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 
+from .. import numerics
 from ..scene.editing import SceneEditor
 from ..scene.scene_manager import Scene
 
@@ -284,6 +285,84 @@ def _measurements_demo(scene: Scene, editor: SceneEditor) -> None:
     editor.add_measurement("distance", [bob.id, target.id], name="Bob to target")
 
 
+def _mechanisms_demo(scene: Scene, editor: SceneEditor) -> None:
+    """Springs, breakable joints, convex parts and contact materials, one station each along X."""
+    from ..processes.process_base import TargetFilter
+    ground = scene.create_object("basic.plane", name="Ground", params={"length": 22, "width": 10})
+    ground.color = [0.30, 0.32, 0.36]
+    # 1. a ball falls through the hole of a ring (the torus collides as convex parts, not as its filled hull)
+    ring = scene.create_object("basic.torus", name="Ring", position=[-8.0, 0.0, 0.15])
+    ring.color = [0.65, 0.55, 0.85]
+    marble = scene.create_object("basic.sphere", name="Marble", params={"radius": 0.12}, position=[-8.0, 0.0, 2.0])
+    marble.color = [0.95, 0.45, 0.20]
+    # 2. a platform on a vertical slider with a spring and damper catches a ball
+    platform = scene.create_object("basic.cuboid", name="Sprung Platform", position=[-4.5, 0.0, 1.0],
+                                   params={"length": 1.0, "width": 1.0, "height": 0.1})
+    platform.color = [0.35, 0.75, 1.0]
+    dropped = scene.create_object("basic.sphere", name="Dropped Ball", params={"radius": 0.15},
+                                  position=[-4.5, 0.0, 3.0])
+    dropped.color = [0.95, 0.80, 0.30]
+    # 3. a door on a vertical hinge with a torsion spring, pushed open
+    door = scene.create_object("basic.cuboid", name="Spring Door", position=[-1.1, 0.0, 0.7],
+                               params={"length": 0.8, "width": 0.05, "height": 1.2})
+    door.color = [0.55, 0.85, 0.45]
+    door.angular_velocity = [0.0, 0.0, 2.0]
+    # 4. a crate on a breakable rope; a heavy ball falls on it and the rope snaps
+    crate = scene.create_object("basic.cube", name="Hanging Crate", params={"size": 0.4}, position=[1.5, 0.0, 1.8])
+    crate.color = [0.80, 0.62, 0.35]
+    hammer = scene.create_object("basic.sphere", name="Hammer", params={"radius": 0.15}, position=[1.55, 0.0, 4.0])
+    hammer.color = [0.75, 0.75, 0.80]
+    # 5. two blocks on a 25° slope: the one with high static friction stays, the other slides
+    tilt = math.radians(25)
+    ramp = scene.create_object("basic.cuboid", name="Ramp", position=[5.0, 0.0, 1.0],
+                               params={"length": 3.0, "width": 1.6, "height": 0.1})
+    ramp.color = [0.55, 0.57, 0.62]
+    n = [math.sin(tilt), 0.0, math.cos(tilt)]
+    blocks = []
+    for k, (name, y) in enumerate((("Sticky Block", -0.4), ("Slippery Block", 0.4))):
+        b = scene.create_object("basic.cube", name=name, params={"size": 0.3},
+                                position=[5.0 + 0.2 * n[0], y, 1.0 + 0.2 * n[2]])
+        b.color = [0.95, 0.55, 0.20] if k == 0 else [0.35, 0.75, 1.0]
+        blocks.append(b)
+    # 6. two balls rolling side by side; one has rolling resistance
+    rollers = []
+    for k, (name, x) in enumerate((("Rolling Ball (b = 5 mm)", 7.4), ("Rolling Ball (b = 0)", 8.2))):
+        r = 0.15
+        b = scene.create_object("basic.sphere", name=name, params={"radius": r}, position=[x, -3.5, r])
+        b.linear_velocity = [0.0, 2.5, 0.0]
+        b.angular_velocity = [-2.5 / r, 0.0, 0.0]          # rolling without slipping
+        b.color = [0.85, 0.75, 0.95] if k == 0 else [0.95, 0.95, 0.95]
+        rollers.append(b)
+    objs = [ground, ring, marble, platform, dropped, door, crate, hammer, ramp, *blocks, *rollers]
+    editor.add_objects(objs, text="Mechanisms demo", select=False)
+    for o in objs:
+        editor.set_property([o.id], "physics.collider", "auto")
+    editor.set_property([ramp.id], "orientation", list(numerics.quat_from_axis_angle([0, 1, 0], tilt)))
+    for b in blocks:
+        editor.set_property([b.id], "orientation", list(numerics.quat_from_axis_angle([0, 1, 0], tilt)))
+    for o in (platform, door, crate):
+        editor.set_property([o.id], "density", 500.0)       # wood
+    editor.set_property([ring.id], "physics.show_collider", True)
+    editor.set_property([dropped.id], "physics.restitution", 0.6)
+    editor.set_property([ramp.id], "physics.friction", 0.3)
+    editor.set_property([ramp.id], "physics.static_friction", 0.6)
+    for b, mu_s in zip(blocks, (0.6, 0.3)):
+        editor.set_property([b.id], "physics.friction", 0.3)
+        editor.set_property([b.id], "physics.static_friction", mu_s)
+    editor.set_property([rollers[0].id], "physics.rolling_resistance", 0.005)
+    for o in (marble, dropped, *rollers):
+        editor.set_property([o.id], "trajectory.enabled", True)
+    editor.add_joint("prismatic", platform.id, None, [-4.5, 0.0, 1.0], [0.0, 0.0, 1.0], name="Suspension",
+                     spring_stiffness=6000.0, spring_damping=150.0)
+    editor.add_joint("revolute", door.id, None, [-1.5, 0.0, 0.7], [0.0, 0.0, 1.0], name="Door Hinge",
+                     spring_stiffness=40.0, spring_damping=1.5)
+    crate_mass = crate.mass_properties()["mass"]
+    editor.add_joint("distance", crate.id, None, [1.5, 0.0, 2.0], name="Breakable Rope",
+                     anchor_world_b=[1.5, 0.0, 3.0], rope=True, break_force=3.0 * crate_mass * 9.80665)
+    dynamic = [marble, platform, dropped, door, crate, hammer, *blocks, *rollers]
+    editor.assign_process("dyn.gravity", TargetFilter(ids=[o.id for o in dynamic]), label="Earth gravity")
+
+
 PROJECT_TEMPLATES = {
     "empty": ("Empty Scene", None),
     "primitives": ("Primitive Gallery", _primitive_gallery),
@@ -294,4 +373,5 @@ PROJECT_TEMPLATES = {
     "recording": ("Data Recording & Plots Demo", _recording_demo),
     "physics": ("Rigid Bodies, Collisions & Joints Demo", _physics_demo),
     "measurements": ("Measurements & Stop Conditions Demo", _measurements_demo),
+    "mechanisms": ("Springs, Breakable Joints & Contact Materials Demo", _mechanisms_demo),
 }

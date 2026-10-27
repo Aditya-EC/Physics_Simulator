@@ -13,7 +13,7 @@ be changed in *Tools ▸ Keyboard Shortcuts*.
 
 Useful options:
 - `--template NAME` starts from a built-in template: empty, primitives, mechanical, simulation,
-  formulas, frames, recording or physics.
+  formulas, frames, recording, physics, measurements or mechanisms.
 - `--theme dark|light` chooses the theme.
 - `--reset-settings` forgets the window layout and preferences.
 
@@ -28,6 +28,7 @@ Open one and press **F5** to run it:
 | `recording_demo.psim` | trajectories and ready-made plots |
 | `physics_demo.psim` | collisions, a stack, a hinge, a rope chain and a motorised slider |
 | `measurements_demo.psim` | live distance/angle measurements and a stop condition |
+| `mechanisms_demo.psim` | joint springs, a breakable rope, convex parts (a ring), static friction and rolling resistance |
 
 ## 2. Building a scene
 

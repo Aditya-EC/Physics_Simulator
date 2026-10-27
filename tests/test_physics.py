@@ -162,6 +162,45 @@ def test_spinning_resistance_slows_a_spinning_ball(scene):
     assert g
 
 
+@pytest.mark.parametrize("integrator", ["semi_implicit_euler", "explicit_euler", "velocity_verlet", "midpoint",
+                                        "rk4", "dopri5"])
+def test_resting_contact_holds_with_every_integrator(scene, integrator):
+    """A box resting flat, and one held by static friction on a slope, stay in contact at every step and do not
+    move, whatever the integrator (higher-order integrators used to let resting bodies chatter)."""
+    s, e = scene
+    flat = _box(e, [0, 0, 0.2])
+    theta = math.atan(0.5)
+    ramp = e.add_new("basic.cuboid", position=[3, 0, 1.0], params={"length": 3, "width": 1, "height": 0.1})
+    e.set_property([ramp.id], "physics.collider", "auto")
+    n = np.array([math.sin(theta), 0, math.cos(theta)])
+    slope = _box(e, list(np.array([3, 0, 1.0]) + n * 0.25), mu=0.3)
+    for o in (ramp, slope):
+        e.set_property([o.id], "orientation", list(numerics.quat_from_axis_angle([0, 1, 0], theta)))
+        e.set_property([o.id], "physics.static_friction", 0.6)
+    e.set_property([ramp.id], "physics.friction", 0.3)
+    _ground(e)
+    _gravity(e, flat, slope)
+    rec = Recording()
+    eng = make_engine(scene, rec, delta_time=0.004, duration=1.0, integrator=integrator)
+    ph = eng.physics
+    boxes = {ph.index[flat.id], ph.index[slope.id]}
+    missing = []
+    orig = ph._contacts
+
+    def counting(*args, **kwargs):
+        d = orig(*args, **kwargs)
+        touching = set() if d is None else set(np.r_[d["ia"], d["ib"]].tolist())
+        missing.append(bool(boxes - touching))
+        return d
+    ph._contacts = counting
+    run(eng)
+    assert not any(missing), [k for k, x in enumerate(missing) if x][:10]      # in contact at every step
+    tol = 1e-3 if integrator == "explicit_euler" else 1e-6     # explicit Euler: a slow creep (0.2 mm/s)
+    for b in (flat, slope):
+        p = rec.column((b.id, "com"))
+        assert np.linalg.norm(p[-1] - p[0]) < tol
+
+
 def test_stack_of_boxes_is_stable(scene):
     s, e = scene
     _ground(e)

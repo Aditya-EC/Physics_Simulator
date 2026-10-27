@@ -73,13 +73,15 @@ python build_native.py                   # builds + tests the C++ core, installs
 python app.py                            # launch
 python app.py examples/mechanical_demo.psim
 python app.py --template simulation      # start from a built-in project template (also: primitives, mechanical,
-                                         # formulas, frames, recording, physics)
+                                         # formulas, frames, recording, physics, measurements,
+                                         # mechanisms)
 python app.py examples/simulation_demo.psim   # then press F5 (Start)
 python app.py examples/formula_demo.psim      # formula processes, global parameters, custom outputs
 python app.py examples/frames_demo.psim       # reference frames: open Coordinates ▸ Relative Motion Panel, F5
 python app.py examples/recording_demo.psim    # trajectories and six ready-made plots (Plots ▸ Plot Workspace), F5
 python app.py examples/physics_demo.psim      # collisions, a stack, a hinge, a rope chain and a motorised slider, F5
 python app.py examples/measurements_demo.psim # live angle/distance measurements; a stop condition pauses the run
+python app.py examples/mechanisms_demo.psim   # springs, a breaking rope, a ring with a hole, static and rolling friction
 python -m psim.batch examples/physics_demo.psim --duration 2 --csv out.csv   # headless run (see docs/user_guide.md §9)
 ```
 
@@ -133,7 +135,7 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_plots.py` | plot definitions (round trip, validation), series data in display units, axis titles, cursor read-out, plot editor, workspace (live data, synchronized cursors, save/restore, CSV and image export), recording panel, plots saved in projects |
 | `test_rigid_dynamics.py` | orders of convergence of all six integrators, Dormand–Prince keeps the fixed Δt, long-term energy of velocity Verlet, torque-free rotation (angular momentum and energy conserved, intermediate-axis flip) and the effect of disabling the gyroscopic term |
 | `test_physics_model.py` | colliders are explicit and separate from the mesh (mass alone never collides), joint anchors stored in local frames, joint validation, joints and physics settings in project files |
-| `test_physics.py` | bounce height e²·h, resting box with zero net force, sliding distance v²/(2μg), stick/slip on an incline, static friction holding a block that kinetic friction alone would let slide (and sliding once pushed), rolling resistance slowing a rolling ball at (5/7)·b·g/r, spinning resistance slowing a ball spinning in place at b·m·g/I, stable stack, momentum and elastic energy in collisions, a kinematic platform carrying a box, physical-pendulum period, point mass on a rod, prismatic slider, fixed joint, motor speed and limits, slack/taut rope, compound assemblies, ownership rules, disabling physics, C++ ≡ NumPy PGS (incl. separate impulse directions), energy of a large-swing pendulum |
+| `test_physics.py` | resting contacts held at every step with all six integrators (flat and on a slope by static friction), bounce height e²·h, resting box with zero net force, sliding distance v²/(2μg), stick/slip on an incline, static friction holding a block that kinetic friction alone would let slide (and sliding once pushed), rolling resistance slowing a rolling ball at (5/7)·b·g/r, spinning resistance slowing a ball spinning in place at b·m·g/I, stable stack, momentum and elastic energy in collisions, a kinematic platform carrying a box, physical-pendulum period, point mass on a rod, prismatic slider, fixed joint, motor speed and limits, slack/taut rope, compound assemblies, ownership rules, disabling physics, C++ ≡ NumPy PGS (incl. separate impulse directions), energy of a large-swing pendulum |
 | `test_force_models.py` | circular orbit under central gravity (radius, period, μ/r²), softening at the centre, a force field acting only inside its region or everywhere, anchored-spring oscillation z(t), torque from an off-centre attachment |
 | `test_physics_gui.py` | Joints dialog (world anchors and axes → local frames, limits, rope length from anchors, one undo step, rejecting body A = body B), inspector Collision & Joints section, solver fields of the Simulation Settings dialog, collider/joint/contact overlay geometry, contacts in engine snapshots, Physics menu and overlay toggles with rendering |
 | `test_acceptance.py` | the 30 mandatory acceptance tests of the specification, end to end (traceability in `docs/acceptance.md`) |
@@ -147,13 +149,13 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_packaging.py` | package metadata and entry points, package data, PyInstaller spec, desktop/MIME files, Windows installer script |
 | `test_decompose.py` | exact, closed cuts (volumes add up, caps close the pieces), hull volumes robust to coplanar points under rotation, decomposition quality (cylinder 1 part, I-beam, torus), C++ ≡ NumPy decomposition, compound colliders (auto/convex/convex parts, one solver entry per part), a ball falls through the hole of a torus that rests flat |
 | `test_hulls.py` | convex hulls (exact box/prism hulls, flat inputs, reduction of detailed meshes, packing), a cylinder on its side rolling at v = ω·r, a cone standing on its base, stacked cylinders at rest, C++ hull contacts ≡ NumPy reference |
-| `test_joint_springs.py` | torsion spring period 2π√(I/k), slider spring amplitude v₀/Ω and period, damped envelope A·e^(−ζΩt), soft distance joint stretching by mg/k, a 10¹² N/m spring staying stable, joints breaking above (not below) their force, a torque-limited cantilever and its saved state, validation |
+| `test_joint_springs.py` | the mechanisms demo doing what its description says, torsion spring period 2π√(I/k), slider spring amplitude v₀/Ω and period, damped envelope A·e^(−ζΩt), soft distance joint stretching by mg/k, a 10¹² N/m spring staying stable, joints breaking above (not below) their force, a torque-limited cantilever and its saved state, validation |
 | `test_joint_kernel.py` | C++ joint rows ≡ NumPy reference for random joints of every type (limits near both ends, motors, ropes, world anchors, with and without the midpoint Jacobian), row counts and blocks per joint type, slack and taut ropes, rotation vectors, input validation |
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling and spinning resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **590 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 504 pass and 86 native-comparison tests are skipped. This was measured on
+Current result: **597 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 511 pass and 86 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -632,6 +634,11 @@ reference `psim/physics/joint_kernel.py`).
   3–6-row block (exact for the joint, robust to large mass ratios).
 - A split-impulse position pass removes penetration and joint drift without adding velocity, so
   it never injects energy.
+- Bodies in contact end the step at x₀ + Δt·v′ with their constrained velocity v′ (semi-implicit
+  Euler for those bodies), whatever the integrator. Adding Δv·Δt to a higher-order integrator's end
+  pose left the free-flight curvature in it: resting bodies rose ½gΔt² per step, lost their contact
+  every other step and could not be held by static friction. Bodies without contacts keep the
+  integrator's accuracy (tested for all six integrators).
 - Joint impulses act along the Jacobian of the **midpoint configuration of the step**. This turns
   the velocity with the joint instead of projecting it onto the end-of-step tangent space. A
   plain projection loses about KE·ω²Δt per second; a large-swing pendulum lost 20 % of its energy
@@ -748,7 +755,11 @@ Batch runs are unaffected.
 - `project_format.md`: the `.psim` and `.psimstate` formats
 - `acceptance.md`: requirement → test traceability
 
-**Samples.** `examples/measurements_demo.psim` and the matching template: a 60° pendulum with live
+**Samples.** `examples/mechanisms_demo.psim` (template *mechanisms*): a marble falling through a ring
+(convex parts), a sprung platform catching a ball, a door on a torsion-spring hinge, a crate on a
+rope that breaks when a heavy ball hits it, two blocks on a 25° ramp of which only the one with low
+static friction slides, and two rolling balls of which only the one with rolling resistance slows
+down; with three ready-made plots. `examples/measurements_demo.psim` and the matching template: a 60° pendulum with live
 swing-angle and distance measurements, and a stop condition that pauses at the bottom of the swing.
 The measured period of 2.638 s agrees with the large-amplitude formula (2.637 s).
 

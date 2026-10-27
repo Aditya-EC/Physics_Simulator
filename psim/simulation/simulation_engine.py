@@ -428,7 +428,10 @@ class SimulationEngine:
                 b = saved[oid]
                 new.x[i], new.v[i], new.w[i] = (np.asarray(b[k], float).reshape(3) for k in ("x", "v", "w"))
                 q = np.asarray(b["q"], float).reshape(4)
-                new.q[i] = q / np.linalg.norm(q)
+                nq = float(np.linalg.norm(q))
+                # a saved unit quaternion is kept exactly (renormalising changes its last bits, and a continued
+                # run would then differ from the uninterrupted one)
+                new.q[i] = q if abs(nq - 1.0) <= 1e-12 else q / nq
                 acc[i] = np.asarray(b.get("acc", [0, 0, 0]), float).reshape(3)
                 alpha[i] = np.asarray(b.get("alpha", [0, 0, 0]), float).reshape(3)
             values = np.concatenate([new.x.ravel(), new.q.ravel(), new.v.ravel(), new.w.ravel()])
