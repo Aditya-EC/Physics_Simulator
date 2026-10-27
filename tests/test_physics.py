@@ -123,6 +123,26 @@ def test_static_friction_holds_until_the_block_slides(scene, pushed):
         assert abs(moved) < 1e-3                                             # μk alone (0.4) would let it slide
 
 
+@pytest.mark.parametrize("b", [0.0, 0.002])
+def test_rolling_resistance_decelerates_a_rolling_ball(scene, b):
+    """A rolling sphere with rolling resistance length b slows at a = (5/7) b g / r and keeps rolling."""
+    s, e = scene
+    r = 0.1
+    g = _ground(e)
+    ball = e.add_new("basic.sphere", position=[0, 0, r], params={"radius": r})
+    e.set_property([ball.id], "physics.collider", "auto")
+    e.set_property([ball.id], "linear_velocity", [1.0, 0, 0])
+    e.set_property([ball.id], "angular_velocity", [0, 1.0 / r, 0])          # rolling without slipping
+    e.set_property([g.id], "physics.rolling_resistance", b)                  # on either body
+    _gravity(e, ball)
+    rec = Recording()
+    run(make_engine(scene, rec, delta_time=0.002, duration=2.0))
+    v = rec.column((ball.id, "v"))[-1, 0]
+    w = rec.column((ball.id, "w"))[-1, 1]
+    assert v == pytest.approx(1.0 - 5 / 7 * b * G / r * 2.0, abs=2e-3)
+    assert w * r == pytest.approx(v, abs=1e-3)                                # still rolling
+
+
 def test_stack_of_boxes_is_stable(scene):
     s, e = scene
     _ground(e)

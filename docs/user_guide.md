@@ -75,6 +75,8 @@ The **Inspector** edits the selection. Each value shows where it comes from: **U
   The section also holds restitution, the friction coefficients, *Show collider* and the object's
   joints. *Friction* applies while sliding; *Static friction* (0 = the same) applies while a contact
   is at rest, so it takes more force to start an object sliding than to keep it sliding.
+  *Rolling resistance* (a length, e.g. 1 mm) slows rolling objects: the resisting torque is at most
+  that length times the contact force.
   **An object collides only if it has a collider:** rigid-body types default to `auto`, all others
   to `none`.
 - **Custom properties** (*Objects ▸ Add Custom Property*): scalars, vectors, text and more, with units and

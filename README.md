@@ -133,7 +133,7 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_plots.py` | plot definitions (round trip, validation), series data in display units, axis titles, cursor read-out, plot editor, workspace (live data, synchronized cursors, save/restore, CSV and image export), recording panel, plots saved in projects |
 | `test_rigid_dynamics.py` | orders of convergence of all six integrators, Dormand–Prince keeps the fixed Δt, long-term energy of velocity Verlet, torque-free rotation (angular momentum and energy conserved, intermediate-axis flip) and the effect of disabling the gyroscopic term |
 | `test_physics_model.py` | colliders are explicit and separate from the mesh (mass alone never collides), joint anchors stored in local frames, joint validation, joints and physics settings in project files |
-| `test_physics.py` | bounce height e²·h, resting box with zero net force, sliding distance v²/(2μg), stick/slip on an incline, static friction holding a block that kinetic friction alone would let slide (and sliding once pushed), stable stack, momentum and elastic energy in collisions, a kinematic platform carrying a box, physical-pendulum period, point mass on a rod, prismatic slider, fixed joint, motor speed and limits, slack/taut rope, compound assemblies, ownership rules, disabling physics, C++ ≡ NumPy PGS (incl. separate impulse directions), energy of a large-swing pendulum |
+| `test_physics.py` | bounce height e²·h, resting box with zero net force, sliding distance v²/(2μg), stick/slip on an incline, static friction holding a block that kinetic friction alone would let slide (and sliding once pushed), rolling resistance slowing a rolling ball at (5/7)·b·g/r, stable stack, momentum and elastic energy in collisions, a kinematic platform carrying a box, physical-pendulum period, point mass on a rod, prismatic slider, fixed joint, motor speed and limits, slack/taut rope, compound assemblies, ownership rules, disabling physics, C++ ≡ NumPy PGS (incl. separate impulse directions), energy of a large-swing pendulum |
 | `test_force_models.py` | circular orbit under central gravity (radius, period, μ/r²), softening at the centre, a force field acting only inside its region or everywhere, anchored-spring oscillation z(t), torque from an off-centre attachment |
 | `test_physics_gui.py` | Joints dialog (world anchors and axes → local frames, limits, rope length from anchors, one undo step, rejecting body A = body B), inspector Collision & Joints section, solver fields of the Simulation Settings dialog, collider/joint/contact overlay geometry, contacts in engine snapshots, Physics menu and overlay toggles with rendering |
 | `test_acceptance.py` | the 30 mandatory acceptance tests of the specification, end to end (traceability in `docs/acceptance.md`) |
@@ -149,11 +149,11 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_hulls.py` | convex hulls (exact box/prism hulls, flat inputs, reduction of detailed meshes, packing), a cylinder on its side rolling at v = ω·r, a cone standing on its base, stacked cylinders at rest, C++ hull contacts ≡ NumPy reference |
 | `test_joint_springs.py` | torsion spring period 2π√(I/k), slider spring amplitude v₀/Ω and period, damped envelope A·e^(−ζΩt), soft distance joint stretching by mg/k, a 10¹² N/m spring staying stable, joints breaking above (not below) their force, a torque-limited cantilever and its saved state, validation |
 | `test_joint_kernel.py` | C++ joint rows ≡ NumPy reference for random joints of every type (limits near both ends, motors, ropes, world anchors, with and without the midpoint Jacobian), row counts and blocks per joint type, slack and taut ropes, rotation vectors, input validation |
-| `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
+| `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **584 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 501 pass and 83 native-comparison tests are skipped. This was measured on
+Current result: **589 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 503 pass and 86 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -583,6 +583,9 @@ administrators. Even so, a determined local administrator can change anything.
   static friction coefficient (each the geometric mean of the pair). A contact whose tangential speed
   at the start of the step is below 1 cm/s sticks with the static coefficient; a sliding one uses the
   kinetic coefficient, so a block on a slope between the two stays put, but keeps sliding once pushed.
+- Rolling resistance (a length b per object; the larger value of a pair is used): two angular rows
+  per contact resist relative rolling with a torque of at most b·N, so a rolling ball slows at
+  (5/7)·b·g/r and keeps rolling (tested).
 
 **Collision detection and response** (`psim/physics/collision.py`, `system.py`).
 - A sort-and-sweep broadphase on bounding spheres (C++, `native/src/collision.cpp`; NumPy reference
@@ -869,7 +872,8 @@ Key design decisions:
     64 support points, so a curved surface is faceted (an ellipsoid rolls slightly unevenly).
   - Capsule–box contacts sample the capsule core and are approximate for deep edge contacts.
   - Friction is isotropic Coulomb friction, static below 1 cm/s and kinetic above (a sharp switch,
-    no Stribeck curve), and there is no rolling resistance.
+    no Stribeck curve). Rolling resistance is a constant length b (no speed dependence) and there is
+    no spinning (drilling) friction about the contact normal.
   - Joint springs are linear in the joint coordinate and act on its one free coordinate only (no
     springs on ball or fixed joints). A joint breaks at the end of the step in which its limit was
     exceeded; it does not weaken gradually.

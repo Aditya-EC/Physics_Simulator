@@ -587,7 +587,7 @@ class PropertiesPanel(QWidget):
         from ..physics.colliders import collider_for
         sec = self._section("collision", "Collision & Joints")
         for key in ("collider", "radius", "length", "half_extents", "offset", "restitution", "friction",
-                    "static_friction", "show_collider"):
+                    "static_friction", "rolling_resistance", "show_collider"):
             self._add_prop(sec, f"physics.{key}", objs)
         primary = objs[-1]
         shape = QLabel()

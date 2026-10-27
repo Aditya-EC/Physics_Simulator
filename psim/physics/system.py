@@ -130,6 +130,8 @@ class PhysicsSystem:
         static = np.array([c.static_friction for c in cols], float)
         # static coefficients only matter where they exceed the kinetic ones
         self.col_static = static if np.any(static > self.col_friction) else None
+        rolling = np.array([c.rolling for c in cols], float)
+        self.col_rolling = rolling if np.any(rolling > 0) else None
         self.col_bound = np.array([0.0 if c.shape.kind == "plane" else c.shape.bounding_radius() for c in cols],
                                   float)
         self._set_joints()
@@ -414,7 +416,8 @@ class PhysicsSystem:
         d = numerics.contact_rows(self.col_kind, b, center, rot, self.col_radius, self.col_half, self.col_half_len,
                                   self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
                                   self.excluded_index, com, v, w, st.slop, st.restitution_threshold, sweep, dt,
-                                  center0, rot0, com0, self.col_hull_id, self.hulls, self.col_static, v0, w0)
+                                  center0, rot0, com0, self.col_hull_id, self.hulls, self.col_static, v0, w0,
+                                  self.col_rolling)
         # touching object pairs; pairs that were not touching in the previous step are logged, in pair order
         n = max(len(self.sources), 1)
         sa, sb = self.col_source[d["pairs"][:, 0]], self.col_source[d["pairs"][:, 1]]

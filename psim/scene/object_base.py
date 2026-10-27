@@ -121,6 +121,9 @@ PHYSICS_PROPERTIES: dict[str, PropertyDef] = {p.key: p for p in [
       description="Bounciness of contacts (the larger of the two bodies' values is used)"),
     P("friction", "Friction coefficient", ValueType.FLOAT, 0.5, minimum=0.0, maximum=10.0, step=0.05, precision=3,
       description="Kinetic (sliding) Coulomb friction coefficient (geometric mean of the two bodies' values)"),
+    P("rolling_resistance", "Rolling resistance", ValueType.FLOAT, 0.0, quantity="length", minimum=0.0, maximum=1.0,
+      description="Rolling resistance length b: rolling is resisted by a torque of up to b × the contact force "
+                  "(the larger value of the two bodies is used; 0 = none)"),
     P("static_friction", "Static friction coefficient", ValueType.FLOAT, 0.0, minimum=0.0, maximum=10.0, step=0.05,
       precision=3, description="Friction of contacts that are not sliding (below 1 cm/s). 0, or any value below the "
                                "friction coefficient, means the same as the friction coefficient"),

@@ -79,6 +79,23 @@ def test_static_friction_matches_the_reference(seed):
 
 
 @native
+@pytest.mark.parametrize("seed", range(3))
+def test_rolling_resistance_matches_the_reference(seed):
+    args = _scene(seed)
+    rolling = np.random.default_rng(seed).uniform(0.0, 0.01, len(args[0]))
+    rolling[::3] = 0.0
+    ref = reference(*args, rolling=rolling)
+    nat = numerics.contact_rows(*args, rolling=rolling)
+    for key in ("row", "parent", "mode", "ia", "ib"):
+        np.testing.assert_array_equal(nat[key], ref[key], err_msg=key)
+    for key in ("J", "mu", "lo", "hi"):
+        np.testing.assert_allclose(nat[key], ref[key], rtol=1e-12, atol=1e-14, err_msg=key)
+    angular = (np.abs(ref["J"][:, :3]).sum(axis=1) == 0) & (ref["mode"] == 2)
+    assert angular.sum() == 2 * len(ref["row"]) - 2 * sum(                     # two rows per contact unless b = 0
+        1 for p, q in zip(ref["shape_a"], ref["shape_b"]) if max(rolling[p], rolling[q]) == 0)
+
+
+@native
 def test_every_pair_kind_is_exercised():
     seen = set()
     for seed in range(12):

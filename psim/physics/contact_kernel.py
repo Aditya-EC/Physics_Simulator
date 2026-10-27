@@ -12,6 +12,8 @@ name their hull in ``hull_id``; ``hulls`` holds the hulls in local coordinates, 
 Friction: the kinetic coefficient of a pair is the geometric mean of the shapes' ``friction``; with
 ``static_friction`` (values below ``friction`` are raised to it) a contact whose tangential speed at the start of the
 step (``v0``, ``w0``; default the given velocities) is below STATIC_SPEED uses the static coefficient instead.
+``rolling`` (per shape, a length b in m; a pair uses the larger) adds two angular rows about the tangents that
+resist relative rolling with a torque of at most b·N.
 
 Speculative contacts (continuous collision detection): ``sweep`` gives, per shape, how far its surface can
 move during the step. When the combined sweep of a pair exceeds half the thickness of the thinner shape —
@@ -102,7 +104,7 @@ def inflated(s: WorldShape, m: float) -> WorldShape:
 def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded,
                  com, v, w, margin: float, restitution_threshold: float, sweep=None, dt: float = 0.0,
                  center0=None, rot0=None, com0=None, hull_id=None, hulls=None, static_friction=None, v0=None,
-                 w0=None) -> dict:
+                 w0=None, rolling=None) -> dict:
     kind = np.asarray(kind, np.int64)
     body = np.asarray(body, np.int64)
     center = np.asarray(center, float).reshape(-1, 3)
@@ -155,6 +157,7 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
         pairs.append((p, q))
         e = max(float(restitution[p]), float(restitution[q]))
         mu_k = math.sqrt(max(float(friction[p]), 0.0) * max(float(friction[q]), 0.0))
+        roll = max(float(rolling[p]), float(rolling[q]), 0.0) if rolling is not None else 0.0
         mu_s = mu_k
         if static_friction is not None:
             mu_s = math.sqrt(max(max(float(static_friction[p]), float(friction[p])), 0.0)
@@ -183,6 +186,10 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
             if mu > 0:
                 for t in friction_basis(n):
                     add_row(a, b, np.concatenate([-t, -_cross(ra, t), t, _cross(rb, t)]), 0.0, -INF, INF, k, mu,
+                            0.0, 2)
+            if roll > 0:                       # rolling resistance: torque about the tangents up to b·N
+                for t in friction_basis(n):
+                    add_row(a, b, np.concatenate([np.zeros(3), -t, np.zeros(3), t]), 0.0, -INF, INF, k, roll,
                             0.0, 2)
             for key, x in zip(("shape_a", "shape_b", "point", "normal", "depth", "row"),
                               (p, q, c.point, n, depth, k)):
