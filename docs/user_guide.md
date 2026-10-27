@@ -39,6 +39,11 @@ Open one and press **F5** to run it:
 - **Transform** them with the gizmo: Q select, W move, E rotate, R scale; toggle global/local axes in
   the toolbar.
   Grid, rotation and scale snapping, and the work plane, are in *Scene ▸ Snapping*.
+- **Place numerically** with *Objects ▸ Place Relative To…* (also in the viewport's context menu):
+  choose another object, a reference frame or *Global*, then enter the offset along the
+  reference's axes (or the global axes) and, optionally, a rotation relative to the reference. The
+  dialog starts from the current placement. Several selected objects move together as one rigid
+  group, the last selected one being placed.
 - **Navigate** the camera:
   - left-drag on empty space orbits (in the Select tool, where it draws a selection box, use
     Alt + left-drag)

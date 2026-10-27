@@ -140,6 +140,7 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_conditions.py` | stop conditions: stop/pause at the right step, fire once per false→true transition, dimension/type/reference checks, global parameters, settings round trip; per-stage profile |
 | `test_sim_state.py` | saved simulation states: bit-for-bit continuation (with collisions, joints and formula processes), recording truncation, rejection of foreign/invalid states, save/restore through the session controller |
 | `test_batch.py` | headless batch runs: CSV/JSON/report/state outputs against analytic values, property and global overrides, restore-and-continue, stop conditions, exit codes for invalid input and numerical failure |
+| `test_placement.py` | Place Relative To: offsets along the reference's or the global axes, relative orientation, round trip with the current placement, rigid groups with children, one undo step, invalid references (itself, children, attached frames, missing), locked objects, the dialog and its menu action |
 | `test_measurements.py` | distance and angle values (precise near 180°, undefined at the vertex), centre-of-mass points, surface points that follow motion, rotation and scale, point validation, undo, dangling objects, project files, viewport overlays, Measurements panel |
 | `test_crash.py` | log file, crash reports from the main and worker threads, system information dialog |
 | `test_phase8_gui.py` | Stop Conditions dialog, stage profile in the Performance panel, box selection (rectangle hit test and a real drag in the viewport), measuring between surface points by clicking in the viewport (empty clicks ignored, Esc cancels, selection unchanged) |
@@ -149,8 +150,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts), sort-and-sweep keeps every overlapping pair, input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **547 Python tests and the C++ test executable pass** with the native core.
-With the NumPy fallback, 475 pass and 72 native-comparison tests are skipped. This was measured on
+Current result: **552 Python tests and the C++ test executable pass** with the native core.
+With the NumPy fallback, 480 pass and 72 native-comparison tests are skipped. This was measured on
 Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
 
 ## 3. What Phase 1 implements
@@ -231,6 +232,9 @@ Linux with Mesa llvmpipe under Xvfb. Windows has not been tested yet; see §6.
   - drag-to-reparent with cycle protection, visibility and lock toggles, filtering
   - group/ungroup, duplicate, copy/cut/paste, delete, rename
   - align (min/centre/max) and distribute, hide/show/lock
+  - *Objects ▸ Place Relative To…*: a numeric offset from another object, a named frame or the
+    origin, along the reference's axes or the global axes, optionally with an orientation relative
+    to the reference; several selected objects move as one rigid group, in one undo step
 - Undo/redo for every edit through before/after object snapshots, plus a history panel.
 - Bottom panels: Console, Errors & Warnings, Object Table (sortable, filterable, CSV export) and
   Performance (frame time, draw calls, triangles, sparkline).
@@ -879,9 +883,7 @@ Key design decisions:
     because it would need the accelerations being computed in the same step. The Relative
     Motion panel shows it.
   - The "Axes drawn at" setting moves only the drawn axes, not the coordinate origin.
-- A numeric "move relative to object" dialog is not implemented. Relative placement is done
-  through the inspector's *Relative to* frame selector and surface snapping. Box selection uses an
-  object's projected bounding-box centre, not its full outline.
+- Box selection uses an object's projected bounding-box centre, not its full outline.
 - Imported meshes are stored inside the project file (as JSON arrays) rather than as
   separate asset files. Very large meshes make projects large.
 - When the theme is switched at runtime, icons on a few panel buttons keep the previous tint

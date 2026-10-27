@@ -290,6 +290,8 @@ class MainWindow(QMainWindow):
         A("scene.unparent", "Move to Scene &Root", lambda: self._reparent(self.scene.selection, None))
         A("scene.stats", "Scene &Statistics…", self.scene_statistics, icon="info")
         # objects
+        A("obj.place_relative", "&Place Relative To…", self.place_relative, icon="target",
+          tip="Put the selection at a numeric offset from another object, a reference frame or the origin")
         A("obj.lock", "&Lock / Unlock", self.toggle_lock, icon="lock", shortcut="Ctrl+L")
         A("obj.hide", "&Hide / Show", self.toggle_hide, icon="eye_off", shortcut="H")
         A("obj.unhide_all", "Show &All Objects", self.unhide_all, icon="eye", shortcut="Alt+H")
@@ -418,6 +420,7 @@ class MainWindow(QMainWindow):
             al.addSeparator()
         dm = m.addMenu("&Distribute")
         dm.addActions([a[f"distribute.{x}"] for x in "xyz"])
+        m.addAction(a["obj.place_relative"])
         m.addSeparator()
         m.addActions([a["obj.lock"], a["obj.hide"], a["obj.unhide_all"]])
         m.addSeparator()
@@ -1465,6 +1468,13 @@ class MainWindow(QMainWindow):
         sel = self.scene.selection
         self.viewport.frame_objects(sel if sel else None)
 
+    def place_relative(self) -> None:
+        from .dialogs.placement_dialog import PlaceRelativeDialog
+        if not self._require_idle("Placing objects"):
+            return
+        dlg = PlaceRelativeDialog(self.scene, self.editor, self.units, self.scene.selection, self)
+        dlg.exec()
+
     def mass_report(self) -> None:
         ids = self.scene.selection or list(self.scene.objects)
         MassReportDialog(self.scene, ids, self.units, self).exec()
@@ -1500,7 +1510,7 @@ class MainWindow(QMainWindow):
             m.addSeparator()
             m.addActions([a["scene.group"], a["scene.ungroup"], a["scene.unparent"]])
             m.addSeparator()
-            m.addActions([a["obj.hide"], a["obj.lock"]])
+            m.addActions([a["obj.place_relative"], a["obj.hide"], a["obj.lock"]])
             m.addSeparator()
             m.addActions([a["obj.add_property"], a["obj.save_template"], a["obj.mass_report"]])
             cam = m.addMenu(icons.icon("camera"), "Camera")
