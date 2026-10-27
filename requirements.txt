@@ -3,6 +3,7 @@ PySide6>=6.6          # Qt 6 GUI (QtWidgets, QtOpenGLWidgets, QtSvg); tested wit
 PyOpenGL>=3.1.7       # OpenGL 3.3 core rendering; tested with 3.1.10
 numpy>=1.26           # tested with 2.5
 pyqtgraph>=0.13       # 2D plots and the 3D plot view (pyqtgraph.opengl); tested with 0.14
+cryptography>=41      # Ed25519 signing of developer process packages; tested with 50.0
 
 # Building the native C++ core (python build_native.py)
 pybind11>=2.11        # tested with 3.1; CMake >= 3.18 and a C++17 compiler are also required
