@@ -409,9 +409,11 @@ class SceneEditor:
         self._push(MeasurementsCommand(self.scene, before, copy.deepcopy(after), text))
         return True
 
-    def add_measurement(self, kind: str, object_ids: list[str], at: str = "origin", name: str | None = None) -> str:
+    def add_measurement(self, kind: str, object_ids: list[str], at: str = "origin", name: str | None = None,
+                        points: list[dict] | None = None) -> str:
+        """Add a measurement over objects (their origins or centres of mass) or explicit points."""
         from .measurements import new_measurement
-        data = new_measurement(self.scene, kind, list(object_ids), at, name)
+        data = new_measurement(self.scene, kind, list(object_ids), at, name, points)
         self.set_measurements(self.scene.measurements_snapshot() + [data], f"Add Measurement '{data['name']}'")
         return data["id"]
 

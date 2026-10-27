@@ -345,6 +345,28 @@ def paint_selection_box(p: QPainter, x0: float, y0: float, x1: float, y1: float)
     p.drawRect(rect)
 
 
+def paint_pick_points(p: QPainter, cam: OrbitCamera, w: float, h: float, points) -> None:
+    """Points picked so far for a new point measurement: numbered markers joined in order."""
+    from .physics_overlay import MEASURE_COLOR
+    if not points:
+        return
+    xy, ok = cam.project(np.array(points, float), w, h)
+    col = qcolor(MEASURE_COLOR)
+    p.setPen(QPen(col, 1.5, Qt.PenStyle.DashLine))
+    for k in range(len(points) - 1):
+        if ok[k] and ok[k + 1]:
+            p.drawLine(QPointF(*xy[k]), QPointF(*xy[k + 1]))
+    for k, ((x, y), vis) in enumerate(zip(xy, ok)):
+        if not vis:
+            continue
+        p.setPen(QPen(QColor(20, 20, 22), 1.5))
+        p.setBrush(col)
+        p.drawEllipse(QPointF(x, y), 5, 5)
+        p.setPen(col)
+        p.drawText(QPointF(x + 8, y - 6), str(k + 1))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+
+
 def paint_drop_hint(p: QPainter, width: float, height: float, text: str) -> None:
     path = QPainterPath()
     path.addRoundedRect(QRectF(6, 6, width - 12, height - 12), 8, 8)

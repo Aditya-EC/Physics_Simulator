@@ -44,6 +44,8 @@ class Viewport(QOpenGLWidget):
     toolChanged = Signal(str)
     cameraChanged = Signal()
     message = Signal(str)
+    pointsPicked = Signal(str, list)           # measurement kind, measurement points picked on surfaces
+    hint = Signal(str)                         # status-bar prompt ("" clears it)
 
     def __init__(self, scene: Scene, editor: SceneEditor, view: ViewSettings, units: UnitRegistry, parent=None) -> None:
         super().__init__(parent)
@@ -72,6 +74,7 @@ class Viewport(QOpenGLWidget):
         self._box: tuple[int, int, int, int] | None = None   # box selection rectangle (press x, y, current x, y)
         self._drag: gz.DragState | None = None
         self._drag_text = ""
+        self._point_pick: dict | None = None   # point measurement in progress: kind, need, points, world
         self.last_stats = FrameStats()
         self._last_render_error = ""
         self._frame_times: list[float] = []
@@ -246,6 +249,9 @@ class Viewport(QOpenGLWidget):
                                     self.height(), self._hud_lines(), self._drag_text, paths)
             if self._box is not None:
                 overlays.paint_selection_box(painter, *self._box)
+            if self._point_pick is not None:
+                overlays.paint_pick_points(painter, self.camera, self.width(), self.height(),
+                                           self._point_pick["world"])
             if self._drag_payload is not None:
                 overlays.paint_drop_hint(painter, self.width(), self.height(),
                                          f"Release to place · work plane {self.view.snap.work_plane}"
@@ -316,7 +322,7 @@ class Viewport(QOpenGLWidget):
         return pivot, axes, size
 
     def _gizmo_draw(self) -> GizmoDraw | None:
-        fr = self._gizmo_frame()
+        fr = self._gizmo_frame() if self._point_pick is None else None   # no gizmo while picking points
         if fr is None:
             return None
         pivot, axes, size = fr
@@ -338,6 +344,61 @@ class Viewport(QOpenGLWidget):
         o, d = self._ray(pos)
         return picking.pick(self.scene, o, d)
 
+    # ---- picking points for measurements ---------------------------------------------------------
+    @property
+    def picking_points(self) -> bool:
+        return self._point_pick is not None
+
+    def begin_point_pick(self, kind: str) -> None:
+        """Collect points on object surfaces with left clicks (2 for a distance, 3 for an angle); emits
+        pointsPicked when complete. Dragging still orbits; Esc cancels."""
+        from ..scene.measurements import KINDS
+        self._point_pick = {"kind": kind, "need": KINDS[kind], "points": [], "world": []}
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setFocus()
+        self.hint.emit(self._pick_prompt())
+        self.update()
+
+    def cancel_point_pick(self) -> None:
+        if self._point_pick is not None:
+            self._point_pick = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.hint.emit("Point measurement cancelled")
+            self.update()
+
+    def _pick_prompt(self) -> str:
+        st = self._point_pick
+        k = len(st["points"])
+        what = (["the first point", "the second point"] if st["kind"] == "distance"
+                else ["point A", "the vertex", "point B"])[k]
+        return (f"Measure {st['kind']}: click {what} on an object's surface ({k + 1} of {st['need']}) · "
+                "drag to orbit · Esc cancels")
+
+    def add_picked_point(self, pos) -> bool:
+        """Add the surface point under `pos` to the point measurement in progress (False: nothing was hit)."""
+        from ..scene.measurements import MeasurementError, surface_point
+        st = self._point_pick
+        hit = self.pick_at(pos)
+        if st is None or hit is None:
+            if st is not None:
+                self.hint.emit("Click on the surface of an object · Esc cancels")
+            return False
+        try:
+            st["points"].append(surface_point(self.scene, hit.object_id, hit.point))
+        except MeasurementError as exc:
+            self.hint.emit(str(exc))
+            return False
+        st["world"].append(np.asarray(hit.point, float))
+        if len(st["points"]) == st["need"]:
+            self._point_pick = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.hint.emit("")
+            self.pointsPicked.emit(st["kind"], st["points"])
+        else:
+            self.hint.emit(self._pick_prompt())
+        self.update()
+        return True
+
     def mousePressEvent(self, e: QMouseEvent) -> None:  # noqa: N802
         pos = e.position().toPoint()
         self._press_pos = self._last_pos = pos
@@ -345,6 +406,9 @@ class Viewport(QOpenGLWidget):
         if btn == Qt.MouseButton.LeftButton:
             if mods & Qt.KeyboardModifier.AltModifier:
                 self._mode = "orbit"
+                return
+            if self._point_pick is not None:
+                self._mode = "pending"         # a click picks a point, a drag orbits
                 return
             handle = self._pick_gizmo(pos)
             if handle is not None:
@@ -422,6 +486,8 @@ class Viewport(QOpenGLWidget):
         self.update()
 
     def _update_hover(self, pos) -> None:
+        if self._point_pick is not None:
+            return                             # keep the cross-hair cursor and no gizmo highlighting
         handle = self._pick_gizmo(pos)
         hit = None if handle else self.pick_at(pos)
         hid = hit.object_id if hit else None
@@ -463,6 +529,9 @@ class Viewport(QOpenGLWidget):
             return
         if mode == "pending_box":
             mode = "pending"            # a click without dragging: same as clicking empty space
+        if mode == "pending" and e.button() == Qt.MouseButton.LeftButton and self._point_pick is not None:
+            self.add_picked_point(pos)
+            return
         if mode == "pending" and e.button() == Qt.MouseButton.LeftButton:
             hit = self.pick_at(pos)
             mods = e.modifiers()
@@ -506,6 +575,9 @@ class Viewport(QOpenGLWidget):
         self._camera_moved()
 
     def keyPressEvent(self, e) -> None:  # noqa: N802
+        if e.key() == Qt.Key.Key_Escape and self._point_pick is not None:
+            self.cancel_point_pick()
+            return
         if e.key() == Qt.Key.Key_Escape and self._mode == "gizmo" and self._drag is not None:
             self.scene.apply_states(self._drag_start_states)
             self._drag = None

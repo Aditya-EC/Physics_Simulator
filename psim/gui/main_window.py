@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self.bottom_tabs.addTab(self.relative_motion, icons.icon("frame_axes"), "Relative Motion")
         self.measurements_panel = MeasurementsPanel(self.scene, self.editor, self.units)
         self.measurements_panel.errorOccurred.connect(lambda m: self.bus.error(m, "measurements"))
+        self.measurements_panel.pickRequested.connect(self.measure_points)
         self.bottom_tabs.addTab(self.measurements_panel, icons.icon("ruler"), "Measurements")
         self.recording_panel = RecordingPanel(self.scene, self.units, lambda: self.sim.recording,
                                               lambda: self.project.simulation)
@@ -310,6 +311,10 @@ class MainWindow(QMainWindow):
           tip="Add a live distance measurement between the two selected objects")
         A("tools.measure_angle", "Measure &Angle", lambda: self.measure("angle"),
           tip="Add a live angle measurement at the second of three selected objects")
+        A("tools.measure_point_distance", "Measure Distance Between &Points", lambda: self.measure_points("distance"),
+          tip="Click two points on object surfaces in the viewport; the distance follows the objects")
+        A("tools.measure_point_angle", "Measure Angle Between P&oints", lambda: self.measure_points("angle"),
+          tip="Click three points on object surfaces (A, the vertex, B); the angle follows the objects")
         A("tools.measurements", "&Measurements Panel", self.show_measurements, icon="ruler")
         A("coord.relative", "Relative &Motion Panel", self.show_relative_motion, icon="activity",
           tip="Position, velocity and acceleration of an object expressed in / relative to any frame")
@@ -458,7 +463,8 @@ class MainWindow(QMainWindow):
         m.addActions([a["sim.save_state"], a["sim.load_state"]])
 
         m = mb.addMenu("&Tools")
-        m.addActions([a["tools.measure_distance"], a["tools.measure_angle"], a["tools.measurements"]])
+        m.addActions([a["tools.measure_distance"], a["tools.measure_angle"], a["tools.measure_point_distance"],
+                      a["tools.measure_point_angle"], a["tools.measurements"]])
         m.addSeparator()
         m.addActions([a["tools.shortcuts"], a["tools.preferences"], a["view.settings"]])
         m.addSeparator()
@@ -585,6 +591,9 @@ class MainWindow(QMainWindow):
         self.viewport.toolChanged.connect(lambda t: self.actions_[f"tool.{t}"].setChecked(True))
         self.viewport.statsUpdated.connect(self._on_stats)
         self.viewport.message.connect(lambda msg: self.bus.error(msg, "viewport"))
+        self.viewport.hint.connect(lambda msg: self.statusBar().showMessage(msg) if msg else
+                                   self.statusBar().clearMessage())
+        self.viewport.pointsPicked.connect(self._points_picked)
         self.library_panel.addRequested.connect(self.add_library_item)
         self.library_panel.importMeshRequested.connect(self.import_obj)
         self.library_panel.deleteTemplateRequested.connect(self.delete_template)
@@ -1739,6 +1748,9 @@ class MainWindow(QMainWindow):
 
     def measure(self, kind: str) -> None:
         from ..scene.measurements import MeasurementError
+        if self.measurements_panel.at.currentData() == "point":
+            self.measure_points(kind)
+            return
         ids = [i for i in self.scene.selection if i in self.scene.objects]
         try:
             self.editor.add_measurement(kind, ids, self.measurements_panel.at.currentData())
@@ -1746,6 +1758,21 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(str(exc), 5000)
             self.bus.error(str(exc), "measurements")
             return
+        self.show_measurements()
+
+    def measure_points(self, kind: str) -> None:
+        """Start picking surface points in the viewport for a new measurement."""
+        self.viewport.begin_point_pick(kind)
+
+    def _points_picked(self, kind: str, points: list) -> None:
+        from ..scene.measurements import MeasurementError
+        try:
+            mid = self.editor.add_measurement(kind, [], points=points)
+        except (MeasurementError, SceneError) as exc:
+            self.bus.error(str(exc), "measurements")
+            return
+        m = next(x for x in self.scene.measurements if x.id == mid)
+        self.statusBar().showMessage(f"Added {m.name}", 4000)
         self.show_measurements()
 
     def show_relative_motion(self) -> None:

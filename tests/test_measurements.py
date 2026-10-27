@@ -139,3 +139,55 @@ def test_measurements_panel(scene, owned):  # noqa: F811
     panel.table.selectRow(1)
     panel._remove()
     assert [m.name for m in s.measurements] == ["Gap"]
+
+
+def test_points_fixed_on_objects_follow_motion_rotation_and_scale(scene):
+    from psim.scene.measurements import describe_point, surface_point
+    s, e = scene
+    a = e.add_new("basic.cube", position=[0, 0, 0.5])
+    b = e.add_new("basic.cube", position=[3, 0, 0.5])
+    pa = surface_point(s, a.id, [0.5, 0.0, 0.5])                   # centre of A's +x face
+    pb = surface_point(s, b.id, [2.5, 0.0, 0.5])                   # centre of B's −x face
+    assert pa["at"] == "point" and np.allclose(pa["local"], [0.5, 0, 0])
+    mid = e.add_measurement("distance", [], points=[pa, pb])
+    m = next(x for x in s.measurements if x.id == mid)
+    assert evaluate(s, m).value == pytest.approx(2.0)
+    assert "point 0.5, 0, 0" in describe_point(s, m.points[0])
+    e.set_property([b.id], "position", [4.0, 0, 0.5])               # moves with B
+    assert evaluate(s, m).value == pytest.approx(3.0)
+    e.set_property([b.id], "orientation", list(numerics.quat_from_axis_angle([0, 0, 1], math.pi)))
+    assert evaluate(s, m).value == pytest.approx(4.0)               # B's −x face now points away
+    e.set_property([a.id], "scale", [2.0, 1.0, 1.0])                # stays on A's (scaled) face
+    np.testing.assert_allclose(evaluate(s, m).points[0], [1.0, 0, 0.5], atol=1e-12)
+    for _ in range(3):
+        e.stack.undo()
+    assert evaluate(s, m).value == pytest.approx(2.0)
+
+
+def test_point_validation_and_project_files(scene, tmp_path):
+    from psim.scene.measurements import surface_point
+    s, e = scene
+    a = e.add_new("basic.cube", position=[0, 0, 0.5])
+    b = e.add_new("basic.sphere", position=[2, 0, 0.5])
+    good = {"id": "MSR-0001", "name": "Gap", "kind": "distance",
+            "points": [{"object": a.id, "at": "point", "local": [0.5, 0, 0]}, {"object": b.id, "at": "com"}]}
+    assert validate_measurements([good])[0].points[0]["local"] == [0.5, 0, 0]
+    for pts, msg in ((({"object": a.id, "at": "point"}, {"object": b.id}), "local coordinates"),
+                     (({"object": a.id, "at": "point", "local": [1, "x", 0]}, {"object": b.id}), "local coordinates"),
+                     (({"object": a.id, "at": "point", "local": [1, float("nan"), 0]}, {"object": b.id}), "finite"),
+                     (({"object": a.id, "at": "com", "local": [1, 0, 0]}, {"object": b.id}), "only a point"),
+                     (({"object": a.id, "at": "point", "local": [1, 0, 0], "x": 1}, {"object": b.id}), "unknown")):
+        with pytest.raises(MeasurementError, match=msg):
+            validate_measurements([dict(good, points=list(pts))])
+    a.scale = [0.0, 1.0, 1.0]                                       # (the inspector never allows this)
+    with pytest.raises(MeasurementError, match="zero scale"):
+        surface_point(s, a.id, [0, 0, 0])
+    a.scale = [1.0, 1.0, 1.0]
+    e.add_measurement("distance", [], points=[surface_point(s, a.id, [0.5, 0.1, 0.6]), {"object": b.id,
+                                                                                      "at": "origin"}])
+    path = str(tmp_path / "p.psim")
+    ser.save_project(path, s, UnitRegistry(), ser.ProjectData())
+    s2 = Scene()
+    data = ser.load_project(path, s2, UnitRegistry())
+    assert data.warnings == [] and s2.measurements_snapshot() == s.measurements_snapshot()
+    assert evaluate(s2, s2.measurements[0]).value == pytest.approx(evaluate(s, s.measurements[0]).value)

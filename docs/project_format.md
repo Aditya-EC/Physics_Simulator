@@ -88,7 +88,9 @@ is kept, but disabled, with a warning.
  "collide_connected": false, "enabled": true, "description": ""}
 
 {"id": "MSR-0001", "name": "Gap", "kind": "distance" | "angle",
- "points": [{"object": "OBJ-000002", "at": "origin" | "com"}, …],  // 2 points, or 3 with the vertex second
+ "points": [{"object": "OBJ-000002", "at": "origin" | "com"},      // 2 points, or 3 with the vertex second
+            {"object": "OBJ-000003", "at": "point", "local": [x, y, z]}],  // fixed on the object: geometry
+                                                                         // coordinates before scale
  "visible": true}
 ```
 

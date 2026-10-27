@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from PySide6.QtCore import Qt
 
 from test_coordinates_gui import owned  # noqa: F401  (fixture)
@@ -90,3 +91,47 @@ def test_box_selection_in_window(window):  # noqa: F811
         _move(vp, QPoint(int(start.x() + (end.x() - start.x()) * t), int(start.y() + (end.y() - start.y()) * t)))
     QTest.mouseRelease(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
     assert not np.allclose(vp.camera.eye(), cam_before) and w.scene.selection == [a.id]
+
+
+def test_measuring_between_surface_points_in_the_viewport(window):  # noqa: F811
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    from test_gui import _render, _screen_pos
+    w = window
+    a = w.editor.add_new("basic.cube", position=[-1.5, 0, 0.5])
+    b = w.editor.add_new("basic.cube", position=[1.5, 0, 0.5])
+    w.viewport.frame_objects(None)
+    _render(w)
+    vp = w.viewport
+
+    def click(pos):
+        QTest.mousePress(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pos)
+        QTest.mouseRelease(vp, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pos)
+
+    w.actions_["tools.measure_point_distance"].trigger()
+    assert vp.picking_points and "click the first point" in w.statusBar().currentMessage()
+    click(QPoint(2, 2))                                             # empty space: nothing picked
+    assert vp.picking_points and not vp._point_pick["points"]
+    click(_screen_pos(w, [-1.5, 0, 1.0]))                           # top face of A
+    assert "second point" in w.statusBar().currentMessage()
+    vp.grab_image()                                                 # paints the pending marker
+    click(_screen_pos(w, [1.5, 0, 1.0]))                            # top face of B
+    assert not vp.picking_points and len(w.scene.measurements) == 1
+    m = w.scene.measurements[0]
+    assert [p["object"] for p in m.points] == [a.id, b.id] and all(p["at"] == "point" for p in m.points)
+    from psim.scene.measurements import evaluate
+    val = evaluate(w.scene, m)
+    np.testing.assert_allclose([p[2] for p in val.points], 1.0, atol=1e-9)    # on the top surfaces
+    assert val.value == pytest.approx(3.0, abs=0.05)
+    # angle via the panel, cancelled with Esc after one point; selection is never changed by picking
+    w.scene.set_selection([a.id])
+    panel = w.measurements_panel
+    panel.at.setCurrentIndex(panel.at.findData("point"))
+    assert panel.add_angle.isEnabled() and "click the points" in panel.hint.text()
+    panel.add_angle.click()
+    assert vp.picking_points and "point A" in w.statusBar().currentMessage()
+    click(_screen_pos(w, [1.5, 0, 1.0]))
+    QTest.keyClick(vp, Qt.Key.Key_Escape)
+    assert not vp.picking_points and len(w.scene.measurements) == 1 and w.scene.selection == [a.id]
+    w.editor.stack.undo()
+    assert not w.scene.measurements

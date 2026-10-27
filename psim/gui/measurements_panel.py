@@ -1,4 +1,4 @@
-"""Measurements panel: live distances and angles between objects (origins or centres of mass)."""
+"""Measurements panel: live distances and angles between objects (origins, centres of mass or surface points)."""
 from __future__ import annotations
 
 import math
@@ -9,17 +9,20 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout, QHeade
                                QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..scene.editing import SceneEditor
-from ..scene.measurements import MeasurementError, evaluate
+from ..scene.measurements import MeasurementError, describe_point, evaluate
 from ..scene.scene_manager import Scene, SceneError
 from ..units.unit_registry import UnitRegistry
 
 HINT = ("Select two objects for a distance or three for an angle (the vertex second). Values follow the objects "
         "live, also while a simulation runs.")
+POINT_HINT = ("Press Distance or Angle, then click the points on object surfaces in the viewport (for an angle: A, "
+              "the vertex, B). Each point stays fixed on its object. Esc cancels.")
 COLUMNS = ("Show", "Name", "Points", "Value", "ΔX", "ΔY", "ΔZ")
 
 
 class MeasurementsPanel(QWidget):
     errorOccurred = Signal(str)
+    pickRequested = Signal(str)        # kind: pick surface points in the viewport
 
     def __init__(self, scene: Scene, editor: SceneEditor, units: UnitRegistry, parent=None) -> None:
         super().__init__(parent)
@@ -30,6 +33,8 @@ class MeasurementsPanel(QWidget):
         self.at = QComboBox()
         self.at.addItem("Object origins", "origin")
         self.at.addItem("Centres of mass", "com")
+        self.at.addItem("Points on surfaces", "point")
+        self.at.currentIndexChanged.connect(lambda _i: self._update_buttons())
         self.at.setToolTip("Which point of each selected object new measurements use")
         self.add_distance = QPushButton("Distance")
         self.add_distance.setToolTip("Distance between the two selected objects (in selection order)")
@@ -57,6 +62,7 @@ class MeasurementsPanel(QWidget):
         self.table.itemChanged.connect(self._item_changed)
         lay.addWidget(self.table, 1)
         self.hint = QLabel(HINT)
+        self._showing_error = False
         self.hint.setObjectName("Muted")
         self.hint.setWordWrap(True)
         lay.addWidget(self.hint)
@@ -106,8 +112,7 @@ class MeasurementsPanel(QWidget):
                     break
                 names = []
                 for p in m.points:
-                    o = self.scene.find(p["object"])
-                    names.append((o.name if o else f"⚠ {p['object']}") + (" (COM)" if p["at"] == "com" else ""))
+                    names.append(describe_point(self.scene, p))
                 sep = " – " if m.kind == "distance" else " ∠ "
                 self.table.item(r, 2).setText(sep.join(names) if m.kind == "distance" else
                                               f"{names[0]} – {names[1]} – {names[2]}  (at {names[1]})")
@@ -135,12 +140,18 @@ class MeasurementsPanel(QWidget):
 
     def _update_buttons(self) -> None:
         n = len([i for i in self.scene.selection if i in self.scene.objects])
-        self.add_distance.setEnabled(n == 2)
-        self.add_angle.setEnabled(n == 3)
+        points = self.at.currentData() == "point"
+        self.add_distance.setEnabled(points or n == 2)
+        self.add_angle.setEnabled(points or n == 3)
+        if not self._showing_error:
+            self.hint.setText(POINT_HINT if points else HINT)
         self.remove.setEnabled(bool(self.scene.measurements))
 
     # ---- editing ---------------------------------------------------------------------------------------------
     def _add(self, kind: str) -> None:
+        if self.at.currentData() == "point":
+            self.pickRequested.emit(kind)
+            return
         ids = [i for i in self.scene.selection if i in self.scene.objects]
         try:
             self.editor.add_measurement(kind, ids, self.at.currentData())
@@ -173,13 +184,15 @@ class MeasurementsPanel(QWidget):
 
     def _message(self, text: str) -> None:
         """Show a problem in the panel itself (no modal dialog while the user is working in the table)."""
+        self._showing_error = True
         self.hint.setStyleSheet("color: #e5534b;")
         self.hint.setText(text)
         QTimer.singleShot(6000, self._reset_hint)
 
     def _reset_hint(self) -> None:
+        self._showing_error = False
         self.hint.setStyleSheet("")
-        self.hint.setText(HINT)
+        self._update_buttons()
 
     def copy(self) -> None:
         rows = ["\t".join(COLUMNS[1:])]

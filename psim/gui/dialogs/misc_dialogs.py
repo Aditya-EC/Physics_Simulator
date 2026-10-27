@@ -330,6 +330,8 @@ other tools: orbit camera. Alt + left drag always orbits</td></tr>
 <tr><td><b>Right click</b></td><td>Context menu</td></tr>
 <tr><td><b>Drag gizmo handles</b></td><td>Move along an axis or plane, rotate about an axis, scale along a local axis.
  The centre handle moves in the view plane / scales uniformly. Esc cancels a drag.</td></tr>
+<tr><td><b>Measuring between points</b></td><td>After Tools ▸ Measure … Between Points: left click picks a point on an
+ object's surface, left drag still orbits, Esc cancels</td></tr>
 <tr><td><b>Drag from Object Library</b></td><td>Place the object on the surface under the cursor or on the work plane
  (with grid snapping)</td></tr>
 </table>
