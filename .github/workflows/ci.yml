@@ -48,12 +48,15 @@ jobs:
         env:
           PSIM_FORCE_PYTHON_NUMERICS: ${{ matrix.fallback && '1' || '' }}
           QT_SCALE_FACTOR: ${{ matrix.scale || '1' }}
-        run: xvfb-run -a -s "-screen 0 1920x1080x24" python -m pytest -q -rfs tests -p no:cacheprovider
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" python -m pytest -q -rfs tests -p no:cacheprovider --junitxml=report.xml
       - name: Tests (offscreen)
         if: runner.os != 'Linux'
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q -rf tests -p no:cacheprovider
+        run: python -m pytest -q -rf tests -p no:cacheprovider --junitxml=report.xml
+      - name: Annotate failing tests
+        if: failure()
+        run: python .github/scripts/annotate_failures.py report.xml "${{ runner.os }}"
 
   package:
     name: package (${{ matrix.os }})
