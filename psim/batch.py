@@ -282,6 +282,7 @@ def parse_sweep(spec: str) -> tuple[str, list]:
             raise BatchError(f"--sweep {name}: COUNT must be a positive integer and the ends finite")
         n = int(n)
         values = [a + (b - a) * k / (n - 1) for k in range(n)] if n > 1 else [a]
+        values[-1] = b if n > 1 else a           # the end exactly (not a + (b − a) with rounding)
     else:
         values = [_value(x.strip()) for x in text.split(",") if x.strip()]
     if not values:

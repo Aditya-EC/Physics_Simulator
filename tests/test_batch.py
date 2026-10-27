@@ -127,6 +127,7 @@ def test_module_entry_point_runs_as_a_process(tmp_path):
 def test_sweep_specs_grid_and_file_names():
     assert batch.parse_sweep("k=0:1:5")[1] == [0.0, 0.25, 0.5, 0.75, 1.0]
     assert batch.parse_sweep("k=2:2:1")[1] == [2.0]
+    assert batch.parse_sweep("k=0.2:0.9:4")[1][-1] == 0.9                       # exact end
     assert batch.parse_sweep("Ball.restitution = 0.5, 0.9")[1] == [0.5, 0.9]
     assert batch.parse_sweep("Ball.linear_velocity=[[1,0,0],[0,2,0]]")[1] == [[1, 0, 0], [0, 2, 0]]
     for bad, msg in (("k", "NAME=VALUES"), ("k=1:2:0", "COUNT"), ("k=a:b:3", "numbers"), ("k=[1,", "JSON")):
