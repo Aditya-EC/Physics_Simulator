@@ -35,6 +35,7 @@ struct ShapeSet {
     const double* half_len = nullptr;     // capsule core half length (local Z)
     const double* restitution = nullptr;
     const double* friction = nullptr;
+    const double* static_friction = nullptr;   // optional: static coefficients (values below `friction` are raised)
     const double* sweep = nullptr;        // optional: how far each shape's surface can move this step (CCD)
     const double* center0 = nullptr;      // optional: start-of-step centres and rotations (speculative pairs)
     const double* rot0 = nullptr;
@@ -49,7 +50,12 @@ struct BodySet {
     const double* v = nullptr;
     const double* w = nullptr;
     const double* com0 = nullptr;         // optional: start-of-step centres of mass (speculative pairs)
+    const double* v0 = nullptr;           // optional: start-of-step velocities (sticking or sliding contacts)
+    const double* w0 = nullptr;
 };
+
+// Contacts whose tangential speed at the start of the step is below this stick (static friction); faster ones slide.
+constexpr double kStaticSpeed = 0.01;
 
 struct ContactOutput {
     std::vector<int64_t> pairs;           // 2 per touching shape pair

@@ -51,6 +51,34 @@ def test_native_contacts_and_rows_match_the_reference(seed):
 
 
 @native
+@pytest.mark.parametrize("seed", range(4))
+def test_static_friction_matches_the_reference(seed):
+    args = _scene(seed)
+    rng = np.random.default_rng(100 + seed)
+    nb = len(args[9])
+    extra = dict(static_friction=args[8] + rng.uniform(-0.2, 0.6, len(args[8])),
+                 v0=rng.normal(size=(nb, 3)) * 0.003, w0=rng.normal(size=(nb, 3)) * 0.003)
+    ref = reference(*args, **extra)
+    nat = numerics.contact_rows(*args, **extra)
+    for key in ("row", "parent", "mode"):
+        np.testing.assert_array_equal(nat[key], ref[key], err_msg=key)
+    np.testing.assert_allclose(nat["mu"], ref["mu"], rtol=1e-12)
+    plain = reference(*args)
+
+    def contact_mu(d):
+        """Friction coefficient of each contact (0 without friction rows)."""
+        out = np.zeros(len(d["row"]))
+        for k, r in enumerate(d["row"]):
+            rows = np.flatnonzero(d["parent"] == r)
+            out[k] = d["mu"][rows[0]] if len(rows) else 0.0
+        return out
+    stat, kin = contact_mu(ref), contact_mu(plain)
+    assert np.all(stat >= kin - 1e-12) and np.any(stat > kin + 1e-9)       # sticking contacts get more, never less
+    with pytest.raises(ValueError, match="v0"):
+        numerics.contact_rows(*args, static_friction=extra["static_friction"], v0=extra["v0"])
+
+
+@native
 def test_every_pair_kind_is_exercised():
     seen = set()
     for seed in range(12):

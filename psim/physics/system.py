@@ -129,6 +129,9 @@ class PhysicsSystem:
         self.col_half_len = np.array([c.shape.half_length for c in cols], float)
         self.col_restitution = np.array([c.restitution for c in cols], float)
         self.col_friction = np.array([c.friction for c in cols], float)
+        static = np.array([c.static_friction for c in cols], float)
+        # static coefficients only matter where they exceed the kinetic ones
+        self.col_static = static if np.any(static > self.col_friction) else None
         self.col_bound = np.array([0.0 if c.shape.kind == "plane" else c.shape.bounding_radius() for c in cols],
                                   float)
         self.excluded_index = np.array([sorted(self.index[k] for k in pair) for pair in connected
@@ -294,7 +297,9 @@ class PhysicsSystem:
         rot = np.einsum("nij,njk->nik", R[b], self.col_rel_rot)
         center = origin[b] + np.einsum("nij,nj->ni", R[b], self.col_rel_pos) + np.einsum("nij,nj->ni", rot,
                                                                                          self.col_center)
-        sweep = center0 = rot0 = com0 = None
+        sweep = center0 = rot0 = com0 = v0 = w0 = None
+        if start is not None and self.col_static is not None:   # stick or slip is judged at the start of the step
+            *_, v0, w0, _ = self._gather(start)
         if st.continuous and dt > 0:   # how far each shape's surface can move this step: (|v| + |ω|·reach)·Δt
             reach = np.linalg.norm(center - com[b], axis=1) + self.col_bound
             sweep = (np.linalg.norm(v[b], axis=1) + np.linalg.norm(w[b], axis=1) * reach) * dt
@@ -306,7 +311,7 @@ class PhysicsSystem:
         d = numerics.contact_rows(self.col_kind, b, center, rot, self.col_radius, self.col_half, self.col_half_len,
                                   self.col_restitution, self.col_friction, self.dynamic.astype(np.uint8),
                                   self.excluded_index, com, v, w, st.slop, st.restitution_threshold, sweep, dt,
-                                  center0, rot0, com0, self.col_hull_id, self.hulls)
+                                  center0, rot0, com0, self.col_hull_id, self.hulls, self.col_static, v0, w0)
         # touching object pairs; pairs that were not touching in the previous step are logged, in pair order
         n = max(len(self.sources), 1)
         sa, sb = self.col_source[d["pairs"][:, 0]], self.col_source[d["pairs"][:, 1]]

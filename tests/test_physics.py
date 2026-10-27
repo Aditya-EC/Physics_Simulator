@@ -96,6 +96,33 @@ def test_block_on_an_incline(scene, tan_theta, slides):
     assert moved == pytest.approx(expected, abs=0.01) and (moved > 0.1) == slides
 
 
+@pytest.mark.parametrize("pushed", [False, True])
+def test_static_friction_holds_until_the_block_slides(scene, pushed):
+    """tan θ = 0.5 lies between μk = 0.4 and μs = 0.6: at rest the block sticks; pushed, it slides with
+    a = g (sin θ − μk cos θ)."""
+    s, e = scene
+    theta = math.atan(0.5)
+    g = _ground(e, tilt=theta, mu=0.4)
+    n = np.array([math.sin(theta), 0, math.cos(theta)])
+    t = np.array([math.cos(theta), 0, -math.sin(theta)])                    # down the slope
+    box = _box(e, list(n * 0.2), mu=0.4)
+    for o in (g, box):
+        e.set_property([o.id], "physics.static_friction", 0.6)
+    s.get(box.id).set_orientation(numerics.quat_from_axis_angle([0, 1, 0], theta))
+    if pushed:
+        e.set_property([box.id], "linear_velocity", list(t * 1.0))
+    _gravity(e, box)
+    rec = Recording()
+    run(make_engine(scene, rec, delta_time=0.002, duration=1.0))
+    p = rec.column((box.id, "com"))
+    moved = float((p[-1] - p[0]) @ t)
+    if pushed:
+        a = G * (math.sin(theta) - 0.4 * math.cos(theta))
+        assert moved == pytest.approx(1.0 + a / 2, abs=0.01)
+    else:
+        assert abs(moved) < 1e-3                                             # μk alone (0.4) would let it slide
+
+
 def test_stack_of_boxes_is_stable(scene):
     s, e = scene
     _ground(e)

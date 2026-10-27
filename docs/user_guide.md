@@ -71,7 +71,10 @@ The **Inspector** edits the selection. Each value shows where it comes from: **U
   uses the exact shape where one exists, otherwise the convex hull of a convex mesh (exact for
   cylinders, cones, prisms and wedges), and for a concave mesh (torus, gear, I-beam, imported
   shapes) a set of convex parts, so that a ball can pass through the hole of a ring. `convex`
-  forces the single filled hull, `box` the bounding box. Approximations are marked in the inspector. The section also holds restitution, friction, *Show collider* and the object's joints.
+  forces the single filled hull, `box` the bounding box. Approximations are marked in the inspector.
+  The section also holds restitution, the friction coefficients, *Show collider* and the object's
+  joints. *Friction* applies while sliding; *Static friction* (0 = the same) applies while a contact
+  is at rest, so it takes more force to start an object sliding than to keep it sliding.
   **An object collides only if it has a collider:** rigid-body types default to `auto`, all others
   to `none`.
 - **Custom properties** (*Objects ▸ Add Custom Property*): scalars, vectors, text and more, with units and

@@ -35,6 +35,7 @@ class ColliderEntry:
     rel_rot: np.ndarray           # (3, 3) collider object's orientation in the body's frame
     restitution: float
     friction: float
+    static_friction: float = 0.0  # ≤ friction: the same as friction
 
 
 @dataclass
@@ -118,7 +119,8 @@ def build_physics_setup(scene, body_ids: list[str], trans: np.ndarray, rot: np.n
         for part in (shape.parts if shape.kind == "convex_parts" else [shape]):   # a compound: one entry per part
             colliders.append(ColliderEntry(key, obj.id, part, rel_pos, rel_rot,
                                            float(obj.physics_setting("restitution")),
-                                           float(obj.physics_setting("friction"))))
+                                           float(obj.physics_setting("friction")),
+                                           float(obj.physics_setting("static_friction"))))
         if shape.kind == "plane" and bodies[key].role != "static":
             diag("error", f"{obj.id} ({obj.name}): plane colliders are infinite and must be static; use a box "
                           "collider for moving objects")

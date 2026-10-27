@@ -9,6 +9,10 @@ Per solver body: dynamic flag, centre of mass, velocity, angular velocity. ``exc
 that never collide (connected by a joint). Planes are static half-spaces (normal = local +Z). Hull shapes
 name their hull in ``hull_id``; ``hulls`` holds the hulls in local coordinates, packed by ``hull.pack_hulls``.
 
+Friction: the kinetic coefficient of a pair is the geometric mean of the shapes' ``friction``; with
+``static_friction`` (values below ``friction`` are raised to it) a contact whose tangential speed at the start of the
+step (``v0``, ``w0``; default the given velocities) is below STATIC_SPEED uses the static coefficient instead.
+
 Speculative contacts (continuous collision detection): ``sweep`` gives, per shape, how far its surface can
 move during the step. When the combined sweep of a pair exceeds half the thickness of the thinner shape —
 the only case in which it could pass through in one step — the pair is tested at the *start* of the step
@@ -36,6 +40,7 @@ from .hull import unpack_hulls
 KINDS = ("sphere", "box", "capsule", "plane", "hull")
 COLLIDER_CODES = {"sphere": 0, "box": 1, "capsule": 2, "plane": 3, "convex": 4}
 INF = 1e30
+STATIC_SPEED = 0.01        # contacts slower than this (tangentially, at the start of the step) stick: static friction
 
 
 def _cross(a, b) -> np.ndarray:
@@ -96,13 +101,16 @@ def inflated(s: WorldShape, m: float) -> WorldShape:
 
 def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, friction, dynamic, excluded,
                  com, v, w, margin: float, restitution_threshold: float, sweep=None, dt: float = 0.0,
-                 center0=None, rot0=None, com0=None, hull_id=None, hulls=None) -> dict:
+                 center0=None, rot0=None, com0=None, hull_id=None, hulls=None, static_friction=None, v0=None,
+                 w0=None) -> dict:
     kind = np.asarray(kind, np.int64)
     body = np.asarray(body, np.int64)
     center = np.asarray(center, float).reshape(-1, 3)
     rot = np.asarray(rot, float).reshape(-1, 3, 3)
     half = np.asarray(half, float).reshape(-1, 3)
     com, v, w = (np.asarray(x, float).reshape(-1, 3) for x in (com, v, w))
+    v0 = v if v0 is None else np.asarray(v0, float).reshape(-1, 3)
+    w0 = w if w0 is None else np.asarray(w0, float).reshape(-1, 3)
     excl = {(int(a), int(b)) for a, b in np.asarray(excluded, np.int64).reshape(-1, 2)}
     excl |= {(b, a) for a, b in excl}
     sweep = np.zeros(len(kind)) if sweep is None else np.asarray(sweep, float)
@@ -146,11 +154,21 @@ def contact_rows(kind, body, center, rot, radius, half, half_len, restitution, f
             continue
         pairs.append((p, q))
         e = max(float(restitution[p]), float(restitution[q]))
-        mu = math.sqrt(max(float(friction[p]), 0.0) * max(float(friction[q]), 0.0))
+        mu_k = math.sqrt(max(float(friction[p]), 0.0) * max(float(friction[q]), 0.0))
+        mu_s = mu_k
+        if static_friction is not None:
+            mu_s = math.sqrt(max(max(float(static_friction[p]), float(friction[p])), 0.0)
+                             * max(max(float(static_friction[q]), float(friction[q])), 0.0))
         for c in found:
             n = c.normal
             cc = com0 if speculative else com
             ra, rb = c.point - cc[a], c.point - cc[b]
+            mu = mu_k
+            if mu_s > mu_k:                    # sticking (slow at the start of the step): static coefficient
+                rel = (v0[b] + _cross(w0[b], rb)) - (v0[a] + _cross(w0[a], ra))
+                vt = rel - float(rel @ n) * n
+                if math.sqrt(float(vt @ vt)) < STATIC_SPEED:
+                    mu = mu_s
             vn0 = float(((v[b] + _cross(w[b], rb)) - (v[a] + _cross(w[a], ra))) @ n)
             depth = c.depth - m if speculative else c.depth      # < 0: still separated by a gap
             gap = max(-depth, 0.0)

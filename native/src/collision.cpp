@@ -721,13 +721,26 @@ void contact_rows(const ShapeSet& s, const BodySet& bodies, const int64_t* exclu
         out.pairs.push_back(p);
         out.pairs.push_back(q);
         const double e = std::max(s.restitution[p], s.restitution[q]);
-        const double mu = std::sqrt(std::max(s.friction[p], 0.0) * std::max(s.friction[q], 0.0));
+        const double mu_k = std::sqrt(std::max(s.friction[p], 0.0) * std::max(s.friction[q], 0.0));
+        double mu_s = mu_k;
+        if (s.static_friction)
+            mu_s = std::sqrt(std::max(std::max(s.static_friction[p], s.friction[p]), 0.0) *
+                             std::max(std::max(s.static_friction[q], s.friction[q]), 0.0));
         const double* com = speculative && bodies.com0 ? bodies.com0 : bodies.com;
         const Vec3 ca = vec(com, a), cb = vec(com, b);
         const Vec3 va = vec(bodies.v, a), vb = vec(bodies.v, b), wa = vec(bodies.w, a), wb = vec(bodies.w, b);
+        const double* v0 = bodies.v0 ? bodies.v0 : bodies.v;
+        const double* w0 = bodies.w0 ? bodies.w0 : bodies.w;
+        const Vec3 va0 = vec(v0, a), vb0 = vec(v0, b), wa0 = vec(w0, a), wb0 = vec(w0, b);
         for (const Contact& c : found) {
             const Vec3& n = c.normal;
             const Vec3 ra = c.point - ca, rb = c.point - cb;
+            double mu = mu_k;
+            if (mu_s > mu_k) {                   // sticking (slow at the start of the step): static coefficient
+                const Vec3 rel = (vb0 + cross(wb0, rb)) - (va0 + cross(wa0, ra));
+                const Vec3 vt = rel - n * dot(rel, n);
+                if (norm(vt) < kStaticSpeed) mu = mu_s;
+            }
             const double vn0 = dot((vb + cross(wb, rb)) - (va + cross(wa, ra)), n);
             const double depth = speculative ? c.depth - m : c.depth;   // < 0: still separated by a gap
             const double gap = std::max(-depth, 0.0);
