@@ -85,8 +85,12 @@ class Viewport(QOpenGLWidget):
         # Frame pacing: automatic redraws (continuous rendering, scene changes from a running simulation) leave the
         # event loop at least as much idle time as the last frame took, so slow (e.g. software) OpenGL can never
         # starve user input. Direct interaction still repaints immediately.
-        self._paint_cost = 0.0          # smoothed wall time of one paintGL (s)
+        self._paint_cost = 0.0          # smoothed wall time of one frame (s): paintGL and its composition
         self._last_paint_end = 0.0
+        self._frame = None              # (paintGL start, paintGL duration) of the frame not yet composed
+        # QOpenGLWidget renders into a texture that Qt then composes into the window; with software OpenGL that
+        # composition can cost as much as the rendering (macOS), so a frame ends when it has been swapped
+        self.frameSwapped.connect(self._frame_swapped)
         self._deferred = QTimer(self)
         self._deferred.setSingleShot(True)
         self._deferred.timeout.connect(self.update)
@@ -211,7 +215,21 @@ class Viewport(QOpenGLWidget):
             self._paint()
         finally:
             end = time.perf_counter()
-            self._paint_cost = 0.7 * self._paint_cost + 0.3 * (end - started) if self._paint_cost else end - started
+            first = not self._paint_cost
+            self._paint_cost = end - started if first else 0.7 * self._paint_cost + 0.3 * (end - started)
+            self._last_paint_end = end
+            self._frame = (started, end - started, first)
+
+    def _frame_swapped(self) -> None:
+        """Count the composition of the last frame into its cost (paintGL alone is the estimate until then)."""
+        if self._frame is None:
+            return
+        started, painted, first = self._frame
+        self._frame = None
+        end = time.perf_counter()
+        total = end - started
+        if total > painted:
+            self._paint_cost = total if first else self._paint_cost + 0.3 * (total - painted)
             self._last_paint_end = end
 
     def _paint(self) -> None:

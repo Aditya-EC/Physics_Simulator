@@ -25,9 +25,10 @@ def main() -> int:
     if not ctx.create() or not ctx.makeCurrent(surf):
         print(f"::error::No OpenGL context (Qt platform {QApplication.platformName()})")
         return 1
-    from OpenGL import GL
-    info = [GL.glGetString(k) for k in (GL.GL_VERSION, GL.GL_RENDERER, GL.GL_VENDOR)]
-    text = " | ".join(x.decode(errors="replace") if x else "?" for x in info)
+    # through Qt's resolved GL functions: PyOpenGL's own lookup returned nothing on Windows with Mesa's opengl32.dll
+    gl = ctx.functions()
+    info = [gl.glGetString(k) for k in (0x1F02, 0x1F01, 0x1F00)]          # GL_VERSION, GL_RENDERER, GL_VENDOR
+    text = " | ".join((x.decode(errors="replace") if isinstance(x, bytes) else str(x)) if x else "?" for x in info)
     version = ctx.format().majorVersion() * 10 + ctx.format().minorVersion()
     ctx.doneCurrent()
     print(f"::notice title=OpenGL::{QApplication.platformName()}: {text}")
