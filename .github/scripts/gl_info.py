@@ -43,7 +43,34 @@ class Probe(QOpenGLWidget):
         Probe.result = {"version": fmt.majorVersion() * 10 + fmt.minorVersion(), "qt": qt, "pyopengl": py}
 
 
+def _loaded_gl_modules() -> str:
+    """Windows: the paths of the OpenGL DLLs loaded into this process (Qt's and PyOpenGL's must be one)."""
+    if sys.platform != "win32":
+        return ""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.GetModuleHandleW.restype = wintypes.HMODULE
+    k32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+    k32.GetModuleFileNameW.argtypes = [wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD]
+    out = []
+    for name in ("opengl32.dll", "opengl32sw.dll", "libgallium_wgl.dll"):
+        h = k32.GetModuleHandleW(name)
+        if h:
+            buf = ctypes.create_unicode_buffer(1024)
+            k32.GetModuleFileNameW(h, buf, 1024)
+            out.append(buf.value)
+    return "; ".join(out) or "none"
+
+
 def main() -> int:
+    hang = os.environ.get("PSIM_HANG_DUMP")
+    if hang:                                        # a hanging probe dumps its stacks for the annotation step
+        import faulthandler
+        fh = open(hang, "w", encoding="utf-8")
+        fh.write("The OpenGL probe did not finish within 90 s\n")
+        fh.flush()
+        faulthandler.dump_traceback_later(90.0, exit=True, file=fh)
     configure_opengl()
     app = QApplication.instance() or QApplication([])
     w = Probe()
@@ -59,12 +86,17 @@ def main() -> int:
         print(f"::error::No OpenGL context (Qt platform {platform})")
         return 1
     qt, py = " | ".join(res["qt"]), " | ".join(res["pyopengl"])
-    print(f"::notice title=OpenGL::{platform}: {qt}")
-    if res["version"] < 33:
-        print(f"::error::OpenGL {res['version'] / 10:.1f} context; 3.3 core is needed")
-        return 1
+    modules = _loaded_gl_modules()
+    print(f"::notice title=OpenGL::{platform}: {qt}" + (f" (modules: {modules})" if modules else ""))
+    if hang:
+        import faulthandler
+        faulthandler.cancel_dump_traceback_later()
+        os.remove(hang)
     if res["qt"] != res["pyopengl"]:
         print(f"::error::Qt and PyOpenGL see different OpenGL implementations: Qt {qt}; PyOpenGL {py}")
+        return 1
+    if res["version"] < 33:
+        print(f"::error::OpenGL {res['version'] / 10:.1f} context; 3.3 core is needed")
         return 1
     return 0
 

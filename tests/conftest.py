@@ -67,6 +67,17 @@ def pytest_runtest_protocol(item, nextitem):
         os.remove(_HANG_DUMP)
 
 
+def pytest_unconfigure(config):
+    """With PSIM_HANG_DUMP: if the process has not exited 120 s after the session, dump all stacks and exit (a hang
+    at shutdown, e.g. in Qt's or a thread's cleanup, would otherwise only show as a job timeout)."""
+    if _HANG_DUMP:
+        import faulthandler
+        fh = open(_HANG_DUMP, "w", encoding="utf-8")
+        fh.write("The test process did not exit within 120 s after the session ended\n")
+        fh.flush()
+        faulthandler.dump_traceback_later(120.0, exit=True, file=fh)
+
+
 @pytest.fixture(scope="session")
 def gl_available(qapp) -> bool:
     return _gl_available()

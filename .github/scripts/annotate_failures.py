@@ -25,6 +25,8 @@ def annotate_hang(path: str, label: str) -> None:
         return
     with open(path, encoding="utf-8", errors="replace") as fh:
         lines = fh.read().splitlines()
+    if not any(ln.startswith("Timeout (") for ln in lines):
+        return                                # armed but never fired (the process ended in time)
     noise = ("/_pytest/", "/pluggy/", "/site-packages/pytest", "/dist-packages/pytest")
     kept = [ln for ln in lines if not any(n in ln for n in noise)]
     title = f"{label}: hang" if label else "hang"

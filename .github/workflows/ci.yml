@@ -58,6 +58,7 @@ jobs:
         run: python build_native.py
       - name: Tests (Linux, Xvfb)
         if: runner.os == 'Linux'
+        timeout-minutes: 30         # leaves time for the annotation step within the job limit
         env:
           PSIM_FORCE_PYTHON_NUMERICS: ${{ matrix.fallback && '1' || '' }}
           QT_SCALE_FACTOR: ${{ matrix.scale || '1' }}
@@ -82,8 +83,14 @@ jobs:
           $py = python -c "import os, sys; print(os.path.dirname(sys.executable))"
           Copy-Item mesa\x64\*.dll $py
           "GALLIUM_DRIVER=llvmpipe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          # Qt loads opengl32.dll from System32 only (Windows' OpenGL 1.1) and otherwise falls back to its bundled
+          # opengl32sw.dll (Mesa 11.2, an OpenGL 3.0 context). As its software OpenGL it loads this very file, the
+          # one PyOpenGL loads too, so both share one Mesa instance.
+          "QT_OPENGL=software" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "QT_OPENGL_DLL=$py\opengl32.dll" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - name: Tests (OpenGL)
         if: runner.os != 'Linux' && matrix.gl
+        timeout-minutes: 30         # leaves time for the annotation step within the job limit
         shell: bash                 # stops at a failing command (pwsh would only check the last one)
         env:
           PSIM_REQUIRE_GL: "1"
@@ -94,6 +101,7 @@ jobs:
           python -m pytest -q -rfs tests -p no:cacheprovider --junitxml=report.xml
       - name: Tests (offscreen)
         if: runner.os != 'Linux' && !matrix.gl
+        timeout-minutes: 30         # leaves time for the annotation step within the job limit
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q -rf tests -p no:cacheprovider --junitxml=report.xml
