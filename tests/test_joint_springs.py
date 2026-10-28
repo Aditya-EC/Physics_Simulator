@@ -206,3 +206,67 @@ def test_collider_shapes_are_cached(scene):
     e.set_property([tor.id], "scale", [2.0, 1.0, 1.0])
     assert collider_for(tor) is not first and collider_for(tor).half_extents[0] == pytest.approx(
         2 * first.half_extents[0], rel=1e-6)                                       # new geometry, new shape
+
+
+def _dist_to_line(p, a, b):
+    d = (b - a) / np.linalg.norm(b - a)
+    r = p - a
+    return np.linalg.norm(r - np.outer(r @ d, d), axis=1)
+
+
+def test_springs_are_drawn_as_coils_and_spirals(scene):
+    from psim.rendering import physics_overlay as po
+    s, e = scene
+    m = 0.05
+    ball = e.add_new("body.point_mass", position=[0, 0, 1.0])
+    e.add_joint("distance", ball.id, None, [0, 0, 1.0], anchor_world_b=[0, 0, 2.0], spring_stiffness=100.0)
+    (pts,), _ = po.joint_lines(s, m)
+    a, b = np.array([0, 0, 1.0]), np.array([0, 0, 2.0])
+    assert len(pts) % 2 == 0 and np.all(np.isfinite(pts))
+    coil = pts[_dist_to_line(pts, a, b) > 1e-9]
+    assert len(coil) > 100                                            # windings, not a straight rod
+    assert np.max(_dist_to_line(pts, a, b)) <= 1.2 * m * 1.2 + 1e-12
+    assert np.min(coil[:, 2]) >= 1.0 - 1e-12 and np.max(coil[:, 2]) <= 2.0 + 1e-12   # between the anchors
+
+    # a damper alone keeps the rod: drawn straight
+    joints = s.joints_snapshot()
+    joints[0]["spring_stiffness"], joints[0]["spring_damping"] = 0.0, 5.0
+    e.set_joints(joints)
+    (pts,), _ = po.joint_lines(s, m)
+    assert np.max(_dist_to_line(pts[(pts[:, 0] == 0) & (pts[:, 1] == 0)], a, b)) == 0.0
+    assert len(pts) < 40
+
+    # a prismatic spring: the coil length follows the travel
+    e.set_joints([])
+    box = _box(e)
+    e.add_joint("prismatic", box.id, None, [0, 0, 1.0], [1, 0, 0], spring_stiffness=50.0)
+    (rest,), _ = po.joint_lines(s, m)
+    e.set_property([box.id], "position", [0.3, 0, 1.0])
+    (moved,), _ = po.joint_lines(s, m)
+    assert np.ptp(moved[:, 0]) == pytest.approx(np.ptp(rest[:, 0]) + 0.3, abs=1e-9)
+
+    # a torsion spring: a flat spiral around the hinge axis at the anchor
+    e.set_joints([])
+    e.add_joint("revolute", box.id, None, [0.3, 0, 1.0], [0, 0, 1], spring_stiffness=5.0)
+    (pts,), _ = po.joint_lines(s, m)
+    r = np.linalg.norm(pts[:, :2] - [0.3, 0.0], axis=1)
+    flat = np.abs(pts[:, 2] - 1.0) < 1e-12
+    spiral = pts[flat & (r > 0.8 * m - 1e-12) & (r < 3.0 * m + 1e-12) & (r > 1.5 * m)]
+    assert len(spiral) > 20
+
+
+def test_mechanisms_demo_joint_overlay_is_well_formed(scene):
+    import os
+
+    from psim.project import serialization as ser
+    from psim.rendering import physics_overlay as po
+    from psim.units.unit_registry import UnitRegistry
+    s, _ = scene
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples",
+                        "mechanisms_demo.psim")
+    ser.load_project(path, s, UnitRegistry())
+    pts, cols = po.joint_lines(s, 0.05)
+    assert len(pts) == len(s.joints) == 3
+    for p, c in zip(pts, cols):
+        assert len(p) % 2 == 0 and len(p) == len(c) and np.all(np.isfinite(p))
+    assert max(len(p) for p in pts) > 100                             # the sprung joints carry coils / spirals

@@ -178,6 +178,8 @@ parameters, Δt, the rate and the duration.
   - **distance**: a rod, or a rope
   Revolute, prismatic and distance joints can have a **spring** (stiffness, damping and rest
   angle or travel; a distance spring rests at the joint's length and replaces the rigid rod).
+  In the viewport a spring is drawn as a coil (distance and slider springs; the coil stretches and
+  shortens with the motion) or as a spiral around the hinge axis (torsion springs).
   Any joint can **break**: give it a break force and/or torque, and it comes apart in the step in
   which it transmits more (logged as a *joint* event).
   Anchors and axes are entered in world coordinates. Limits and motors act on body A relative to B.

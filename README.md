@@ -793,7 +793,7 @@ Each item is tested on both numerical backends unless noted. Details are in the 
 |---|---|---|
 | Convex-hull colliders (`auto` for convex meshes) and **convex parts** for concave meshes (exact plane cuts, C++ decomposition, Quickhull) | §3f *Collision geometry*; `psim/physics/hull.py`, `decompose.py`, `native/src/decompose.cpp` | `test_hulls.py`, `test_decompose.py` |
 | Joint rows in C++ (5× faster jointed scenes) | §3f *Joints*; `native/src/joints.cpp` | `test_joint_kernel.py` |
-| **Joint springs** (revolute, prismatic, distance; implicit, stable for any stiffness) and **breakable joints** (force/torque limits, events, saved states, GUI) | §3f *Joints*; Joints dialog | `test_joint_springs.py`, `test_simulation_session.py` |
+| **Joint springs** (revolute, prismatic, distance; implicit, stable for any stiffness; drawn as coils and torsion spirals) and **breakable joints** (force/torque limits, events, saved states, GUI) | §3f *Joints*; Joints dialog | `test_joint_springs.py`, `test_simulation_session.py` |
 | **Static friction**, **rolling resistance**, **spinning resistance** | §3f *Collision geometry*; inspector *Collision & Joints* | `test_physics.py`, `test_contact_kernel.py` |
 | Resting contacts, taut ropes and joint limits held with every integrator (no chatter with Verlet, RK4, …) | §3f *Solver* | `test_physics.py`, `test_constraint_loads.py` |
 | **Place Relative To…** (offset from an object, frame or the origin; rigid groups) | §3 editing; *Objects* menu | `test_placement.py` |

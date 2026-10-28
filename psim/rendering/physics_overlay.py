@@ -5,6 +5,7 @@ import numpy as np
 
 from .. import numerics
 from ..physics.colliders import ColliderShape, collider_for
+from ..physics.joints import SPRING_TYPES
 
 COLLIDER_COLOR = (0.30, 0.92, 0.55)
 APPROX_COLOR = (0.95, 0.80, 0.30)
@@ -23,6 +24,45 @@ def _arc(center, e1, e2, r: float, a0: float, a1: float, n: int = _SEGMENTS // 2
     t = np.linspace(a0, a1, n + 1)
     ring = center + r * (np.cos(t)[:, None] * e1 + np.sin(t)[:, None] * e2)
     return np.repeat(ring, 2, axis=0)[1:-1]
+
+
+def _perpendicular(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Two unit vectors completing `axis` (unit) to a right-handed orthonormal basis."""
+    helper = np.array([1.0, 0.0, 0.0]) if abs(axis[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    e1 = np.cross(axis, helper)
+    e1 /= np.linalg.norm(e1)
+    return e1, np.cross(axis, e1)
+
+
+def coil(a, b, radius: float, turns: int = 8, per_turn: int = 12, lead: float = 0.12) -> np.ndarray:
+    """Segment endpoints of a helical spring from a to b: straight leads (fraction `lead` of the length at each
+    end) and `turns` windings of `radius` between them. A zero-length spring is drawn as nothing."""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    d = b - a
+    length = float(np.linalg.norm(d))
+    if length < 1e-12:
+        return np.zeros((0, 3))
+    axis = d / length
+    e1, e2 = _perpendicular(axis)
+    t = np.linspace(0.0, 1.0, turns * per_turn + 1)
+    ang = 2 * np.pi * turns * t
+    # windings that start and end on the axis, so the leads join them smoothly
+    body = (a + d * lead) + np.outer(t, d * (1 - 2 * lead)) + radius * (np.sin(ang)[:, None] * e1
+                                                                     + (1 - np.cos(ang))[:, None] * 0.5 * e2)
+    path = np.vstack([a, body, b])
+    return np.repeat(path, 2, axis=0)[1:-1]
+
+
+def spiral(center, axis, e1, r0: float, r1: float, turns: float = 2.5, n: int = 40) -> np.ndarray:
+    """Segment endpoints of a flat spiral (a torsion spring) around `axis` (unit) from radius r0 to r1, starting
+    along e1 (unit, perpendicular to the axis)."""
+    center, axis, e1 = (np.asarray(x, float) for x in (center, axis, e1))
+    e2 = np.cross(axis, e1)
+    t = np.linspace(0.0, 1.0, n + 1)
+    ang = 2 * np.pi * turns * t
+    r = r0 + (r1 - r0) * t
+    path = center + r[:, None] * (np.cos(ang)[:, None] * e1 + np.sin(ang)[:, None] * e2)
+    return np.repeat(path, 2, axis=0)[1:-1]
 
 
 def shape_lines(shape: ColliderShape, position, rotation: np.ndarray, plane_size=2.0) -> np.ndarray:
@@ -113,13 +153,26 @@ def joint_lines(scene, marker: float) -> tuple[list[np.ndarray], list[np.ndarray
                 e = np.zeros(3)
                 e[i] = marker
                 seg += [c - e, c + e]
-        seg += [np.asarray(pa, float), a, a, b]
+        seg += [np.asarray(pa, float), a]
+        sprung = j.type in SPRING_TYPES and j.spring_stiffness > 0
+        extra = []
+        if j.is_soft:
+            extra.append(coil(b, a, marker * 1.2))       # a soft distance joint: a coil spring instead of the rod
+        else:
+            seg += [a, b]
         if j.body_b:
             seg += [np.asarray(pb, float), b]
         if j.type in ("revolute", "prismatic"):
             axis = ra @ np.asarray(j.axis_a, float)
             seg += [a - axis * marker * 4, a + axis * marker * 4]
-        seg = np.array(seg)
+            if sprung and j.type == "prismatic":
+                # a coil from a point fixed behind B's anchor to A's anchor: it stretches and shortens with the travel
+                extra.append(coil(b - axis * marker * 8, a, marker * 1.2))
+            elif sprung:
+                # a torsion spring: a spiral around the hinge axis, turning with body A
+                e1 = ra @ _perpendicular(np.asarray(j.axis_a, float))[0]
+                extra.append(spiral(a, axis, e1, marker * 0.8, marker * 3.0))
+        seg = np.vstack([np.array(seg)] + [x for x in extra if len(x)])
         pts.append(seg)
         cols.append(np.tile([*JOINT_COLOR, alpha], (len(seg), 1)))
     return pts, cols
