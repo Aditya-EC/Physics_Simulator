@@ -44,6 +44,29 @@ def _gl_available() -> bool:
     return bool(ok)
 
 
+# Hang diagnosis (CI): with PSIM_HANG_DUMP=<file>, a test running longer than PSIM_TEST_TIMEOUT seconds (default 300)
+# makes faulthandler write the stacks of all threads, after the test's id, to that file and end the process.
+_HANG_DUMP = os.environ.get("PSIM_HANG_DUMP")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    if not _HANG_DUMP:
+        yield
+        return
+    import faulthandler
+    fh = open(_HANG_DUMP, "w", encoding="utf-8")
+    fh.write(f"Test running too long: {item.nodeid}\n")
+    fh.flush()
+    faulthandler.dump_traceback_later(float(os.environ.get("PSIM_TEST_TIMEOUT", "300")), exit=True, file=fh)
+    try:
+        yield
+    finally:
+        faulthandler.cancel_dump_traceback_later()
+        fh.close()
+        os.remove(_HANG_DUMP)
+
+
 @pytest.fixture(scope="session")
 def gl_available(qapp) -> bool:
     return _gl_available()
