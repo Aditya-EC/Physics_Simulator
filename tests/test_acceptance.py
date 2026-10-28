@@ -465,6 +465,7 @@ def test_at27_the_gui_remains_responsive_while_simulating(window):
     w.editor.set_property([o.id for o in w.scene.objects.values() if o.type_id == "basic.plane"],
                           "physics.collider", "auto")
     w.project.simulation.duration, w.project.simulation.pacing = 1e6, PacingMode.AS_FAST_AS_POSSIBLE
+    _render(w)       # the first frame of new objects (mesh upload, shadow map) is not part of the steady state
     ticks = []
     timer = QTimer()
     timer.timeout.connect(lambda: ticks.append(time.perf_counter()))
