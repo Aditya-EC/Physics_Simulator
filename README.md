@@ -301,9 +301,10 @@ and macOS, where the OpenGL rendering tests skip (no OpenGL 3.3 on those runners
   alters Δt or the number of steps.
 - If the engine falls behind, it runs at most N catch-up steps per tick and reports the rest as
   dropped. Δt is never changed.
-- On Windows the runner requests 1 ms timer resolution during a run. On macOS it declares a
-  latency-critical activity for the run, so App Nap and timer coalescing do not throttle a
-  simulation whose window is in the background.
+- On Windows the runner requests 1 ms timer resolution during a run. On macOS, App Nap and timer
+  coalescing can throttle a run whose window is in the background (seen on CI). The runner can
+  declare a latency-critical activity against this, but the CI run that first used it on macOS
+  hung, so it is **off unless `PSIM_MACOS_ACTIVITY=1`** until it has been verified there.
 
 **Processes** (`psim/processes`).
 - Approved process definitions carry an ID, version, category, description, formula,

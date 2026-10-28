@@ -86,6 +86,8 @@ jobs:
         if: runner.os != 'Linux' && matrix.gl
         env:
           PSIM_REQUIRE_GL: "1"
+          # the macOS App Nap activity is off by default until verified; it is exercised here
+          PSIM_MACOS_ACTIVITY: ${{ runner.os == 'macOS' && '1' || '' }}
         run: |
           python .github/scripts/gl_info.py
           python -m pytest -q -rfs tests -p no:cacheprovider --junitxml=report.xml

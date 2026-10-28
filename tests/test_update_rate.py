@@ -107,8 +107,8 @@ def test_settings_validation_and_serialization():
 
 
 def test_platform_timing_helpers_are_safe_everywhere():
-    """macOS: a run declares a latency-critical activity (no App Nap throttling) and ends it again; Windows: 1 ms
-    timer resolution. Elsewhere both are no-ops."""
+    """macOS with PSIM_MACOS_ACTIVITY=1: a run declares a latency-critical activity (no App Nap throttling) and ends
+    it again; Windows: 1 ms timer resolution. Elsewhere both are no-ops."""
     import sys
     import threading
 
@@ -125,5 +125,6 @@ def test_platform_timing_helpers_are_safe_everywhere():
     t.start()
     t.join(10)
     assert seen["win"] == (sys.platform == "win32")
-    assert bool(seen["mac"]) == (sys.platform == "darwin")
+    import os
+    assert bool(seen["mac"]) == (sys.platform == "darwin" and os.environ.get("PSIM_MACOS_ACTIVITY") == "1")
     assert seen["after"] is None

@@ -14,6 +14,7 @@ As-fast-as-possible mode runs steps back to back (Δt and duration still apply).
 """
 from __future__ import annotations
 
+import os
 import queue
 import sys
 import threading
@@ -81,7 +82,10 @@ class _MacOSActivity:
     late, a real-time run falls behind its schedule and the GUI updates in bursts. The activity is the one Apple
     recommends for such work (NSProcessInfo beginActivityWithOptions:reason:); idle system sleep stays allowed.
     Called through the Objective-C runtime with ctypes, so no extra package is needed; any failure leaves the run
-    as it would be without it."""
+    as it would be without it.
+
+    Off unless PSIM_MACOS_ACTIVITY=1: the first CI run with it on macOS hung (cause not yet diagnosed), so it is
+    not enabled by default until it has been verified there."""
 
     # NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical
     OPTIONS = (0x00FFFFFF & ~(1 << 20)) | 0xFF00000000
@@ -89,7 +93,7 @@ class _MacOSActivity:
 
     def __enter__(self):
         self._token = None
-        if sys.platform != "darwin":
+        if sys.platform != "darwin" or os.environ.get("PSIM_MACOS_ACTIVITY") != "1":
             return self
         try:
             import ctypes
