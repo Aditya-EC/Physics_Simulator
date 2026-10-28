@@ -70,4 +70,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:  # noqa: BLE001 — a crash is reported as an annotation too
+        import traceback
+        detail = traceback.format_exc().replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        print(f"::error title=OpenGL probe crashed::{type(exc).__name__}: {exc}%0A{detail}")
+        sys.exit(1)
