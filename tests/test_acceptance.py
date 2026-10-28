@@ -476,7 +476,7 @@ def test_at27_the_gui_remains_responsive_while_simulating(window):
     steps = w.sim.last_stats.steps
     frame = w.viewport._paint_cost        # smoothed wall time of one viewport frame
     w.sim.stop()
-    gaps = np.diff(ticks)
+    gaps = np.diff(ticks)[1:]                 # the first gap holds the start of the run (first snapshot and frame)
     # The event loop keeps being served while the engine thread works: no gap is longer than about one frame, and
     # frame pacing leaves at least as much idle time as a frame takes. (Under software OpenGL a frame of this
     # scene costs ~0.1 s, ~0.25 s at a 2x scale factor on a CI runner; the runner's backpressure and the
@@ -487,7 +487,8 @@ def test_at27_the_gui_remains_responsive_while_simulating(window):
     assert len(ticks) > 10 / slow, (len(ticks), frame)
     # the 95th percentile only means something with enough gaps (with 4 gaps it is the maximum)
     p95 = np.percentile(gaps, 95) if len(gaps) >= 20 else 0.0
-    assert p95 < 0.2 * slow and gaps.max() < 0.3 * slow, (p95, gaps.max(), frame, len(gaps))
+    worst = gaps.max() if len(gaps) else 0.0
+    assert p95 < 0.2 * slow and worst < 0.3 * slow, (p95, worst, frame, len(gaps))
 
 
 def test_at28_long_simulations_record_without_excessive_memory(scene):
