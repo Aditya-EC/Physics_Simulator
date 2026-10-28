@@ -164,10 +164,11 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling and spinning resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **616 Python tests and the C++ test executable pass** with the native core, also at
-a 2× scale factor. With the NumPy fallback, 530 pass and 86 native-comparison tests are skipped.
-This was measured on Linux with Mesa llvmpipe under Xvfb. GitHub Actions CI also passes on Windows
-and macOS, where the OpenGL rendering tests skip (no OpenGL 3.3 on those runners); see §5.
+Current result: **619 Python tests and the C++ test executable pass** with the native core, also at
+a 2× scale factor. With the NumPy fallback, 533 pass and 86 native-comparison tests are skipped.
+This was measured on Linux with Mesa llvmpipe under Xvfb. GitHub Actions CI also passes the whole
+suite, OpenGL tests included, on Windows (Mesa llvmpipe) and macOS (Apple's software renderer);
+see §5.
 
 ## 3. What Phase 1 implements
 
@@ -304,7 +305,9 @@ and macOS, where the OpenGL rendering tests skip (no OpenGL 3.3 on those runners
 - On Windows the runner requests 1 ms timer resolution during a run. On macOS, App Nap and timer
   coalescing can throttle a run whose window is in the background (seen on CI). The runner can
   declare a latency-critical activity against this, but the CI run that first used it on macOS
-  hung, so it is **off unless `PSIM_MACOS_ACTIVITY=1`** until it has been verified there.
+  hung, so it is **off unless `PSIM_MACOS_ACTIVITY=1`**. The macOS OpenGL CI job runs with it on and
+  has passed since (with it, the real-time rate test holds), but the cause of the two earlier hangs
+  is unknown, so it stays off by default.
 
 **Processes** (`psim/processes`).
 - Approved process definitions carry an ID, version, category, description, formula,
@@ -981,16 +984,18 @@ Key design decisions:
   until restart. Menus, toolbar, library, inspector and outliner refresh immediately.
 - The renderer issues one draw call per object (no instancing). It is comfortable for scenes of
   hundreds of objects but not tuned for tens of thousands.
-- `.github/workflows/ci.yml` builds and tests the project on Linux (Xvfb + Mesa, native core and NumPy
-  fallback), Windows and macOS (offscreen: the OpenGL tests skip there), then builds the packages on
-  each and uploads them (the Windows job builds the Inno Setup installer when Inno Setup is present).
-  A further Linux job runs the suite at a 2× scale factor (high-DPI). **All jobs pass** on GitHub
-  Actions (Windows, macOS on Apple silicon, Linux with the native core, the NumPy fallback and 2×
-  scale), and the packaging jobs build and smoke-test the frozen application on all three. Failing
-  tests are reported as annotations on the run page.
-- Developed on Linux with software OpenGL (Mesa llvmpipe). On Windows and macOS the CI runners
-  have no OpenGL 3.3, so the rendering, picking and viewport tests skip there: **the 3D viewport has
-  not been run on Windows or macOS** with a real GPU. Platform issues found and fixed:
+- `.github/workflows/ci.yml` builds and tests the project on Linux (Xvfb + Mesa, native core, NumPy
+  fallback and a 2× scale factor), on Windows and macOS offscreen, and on Windows and macOS **with
+  OpenGL**: Windows with Mesa 26 llvmpipe (OpenGL 4.6 core; Qt loads it as its software OpenGL, the
+  same `opengl32.dll` PyOpenGL uses), macOS on the runner's desktop session with Apple's software
+  renderer (OpenGL 4.1 core). Every OpenGL job reports its renderer and fails rather than skips
+  without one. Then it builds and smoke-tests the packages on all three and uploads them (the
+  Windows job builds the Inno Setup installer when Inno Setup is present). **All jobs pass.** A
+  failing test, or one that hangs (stack dump after 5 minutes), is reported as an annotation on
+  the run page.
+- Developed on Linux. The rendering, picking and viewport tests pass on all three systems with
+  software OpenGL; **the application has not been run on Windows or macOS with a real GPU and its
+  driver**. Platform issues found and fixed:
   - the C++ core is compiled without fused multiply-add contraction (`-ffp-contract=off`): Clang
     fuses by default on Apple silicon, which changed rounding enough for the native convex
     decomposition of a torus to differ from the NumPy reference by one point (found by CI on macOS,
@@ -1006,12 +1011,19 @@ Key design decisions:
     lines), which is what macOS requires;
   - all text files are opened as UTF-8, file names contain no `:`, `psim-batch` does not fail on
     consoles without Unicode, and saves retry briefly when Windows refuses to replace a file that
-    another process (virus scanner, indexer, sync client) has open (tested).
+    another process (virus scanner, indexer, sync client) has open (tested);
+  - frame pacing measured only `paintGL`, not Qt's composition of the frame into the window, which
+    can cost several times more (7× under Xvfb; far more with Apple's software renderer, where the
+    GUI thread stayed busy ~95 % of the time during a run). A frame now lasts until `frameSwapped`;
+  - the test window is shrunk on the small screens of the Windows and macOS runners: pixel-count
+    thresholds now scale with the viewport, and the point-picking test frames each object before
+    clicking it (on a small viewport the click snapped to an edge, as designed).
 
 ## 6. Next steps
 
-1. Run the application and the suite on Windows and macOS machines with a hardware GPU (the CI
-   runners have no OpenGL 3.3, so the viewport is untested there).
+1. Run the application on Windows and macOS machines with a hardware GPU and its driver (CI tests
+   the viewport with software OpenGL only), and find why the macOS OpenGL CI job hung twice before
+   the hang diagnostics were added (it has not hung since).
 2. Install and test the Windows installer on a real machine; build a signed macOS `.app`; add code
    signing.
 3. Physics: a better decomposition for curved concave meshes (a torus keeps 16 % excess volume with
