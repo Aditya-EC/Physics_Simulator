@@ -129,8 +129,8 @@ python packaging/build_dist.py           # native build → icons → PyInstalle
 | Platform | Output (in `packaging/dist/`) | Verified here |
 |---|---|---|
 | Linux | `PSimStudio/` folder, `psim-studio-<v>-linux-<arch>.tar.gz`, `psim-studio_<v>_<arch>.deb` (installs to `/opt/psim-studio`, `/usr/bin` links, desktop entry, `.psim` MIME type) | yes: built, smoke-tested, the .deb installed and removed |
-| Windows | `PSimStudio/` folder, `.zip`, and `PSimStudio-<v>-setup.exe` from `packaging/windows/psim_studio.iss` (Inno Setup 6: Start-menu entries, optional desktop icon, `.psim` association, uninstaller) | **no**: script written but not compiled or run in this Linux environment |
-| macOS | `PSimStudio/` folder and `.tar.gz` (not code-signed, no `.app` bundle yet) | no |
+| Windows | `PSimStudio/` folder, `.zip`, and `PSimStudio-<v>-setup.exe` from `packaging/windows/psim_studio.iss` (Inno Setup 6: Start-menu entries, optional desktop icon, `.psim` association, uninstaller) | by CI: built and smoke-tested; the installer has not been run on a real machine |
+| macOS | `PSim Studio.app` and `psim-studio-<v>-macos.zip` (the app with the examples and docs; `psim-batch` is in `PSim Studio.app/Contents/MacOS`) | by CI: built, signed (ad hoc without a Developer ID) and smoke-tested |
 
 - **Python wheel:** run `pip wheel . --no-deps` after `build_native.py`. It produces a
   platform-specific wheel with the native core and the entry points `psim-studio` (GUI) and
@@ -138,6 +138,51 @@ python packaging/build_dist.py           # native build → icons → PyInstalle
   fails with `install_layout`.
 - PyInstaller does not cross-compile: build each platform on that platform. Every build runs the
   frozen `psim-batch` on an example and checks `psim-studio --version` before packaging.
+### Code signing
+
+`packaging/signing.py` signs the packages when credentials are configured; `build_dist.py` calls it. Without
+them the build still succeeds: Windows packages are unsigned, the macOS app is ad-hoc signed (needed on Apple
+silicon) and both platforms print a note. CI (`.github/workflows/ci.yml`, job `package`) reads the credentials
+from repository secrets (*Settings → Secrets and variables → Actions*).
+
+**Windows (Authenticode).** Buy a code-signing certificate from a certificate authority (an EV certificate
+builds SmartScreen reputation at once; a standard OV certificate builds it with downloads). Export it with its
+private key as a `.pfx`. Recent CA certificates come on a hardware token or cloud HSM and cannot be exported:
+then sign through the CA's or Azure's signing service instead and adapt `WindowsSigning.sign_command`.
+
+| Secret | Value |
+|---|---|
+| `WINDOWS_CERT_PFX_BASE64` | the `.pfx`, base64-encoded (PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))`) |
+| `WINDOWS_CERT_PASSWORD` | its password |
+
+Signed: `psim-studio.exe`, `psim-batch.exe`, the native core (`_psim_native*.pyd`), the installer and its
+uninstaller (through Inno Setup's `SignTool`), with SHA-256 and an RFC 3161 timestamp
+(`PSIM_WIN_TIMESTAMP_URL`, default DigiCert's), so signatures stay valid after the certificate expires.
+Without a certificate, CI signs a copy of `psim-batch.exe` with a throwaway self-signed certificate
+(`python packaging/signing.py selftest <exe>`) and checks the signature, so the signing path stays tested.
+Check a signed file: right-click → *Properties → Digital Signatures*, or `signtool verify /pa /v <file>`.
+
+**macOS (Developer ID and notarization).** Join the Apple Developer Program, create a *Developer ID
+Application* certificate (Xcode → Settings → Accounts, or developer.apple.com), export it from Keychain Access
+with its private key as a `.p12`, and create an app-specific password for your Apple ID (account.apple.com).
+
+| Secret | Value |
+|---|---|
+| `MACOS_CERT_P12_BASE64` | the `.p12`, base64-encoded (`base64 -i cert.p12 \| pbcopy`) |
+| `MACOS_CERT_PASSWORD` | its password |
+| `MACOS_SIGN_IDENTITY` | `Developer ID Application: <name> (<team id>)` (`security find-identity -v -p codesigning`) |
+| `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_PASSWORD`, `MACOS_NOTARY_TEAM_ID` | Apple ID, app-specific password, team id |
+
+CI imports the certificate into a temporary keychain (deleted at the end of the job). Every Mach-O file of
+`PSim Studio.app` is signed, inner files first, then the bundle, with the hardened runtime, a secure
+timestamp and `packaging/macos/entitlements.plist` (executable memory for ctypes, loading the bundled
+libraries). The app is then submitted with `notarytool`, and the ticket is stapled so Gatekeeper accepts it
+offline. Check: `codesign --verify --deep --strict --verbose=2 "PSim Studio.app"` and
+`spctl --assess --type execute --verbose "PSim Studio.app"` (accepted only when notarized).
+
+Locally, the same environment variables as in CI apply (`PSIM_WIN_CERT_PFX`, `PSIM_WIN_CERT_PASSWORD`,
+`PSIM_MACOS_SIGN_IDENTITY`, `PSIM_MACOS_NOTARY_*`; see the module's docstring).
+
 - Release checklist:
   - bump `__version__` (`psim/__init__.py`) and `pyproject.toml` (a test checks they match)
   - run both test backends and `tests/test_acceptance.py`

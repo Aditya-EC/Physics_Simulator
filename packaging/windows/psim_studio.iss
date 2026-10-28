@@ -3,8 +3,9 @@
 ; Build the frozen application first (on Windows):   python packaging\build_dist.py
 ; build_dist.py then calls:                            ISCC /DAppVersion=<version> packaging\windows\psim_studio.iss
 ;
-; NOTE: written for Inno Setup 6. It has not been compiled in the Linux development environment of
-; this project; check the output on a Windows machine before distributing.
+; Built by CI on Windows with Inno Setup 6. With a code-signing certificate configured (packaging/signing.py),
+; build_dist.py also passes /DSignInstaller and /Spsimsign=<signtool command>, and Inno Setup signs the setup
+; and the uninstaller it embeds.
 
 #ifndef AppVersion
   #define AppVersion "0.1.0"
@@ -30,6 +31,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequiredOverridesAllowed=dialog
 ChangesAssociations=yes
 WizardStyle=modern
+#ifdef SignInstaller
+SignTool=psimsign
+SignedUninstaller=yes
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

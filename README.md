@@ -773,6 +773,15 @@ Batch runs are unaffected.
   smoke-tests the frozen Windows and macOS executables and uploads the archives (and the installer,
   when Inno Setup is present on the runner); the installer itself has not been run on a Windows
   machine.
+- **macOS:** `PSim Studio.app` (bundle identifier, `.psim` document type, Retina), zipped with the
+  examples and docs.
+- **Code signing** (`packaging/signing.py`; how to set it up: developer guide, *Code signing*): Windows
+  executables, native core, installer and uninstaller with Authenticode (SHA-256, RFC 3161 timestamp);
+  the macOS app inside out with the hardened runtime, then notarized and stapled. It runs as soon as
+  the certificates are stored as repository secrets. **No certificate is configured yet**, so the
+  Windows packages are unsigned and the macOS app is ad-hoc signed. CI checks the mechanism on every
+  run: a throwaway self-signed certificate on Windows, and `codesign --verify --deep --strict` on
+  macOS. Signing with a real certificate and notarization have not been run.
 
 **Documentation** (`docs/`).
 - `user_guide.md`: a walkthrough of the application
@@ -891,8 +900,8 @@ Key design decisions:
 
 - Distribution limits (Phase 8):
   - The Windows and macOS packages are built and smoke-tested by CI, but the Windows installer has
-    not been installed on a real machine. The executables are not code-signed, so Windows
-    SmartScreen and macOS Gatekeeper will warn.
+    not been installed on a real machine. Code signing is set up but has no certificate yet, so
+    Windows SmartScreen and macOS Gatekeeper still warn.
   - The frozen bundle is about 250 MB, mostly Qt. Two executables share one `_internal` folder.
   - There is no automatic updater.
   - The GUI-responsiveness fix keeps input working, but under software OpenGL a single frame of a
@@ -1024,8 +1033,9 @@ Key design decisions:
 1. Run the application on Windows and macOS machines with a hardware GPU and its driver (CI tests
    the viewport with software OpenGL only), and find why the macOS OpenGL CI job hung twice before
    the hang diagnostics were added (it has not hung since).
-2. Install and test the Windows installer on a real machine; build a signed macOS `.app`; add code
-   signing.
+2. Install and test the Windows installer on a real machine; obtain the code-signing certificates
+   (Windows Authenticode, Apple Developer ID) and store them as repository secrets (developer guide,
+   *Code signing*).
 3. Physics: a better decomposition for curved concave meshes (a torus keeps 16 % excess volume with
    axis-aligned cuts; adding diagonal cut planes was tried and gave 12 % at 3–4× the cost, so a
    voxel- or concavity-guided method would be needed); a spatial grid broadphase only matters for

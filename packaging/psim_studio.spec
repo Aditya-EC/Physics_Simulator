@@ -6,6 +6,7 @@
 # Produces dist/PSimStudio/ containing `psim-studio` (GUI, no console on Windows), `psim-batch`
 # (console) and a shared `_internal/` folder; build_dist.py adds the examples and documentation.
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
@@ -43,4 +44,21 @@ icon = os.path.join(ROOT, "packaging", "build", "psim.ico")    # rendered by bui
 gui_exe = EXE(gui_pyz, gui.scripts, [], exclude_binaries=True, name="psim-studio", console=False,  # noqa: F821
               icon=icon if os.path.exists(icon) else None)
 cli_exe = EXE(cli_pyz, cli.scripts, [], exclude_binaries=True, name="psim-batch", console=True)   # noqa: F821
-COLLECT(gui_exe, cli_exe, gui.binaries, gui.datas, cli.binaries, cli.datas, name="PSimStudio")   # noqa: F821
+coll = COLLECT(gui_exe, cli_exe, gui.binaries, gui.datas, cli.binaries, cli.datas, name="PSimStudio")   # noqa: F821
+
+if sys.platform == "darwin":
+    # macOS: an application bundle (what codesign, notarization and Gatekeeper work with); psim-batch is in
+    # PSim Studio.app/Contents/MacOS next to the GUI. Signing is done afterwards by build_dist.py (signing.py).
+    sys.path.insert(0, ROOT)
+    from psim import __version__
+    icns = os.path.join(ROOT, "packaging", "build", "psim.icns")      # rendered by build_dist.py when possible
+    BUNDLE(coll, name="PSim Studio.app", icon=icns if os.path.exists(icns) else None,   # noqa: F821
+           bundle_identifier="io.github.aditya-ec.psimstudio", version=__version__,
+           info_plist={
+               "CFBundleShortVersionString": __version__,
+               "NSHighResolutionCapable": True,
+               "LSMinimumSystemVersion": "12.0",
+               "CFBundleDocumentTypes": [{
+                   "CFBundleTypeName": "PSim Studio project", "CFBundleTypeRole": "Editor",
+                   "LSHandlerRank": "Owner", "CFBundleTypeExtensions": ["psim"]}],
+           })

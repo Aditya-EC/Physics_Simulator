@@ -12,7 +12,9 @@ Steps:
        Linux    packaging/dist/psim-studio-<version>-linux-<arch>.tar.gz and a .deb (dpkg-deb)
        Windows  packaging/dist/psim-studio-<version>-windows-x64.zip and, when Inno Setup's ISCC.exe is on
                 PATH, the installer from packaging/windows/psim_studio.iss
-       macOS    packaging/dist/psim-studio-<version>-macos.tar.gz (not code-signed)
+       macOS    packaging/dist/psim-studio-<version>-macos.zip: PSim Studio.app with the examples and docs
+  Code signing (packaging/signing.py): Windows executables, native core and installer when a certificate is
+  configured; the macOS app always (ad hoc without a Developer ID), notarized when notary credentials are set.
 
 Requires PyInstaller in the build environment (`pip install pyinstaller`); it is a build tool only and not
 a runtime dependency. The build machine must match the target platform (PyInstaller does not cross-compile).
@@ -26,6 +28,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import glob
 import tarfile
 import zipfile
 
@@ -37,6 +40,8 @@ APP_DIR = os.path.join(DIST, "PSimStudio")
 sys.path.insert(0, ROOT)
 
 from psim import APP_NAME, __version__  # noqa: E402
+
+import signing  # noqa: E402  (packaging/signing.py)
 
 EXE = ".exe" if os.name == "nt" else ""
 
@@ -66,6 +71,8 @@ def render_icons() -> tuple[str, str]:
         raise RuntimeError("could not write the PNG icon")
     if not img.scaled(256, 256).save(ico):    # Qt's ICO writer stores the image; Windows scales it
         print("note: Qt could not write an .ico file; the executables keep the default icon")
+    if platform.system() == "Darwin" and not img.save(os.path.join(BUILD, "psim.icns")):
+        print("note: Qt could not write an .icns file; the app bundle keeps the default icon")
     return png, ico
 
 
@@ -91,19 +98,19 @@ def add_documents() -> None:
         shutil.copy2(lic, APP_DIR)
 
 
-def smoke_test() -> None:
+def smoke_test(exe_dir: str = APP_DIR, examples: str = os.path.join(APP_DIR, "examples")) -> None:
     """The frozen executables start, load the native core and the process library, and run a project."""
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    batch = os.path.join(APP_DIR, "psim-batch" + EXE)
+    batch = os.path.join(exe_dir, "psim-batch" + EXE)
     out = os.path.join(BUILD, "smoke-summary.json")
-    run([batch, os.path.join(APP_DIR, "examples", "simulation_demo.psim"), "--duration", "0.2", "--quiet",
+    run([batch, os.path.join(examples, "simulation_demo.psim"), "--duration", "0.2", "--quiet",
          "--summary-json", out], env=env, cwd=BUILD)
     import json
     with open(out, encoding="utf-8") as fh:
         summary = json.load(fh)
     if not summary["finished"] or summary["steps"] <= 0:
         raise RuntimeError(f"frozen batch run did not finish: {summary}")
-    gui = os.path.join(APP_DIR, "psim-studio" + EXE)
+    gui = os.path.join(exe_dir, "psim-studio" + EXE)
     if os.name != "nt":     # a windowed .exe has no console to print --version to
         version = subprocess.check_output([gui, "--version"], env=env, text=True).strip()
         if __version__ not in version:
@@ -181,14 +188,65 @@ def build_deb(png: str) -> str | None:
     return out
 
 
-def build_windows_installer() -> str | None:
+def build_windows_installer(sign=None) -> str | None:
     iscc = shutil.which("ISCC") or shutil.which("iscc")
     if iscc is None:
         print("Inno Setup (ISCC.exe) not found: install it and rerun to build the installer, or run\n"
               "  ISCC packaging\\windows\\psim_studio.iss")
         return None
-    run([iscc, f"/DAppVersion={__version__}", os.path.join(HERE, "windows", "psim_studio.iss")])
+    cmd = [iscc, f"/DAppVersion={__version__}"]
+    if sign is not None:                      # Inno Setup signs the setup and the uninstaller it embeds
+        cmd += ["/DSignInstaller", f"/Spsimsign={sign.inno_sign_tool()}"]
+    signing.run_quiet(cmd + [os.path.join(HERE, "windows", "psim_studio.iss")], secret=sign and sign.password)
     return os.path.join(DIST, f"PSimStudio-{__version__}-setup.exe")
+
+
+def package_windows() -> None:
+    sign = signing.WindowsSigning.from_env()
+    ours = [os.path.join(APP_DIR, n + EXE) for n in ("psim-studio", "psim-batch")]
+    ours += glob.glob(os.path.join(APP_DIR, "_internal", "psim", "numerics", "_psim_native*.pyd"))
+    if sign is not None:
+        sign.sign(ours)
+        signing.verify_windows(ours, sign.pfx, sign.password)
+    else:
+        print("note: no code-signing certificate (PSIM_WIN_CERT_PFX): the Windows packages are not signed")
+    smoke_test()                              # the signed executables still run
+    archive(f"psim-studio-{__version__}-windows-x64")
+    setup = build_windows_installer(sign)
+    if setup and sign is not None:
+        signing.verify_windows([setup], sign.pfx, sign.password)
+
+
+def package_macos() -> None:
+    """PSim Studio.app (signed, notarized when configured) with the examples and docs, zipped with ditto."""
+    cfg = signing.MacSigning.from_env()
+    app = os.path.join(DIST, "PSim Studio.app")
+    stage = os.path.join(BUILD, "macos-stage", "PSim Studio")
+    shutil.rmtree(os.path.dirname(stage), ignore_errors=True)
+    os.makedirs(stage)
+    shutil.copytree(os.path.join(APP_DIR, "examples"), os.path.join(stage, "examples"))
+    shutil.copytree(os.path.join(APP_DIR, "docs"), os.path.join(stage, "docs"))
+    for f in ("README.md", "LICENSE.txt"):
+        if os.path.exists(os.path.join(APP_DIR, f)):
+            shutil.copy2(os.path.join(APP_DIR, f), stage)
+    signing.sign_macos_app(app, cfg)
+    signing.verify_macos_app(app, cfg)
+    smoke_test(os.path.join(app, "Contents", "MacOS"), os.path.join(stage, "examples"))
+    if cfg.notarize:
+        submission = os.path.join(BUILD, "notarize.zip")
+        run(["ditto", "-c", "-k", "--keepParent", app, submission])
+        signing.notarize_macos(app, submission, cfg)
+        signing.verify_macos_app(app, cfg)
+    elif not cfg.ad_hoc:
+        print("note: no notary credentials: the app is signed but not notarized")
+    else:
+        print("note: no Developer ID (PSIM_MACOS_SIGN_IDENTITY): the app is ad-hoc signed, not notarized")
+    run(["ditto", app, os.path.join(stage, "PSim Studio.app")])          # ditto keeps signatures and links
+    out = os.path.join(DIST, f"psim-studio-{__version__}-macos.zip")
+    if os.path.exists(out):
+        os.remove(out)
+    run(["ditto", "-c", "-k", "--keepParent", stage, out])
+    print("wrote", out)
 
 
 def main() -> int:
@@ -205,14 +263,13 @@ def main() -> int:
     shutil.rmtree(APP_DIR, ignore_errors=True)
     freeze()
     add_documents()
-    smoke_test()
     system = platform.system()
     if system == "Windows":
-        archive(f"psim-studio-{__version__}-windows-x64")
-        build_windows_installer()
+        package_windows()
     elif system == "Darwin":
-        archive(f"psim-studio-{__version__}-macos")
+        package_macos()
     else:
+        smoke_test()
         archive(f"psim-studio-{__version__}-linux-{platform.machine()}")
         if not args.no_deb:
             build_deb(png)

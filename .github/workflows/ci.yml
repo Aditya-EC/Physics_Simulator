@@ -136,10 +136,63 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6"
           if (Test-Path "$iscc\ISCC.exe") { Add-Content $env:GITHUB_PATH $iscc }
           else { Write-Warning "Inno Setup not found: only the .zip archive will be built" }
-      - name: Build the packages (native core, freeze, smoke test, archives)
+      # Code signing (packaging/signing.py). Certificates come from repository secrets; without them the Windows
+      # packages are unsigned (the signing path is still exercised with a throwaway certificate below) and the
+      # macOS app is ad-hoc signed. See docs/developer_guide.md, "Code signing".
+      - name: Code-signing certificate (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+        run: |
+          if ($env:CERT) {
+            $pfx = Join-Path $env:RUNNER_TEMP "psim-signing.pfx"
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT))
+            "PSIM_WIN_CERT_PFX=$pfx" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            Write-Host "::notice title=Signing::Windows packages will be signed"
+          } else {
+            Write-Host "::notice title=Signing::No WINDOWS_CERT_PFX_BASE64 secret: Windows packages are not signed"
+          }
+      - name: Code-signing identity (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -n "$CERT" ]; then
+            kc="$RUNNER_TEMP/psim-signing.keychain-db"; kp="$(uuidgen)"
+            security create-keychain -p "$kp" "$kc"
+            security set-keychain-settings -lut 21600 "$kc"
+            security unlock-keychain -p "$kp" "$kc"
+            echo "$CERT" | base64 --decode > "$RUNNER_TEMP/psim-signing.p12"
+            security import "$RUNNER_TEMP/psim-signing.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+            rm -f "$RUNNER_TEMP/psim-signing.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$kp" "$kc" > /dev/null
+            security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+            echo "::notice title=Signing::macOS app will be signed with the Developer ID identity"
+          else
+            echo "::notice title=Signing::No MACOS_CERT_P12_BASE64 secret: the macOS app is ad-hoc signed"
+          fi
+      - name: Build the packages (native core, freeze, sign, smoke test, archives)
         env:
           QT_QPA_PLATFORM: offscreen
+          PSIM_WIN_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          PSIM_MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          PSIM_MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          PSIM_MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          PSIM_MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
         run: python packaging/build_dist.py
+      - name: Signing self-test (Windows, without a certificate)
+        if: runner.os == 'Windows' && env.PSIM_WIN_CERT_PFX == ''
+        run: python packaging/signing.py selftest packaging/dist/PSimStudio/psim-batch.exe
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/psim-signing.pfx" "$RUNNER_TEMP/psim-signing.p12"
+          if [ "$RUNNER_OS" = "macOS" ] && [ -f "$RUNNER_TEMP/psim-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/psim-signing.keychain-db"
+          fi
       - uses: actions/upload-artifact@v5
         with:
           name: psim-studio-${{ runner.os }}
