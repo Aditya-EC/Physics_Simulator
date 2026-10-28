@@ -277,4 +277,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except signing.SigningError as exc:          # shown on the CI run page as well
+        text = str(exc).replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        print(f"::error title=Code signing::{text}")
+        sys.exit(1)
