@@ -82,8 +82,6 @@ jobs:
           $py = python -c "import os, sys; print(os.path.dirname(sys.executable))"
           Copy-Item mesa\x64\*.dll $py
           "GALLIUM_DRIVER=llvmpipe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          # Qt would otherwise fall back to its own bundled opengl32sw.dll (an old Mesa) while PyOpenGL loads this one
-          "QT_OPENGL=desktop" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - name: Tests (OpenGL)
         if: runner.os != 'Linux' && matrix.gl
         shell: bash                 # stops at a failing command (pwsh would only check the last one)
