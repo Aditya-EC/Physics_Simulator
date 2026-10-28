@@ -152,3 +152,13 @@ def test_installer_signs_setup_and_uninstaller_when_asked():
     assert "SignTool=psimsign" in block and "SignedUninstaller=yes" in block
     with open(os.path.join(ROOT, "packaging", "signing.py"), encoding="utf-8") as fh:
         compile(fh.read(), "signing.py", "exec")
+
+
+def test_windows_powershell_gets_a_clean_module_path(monkeypatch):
+    sg = _signing()
+    seen = {}
+    monkeypatch.setattr(sg, "_run", lambda cmd, secret=None, **kw: seen.update(cmd=cmd, env=kw["env"]))
+    monkeypatch.setenv("PSModulePath", r"C:\Program Files\PowerShell\7\Modules")
+    sg._powershell("Get-Date", PSIM_PFX_PW="pw")
+    assert seen["cmd"][0] == "powershell" and "-NoProfile" in seen["cmd"]
+    assert not any(k.upper() == "PSMODULEPATH" for k in seen["env"]) and seen["env"]["PSIM_PFX_PW"] == "pw"

@@ -100,17 +100,24 @@ def find_signtool() -> str:
     return candidates[-1]                      # the newest SDK
 
 
+def _powershell(script: str, **env: str) -> subprocess.CompletedProcess:
+    """Run a Windows PowerShell 5.1 script. PSModulePath is left out of its environment: inherited from
+    PowerShell 7 (e.g. a CI step) it points at modules 5.1 cannot load, and the certificate drive (Cert:) and
+    ConvertTo-SecureString are then missing."""
+    base = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+    return _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env={**base, **env})
+
+
 def pfx_thumbprint(pfx: str, password: str) -> str:
     ps = (f"$c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('{pfx}', "
           f"$env:PSIM_PFX_PW); $c.Thumbprint")
-    res = _run(["powershell", "-NoProfile", "-Command", ps], env={**os.environ, "PSIM_PFX_PW": password})
-    return res.stdout.strip().upper()
+    return _powershell(ps, PSIM_PFX_PW=password).stdout.strip().upper()
 
 
 def signer_thumbprint(path: str) -> str:
     """Thumbprint of the certificate that signed `path` (empty when it is not signed)."""
     ps = f"(Get-AuthenticodeSignature -LiteralPath '{path}').SignerCertificate.Thumbprint"
-    return _run(["powershell", "-NoProfile", "-Command", ps]).stdout.strip().upper()
+    return _powershell(ps).stdout.strip().upper()
 
 
 def verify_windows(files: list[str], pfx: str, password: str) -> None:
@@ -133,7 +140,7 @@ def make_test_certificate(directory: str) -> tuple[str, str]:
           "$pw = ConvertTo-SecureString -String $env:PSIM_PFX_PW -Force -AsPlainText; "
           f"Export-PfxCertificate -Cert $c -FilePath '{pfx}' -Password $pw | Out-Null; "
           "Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $c.Thumbprint)")
-    _run(["powershell", "-NoProfile", "-Command", ps], env={**os.environ, "PSIM_PFX_PW": password})
+    _powershell(ps, PSIM_PFX_PW=password)
     return pfx, password
 
 
