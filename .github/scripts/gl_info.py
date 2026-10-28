@@ -63,6 +63,9 @@ def _loaded_gl_modules() -> str:
     return "; ".join(out) or "none"
 
 
+_guard: list = []                               # the open hang file while the probe's guard is armed
+
+
 def main() -> int:
     hang = os.environ.get("PSIM_HANG_DUMP")
     if hang:                                        # a hanging probe dumps its stacks for the annotation step
@@ -71,6 +74,7 @@ def main() -> int:
         fh.write("The OpenGL probe did not finish within 90 s\n")
         fh.flush()
         faulthandler.dump_traceback_later(90.0, exit=True, file=fh)
+        _guard.append(fh)
     configure_opengl()
     app = QApplication.instance() or QApplication([])
     w = Probe()
@@ -91,6 +95,7 @@ def main() -> int:
     if hang:
         import faulthandler
         faulthandler.cancel_dump_traceback_later()
+        _guard.pop().close()                      # Windows cannot remove a file that is still open
         os.remove(hang)
     if res["qt"] != res["pyopengl"]:
         print(f"::error::Qt and PyOpenGL see different OpenGL implementations: Qt {qt}; PyOpenGL {py}")
