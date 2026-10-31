@@ -302,14 +302,12 @@ see §5.
   alters Δt or the number of steps.
 - If the engine falls behind, it runs at most N catch-up steps per tick and reports the rest as
   dropped. Δt is never changed.
-- On Windows the runner requests 1 ms timer resolution during a run. On macOS, App Nap and timer
-  coalescing can throttle a run whose window is in the background (seen on CI). The runner can
-  declare a latency-critical activity against this, but the CI run that first used it on macOS
-  hung, so it is **off unless `PSIM_MACOS_ACTIVITY=1`**. The macOS OpenGL CI job runs with it on and
-  has passed since (with it, the real-time rate test holds), but the cause of the two earlier hangs
-  is unknown, so it stays off by default.
-
-**Processes** (`psim/processes`).
+- On Windows the runner requests 1 ms timer resolution during a run. On macOS it declares a
+  latency-critical activity for the run (Apple's `NSProcessInfo` API), so App Nap and timer
+  coalescing do not throttle a simulation whose window is in the background: without it a
+  real-time run fell ~20 % behind its schedule on the macOS CI runner. `PSIM_MACOS_ACTIVITY=0`
+  turns it off. Two early macOS CI runs hung for an unknown reason while it was new; it has run in
+  every macOS CI job since the hang diagnostics were added without a hang.
 - Approved process definitions carry an ID, version, category, description, formula,
   parameters with units, reads/writes, eligibility, mode (per-object or global), preconditions
   and error handling.

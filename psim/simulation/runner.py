@@ -84,8 +84,9 @@ class _MacOSActivity:
     Called through the Objective-C runtime with ctypes, so no extra package is needed; any failure leaves the run
     as it would be without it.
 
-    Off unless PSIM_MACOS_ACTIVITY=1: the first CI run with it on macOS hung (cause not yet diagnosed), so it is
-    not enabled by default until it has been verified there."""
+    On by default; PSIM_MACOS_ACTIVITY=0 turns it off. (Two early macOS CI runs hung for an unknown reason while
+    it was new; with hang diagnostics in place it has run in every macOS CI job since without a hang, and without
+    it a real-time run falls ~20 % behind its schedule on a macOS runner.)"""
 
     # NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical
     OPTIONS = (0x00FFFFFF & ~(1 << 20)) | 0xFF00000000
@@ -93,7 +94,7 @@ class _MacOSActivity:
 
     def __enter__(self):
         self._token = None
-        if sys.platform != "darwin" or os.environ.get("PSIM_MACOS_ACTIVITY") != "1":
+        if sys.platform != "darwin" or os.environ.get("PSIM_MACOS_ACTIVITY") == "0":
             return self
         try:
             import ctypes
