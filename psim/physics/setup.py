@@ -180,3 +180,15 @@ def build_physics_setup(scene, body_ids: list[str], trans: np.ndarray, rot: np.n
         elif b.role == "dynamic" and not rot[b.engine_index]:
             diag("info", f"{key}: its orientation is prescribed, so contacts and joints change only its translation")
     return PhysicsSetup(bodies, colliders, joints)
+
+
+MAX_ACCURATE_DT = 0.01    # s: contacts and joints are resolved once per step; the examples use 0.004 s
+
+
+def step_size_warning(setup, delta_time: float, enabled: bool = True) -> str | None:
+    """A warning when contacts or joints are simulated with a time step too large for them to be accurate."""
+    if not enabled or setup is None or not setup.has_work or delta_time <= MAX_ACCURATE_DT:
+        return None
+    return (f"Large time step for contacts and joints: Δt = {delta_time:g} s. They are accurate up to about "
+            f"Δt = {MAX_ACCURATE_DT:g} s (the examples use 0.004 s); with larger steps bodies can sink into or "
+            "pass through each other, bounce away or be launched, and springs and limits overshoot.")

@@ -303,3 +303,22 @@ def test_broken_joint_stays_broken_after_a_live_edit(session, qtbot):
     assert s.broken_joints == {jid}                                         # still broken, not re-attached
     assert sum("Weak Hook" in m and "broke" in m for m in msgs["info"]) == 1      # announced once
     assert s.world_pose(ball.id)[0][2] < 1.0 - 1e-3                         # and the ball keeps falling
+
+
+def test_large_time_step_with_contacts_warns_at_start(session):
+    """Contacts with Δt = 0.1 s (25× the examples' step) are announced in Errors & Warnings; 0.004 s is not."""
+    s, e, ctl, settings, messages = session
+    ground = e.add_new("basic.plane", params={"length": 10, "width": 10})
+    e.set_property([ground.id], "physics.collider", "auto")
+    box = e.add_new("body.rigid_box", position=[0, 0, 0.5])
+    e.assign_process("dyn.gravity", TargetFilter(ids=[box.id]))
+    warnings = messages["warning"]
+    settings.delta_time, settings.duration, settings.pacing = 0.1, 0.2, PacingMode.AS_FAST_AS_POSSIBLE
+    assert ctl.start()
+    ctl.abandon()
+    assert [w for w in warnings if "Large time step" in w and "Δt = 0.1 s" in w]
+    warnings.clear()
+    settings.delta_time = 0.004
+    assert ctl.start()
+    ctl.abandon()
+    assert not [w for w in warnings if "Large time step" in w]

@@ -178,10 +178,18 @@ def joint_lines(scene, marker: float) -> tuple[list[np.ndarray], list[np.ndarray
     return pts, cols
 
 
-def contact_lines(contacts, marker: float, force_scale: float = 0.02) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """A cross at each contact point and the normal, scaled by the contact force (at least the marker size)."""
+CONTACT_LENGTH = 8.0      # markers: the line of the largest contact force shown
+CONTACT_MIN_LENGTH = 1.5  # markers: the shortest line (a contact that carries almost nothing stays visible)
+
+
+def contact_lines(contacts, marker: float) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """A cross at each contact point and a line along the contact normal whose length is proportional to the
+    contact force, relative to the largest force shown: the largest is CONTACT_LENGTH markers long (the marker is
+    a fixed size on screen), so the lines compare the contacts at any zoom and never cover the scene, however
+    heavy the bodies. The forces themselves are recorded as contact_force (plots, statistics)."""
     if not contacts:
         return [], []
+    largest = max(abs(float(f)) for _p, _n, f in contacts)
     seg = []
     for point, normal, force in contacts:
         c = np.asarray(point, float)
@@ -189,7 +197,9 @@ def contact_lines(contacts, marker: float, force_scale: float = 0.02) -> tuple[l
             e = np.zeros(3)
             e[i] = marker
             seg += [c - e, c + e]
-        seg += [c, c + np.asarray(normal, float) * max(abs(force) * force_scale, marker * 3)]
+        share = abs(float(force)) / largest if largest > 0 else 0.0
+        length = marker * max(CONTACT_LENGTH * share, CONTACT_MIN_LENGTH)
+        seg += [c, c + np.asarray(normal, float) * length]
     seg = np.array(seg)
     return [seg], [np.tile([*CONTACT_COLOR, 1.0], (len(seg), 1))]
 

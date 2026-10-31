@@ -206,3 +206,22 @@ def test_batch_output_survives_a_console_without_unicode(scene, tmp_path):
                        env=env, timeout=120)
     assert r.returncode == 0, r.stderr.decode("ascii", "replace")
     assert b"t = ? s" not in r.stdout and b"Running" in r.stdout and b"?t = " in r.stdout   # Δ replaced, not fatal
+
+
+def test_large_time_step_with_contacts_and_joints_is_warned_about():
+    from psim.physics.setup import MAX_ACCURATE_DT, step_size_warning
+    demo = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples",
+                        "mechanisms_demo.psim")
+    quiet = lambda *a, **k: None   # noqa: E731
+    res = batch.run_batch(demo, duration=0.2, delta_time=0.1, log=quiet)
+    warned = [m for level, m in res.diagnostics if level == "warning" and "Large time step" in m]
+    assert len(warned) == 1 and "Δt = 0.1 s" in warned[0]
+    res = batch.run_batch(demo, duration=0.02, log=quiet)              # the demo's own Δt = 0.004 s
+    assert not any("Large time step" in m for _l, m in res.diagnostics)
+
+    class Setup:
+        has_work = True
+    assert step_size_warning(Setup(), MAX_ACCURATE_DT) is None
+    assert step_size_warning(Setup(), 0.05) and step_size_warning(Setup(), 0.05, enabled=False) is None
+    Setup.has_work = False                                              # nothing collides, no joints
+    assert step_size_warning(Setup(), 0.05) is None and step_size_warning(None, 0.05) is None

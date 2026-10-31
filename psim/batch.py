@@ -194,6 +194,10 @@ def run_batch(project: str, *, duration: float | None = None, delta_time: float 
     except SimulationError as exc:
         raise BatchError(str(exc)) from None
     res.diagnostics += [(d.level, d.message) for d in plan.diagnostics]
+    from .physics.setup import step_size_warning
+    large = step_size_warning(plan.physics, s.delta_time, s.physics_enabled)
+    if large:
+        res.diagnostics.append(("warning", large))
     if eng is None:
         raise BatchError("; ".join(d.message for d in plan.errors))
     variables_parsed = [v for spec in variables for v in parse_variable(scene, spec)]

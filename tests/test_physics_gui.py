@@ -165,7 +165,13 @@ def test_overlay_geometry_for_shapes_joints_and_contacts(scene):
     jp, jc = physics_overlay.joint_lines(s, 0.05)
     assert len(jp) == 1 and np.any(np.all(np.isclose(jp[0], [-2, 0, 2]), axis=1))
     cp, cc = physics_overlay.contact_lines([(np.zeros(3), np.array([0, 0, 1.0]), 100.0)], 0.01)
-    np.testing.assert_allclose(cp[0][-1], [0, 0, 2.0])         # normal scaled by the force (0.02 m/N)
+    np.testing.assert_allclose(cp[0][-1], [0, 0, 0.08])        # the largest force: 8 markers along the normal
+    # lines are relative to the largest force shown, so a heavy body never draws metres-long lines
+    contacts = [(np.zeros(3), np.array([0, 0, 1.0]), 2000.0), (np.ones(3), np.array([1.0, 0, 0]), 500.0),
+                (np.full(3, 2.0), np.array([0, 1.0, 0]), 0.0)]
+    cp, _ = physics_overlay.contact_lines(contacts, 0.01)
+    tips = cp[0][6::8] - cp[0][7::8]                            # (start − end) of each normal line
+    np.testing.assert_allclose(np.linalg.norm(tips, axis=1), [0.08, 0.02, 0.015])   # 8, 2 and the minimum 1.5
 
 
 def test_engine_snapshot_reports_contacts(scene):

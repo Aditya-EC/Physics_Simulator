@@ -190,10 +190,16 @@ parameters, Δt, the rate and the duration.
 - A body moved only by force processes is pushed by contacts and joints. A body with prescribed
   motion pushes others but is not pushed. Objects without processes stay fixed.
 - *Physics ▸ Show All Colliders / Joints / Contacts* draws the collision shapes (green exact,
-  yellow approximate), joint anchors and contact forces.
+  yellow approximate), joint anchors and contact forces. Each contact is a small cross with a red
+  line along the contact normal; the line of the largest contact force in view is about 50 pixels
+  long and the others are proportional, so they compare the contacts. The forces in newtons are
+  the *contact force* plot variable (§8).
 
-For long joint simulations, prefer velocity Verlet or RK4. Semi-implicit Euler slowly loses
-energy in swinging systems.
+Contacts and joints are resolved once per step, so keep Δt at about 0.01 s or less when they
+matter (the examples use 0.004 s). With larger steps bodies sink into or pass through each other,
+bounce away or are launched, and springs and limits overshoot; the *Errors & Warnings* panel says
+so when such a run starts. For long joint simulations, prefer velocity Verlet or RK4.
+Semi-implicit Euler slowly loses energy in swinging systems.
 
 ## 7. Coordinates, frames and measurements
 

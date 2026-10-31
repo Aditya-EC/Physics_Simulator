@@ -157,6 +157,10 @@ class SimulationController(QObject):
             {"error": self.error, "warning": self.warning}.get(d.level, self.info).emit(d.message)
         if not plan.ok:
             return False
+        from ..physics.setup import step_size_warning
+        large = step_size_warning(plan.physics, self.settings.delta_time, self.settings.physics_enabled)
+        if large:
+            self.warning.emit(large)
         try:
             plan, engine, rec = build_engine(self.scene, self.settings, plan=plan)
         except SimulationError as exc:
