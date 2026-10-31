@@ -115,7 +115,10 @@ def smoke_test(exe_dir: str = APP_DIR, examples: str = os.path.join(APP_DIR, "ex
         version = subprocess.check_output([gui, "--version"], env=env, text=True).strip()
         if __version__ not in version:
             raise RuntimeError(f"unexpected version output: {version!r}")
-    print(f"smoke test passed ({summary['steps']} steps, native core in the bundle)")
+    tools = subprocess.check_output([os.path.join(exe_dir, "psim-devtools" + EXE), "paths"], env=env, text=True)
+    if "Process packages" not in tools:
+        raise RuntimeError(f"unexpected psim-devtools output: {tools!r}")
+    print(f"smoke test passed ({summary['steps']} steps, native core in the bundle; psim-devtools runs)")
 
 
 def archive(name: str) -> str:
@@ -203,7 +206,7 @@ def build_windows_installer(sign=None) -> str | None:
 
 def package_windows() -> None:
     sign = signing.WindowsSigning.from_env()
-    ours = [os.path.join(APP_DIR, n + EXE) for n in ("psim-studio", "psim-batch")]
+    ours = [os.path.join(APP_DIR, n + EXE) for n in ("psim-studio", "psim-batch", "psim-devtools")]
     ours += glob.glob(os.path.join(APP_DIR, "_internal", "psim", "numerics", "_psim_native*.pyd"))
     if sign is not None:
         sign.sign(ours)

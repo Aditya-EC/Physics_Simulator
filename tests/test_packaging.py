@@ -49,7 +49,7 @@ def test_module_entry_points_run():
 
 
 def test_pyinstaller_spec_and_entry_scripts_compile():
-    for f in ("psim_studio.spec", "entry_gui.py", "entry_batch.py", "build_dist.py"):
+    for f in ("psim_studio.spec", "entry_gui.py", "entry_batch.py", "entry_devtools.py", "build_dist.py"):
         with open(os.path.join(ROOT, "packaging", f), encoding="utf-8") as fh:
             compile(fh.read(), f, "exec")
 

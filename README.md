@@ -164,8 +164,8 @@ ctest --test-dir native/build    # C++ unit tests (also run by build_native.py)
 | `test_contact_kernel.py` | C++ collision pipeline ≡ NumPy reference on random scenes (pairs, contacts, rows, every shape-pair kind, speculative contacts, static friction, rolling and spinning resistance), sort-and-sweep keeps every overlapping pair (also in scenes stretched along x, y or z), input validation; continuous collision detection: a 100 m/s ball tunnels through a 2 cm wall without it, stops (or bounces with e·v) with it; a fast box lands on a thin plate |
 | `test_simulation_session.py` | session semantics (run → stop → undo → reset), exact reset, live edits applied at the next step, invalid plans, single step, assignment round-trip, v1 project compatibility, GUI toolbar/inspector integration |
 
-Current result: **619 Python tests and the C++ test executable pass** with the native core, also at
-a 2× scale factor. With the NumPy fallback, 533 pass and 86 native-comparison tests are skipped.
+Current result: **626 Python tests and the C++ test executable pass** with the native core, also at
+a 2× scale factor. With the NumPy fallback, 540 pass and 86 native-comparison tests are skipped.
 This was measured on Linux with Mesa llvmpipe under Xvfb. GitHub Actions CI also passes the whole
 suite, OpenGL tests included, on Windows (Mesa llvmpipe) and macOS (Apple's software renderer);
 see §5.
@@ -902,7 +902,7 @@ Key design decisions:
   - The Windows and macOS packages are built and smoke-tested by CI, but the Windows installer has
     not been installed on a real machine. Code signing is set up but has no certificate yet, so
     Windows SmartScreen and macOS Gatekeeper still warn.
-  - The frozen bundle is about 250 MB, mostly Qt. Two executables share one `_internal` folder.
+  - The frozen bundle is about 250 MB, mostly Qt. Three executables (`psim-studio`, `psim-batch`, `psim-devtools`) share one `_internal` folder.
   - There is no automatic updater.
   - The GUI-responsiveness fix keeps input working, but under software OpenGL a single frame of a
     large scene still takes ~0.1–0.2 s and an as-fast-as-possible run slows while the GUI draws.

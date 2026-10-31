@@ -84,12 +84,19 @@ Add tests against an analytic solution in `tests/test_processes.py` or
 
 Formula processes are JSON specifications (`psim/processes/library/*.json`) written in the formula
 language. To author one:
+0. Once per computer, create the developer credentials: `python -m psim.devtools init-developer`
+   from a source checkout, or `psim-devtools init-developer` in the installed application (Windows:
+   `psim-devtools.exe` in the installation folder; macOS: `PSim Studio.app/Contents/MacOS/psim-devtools`).
+   The GUI deliberately cannot create them.
 1. Unlock *Tools ▸ Developer Mode* with the developer passphrase. A user role cannot register or
    publish processes; the registry enforces this.
 2. Write and test the process in the process editor (*Developer ▸ New Formula Process*).
 3. Publish it as an Ed25519-signed package.
 
-The CLI is in `psim/devtools.py`. Signed packages are verified against the public keys in the user's trusted-key
+The CLI is in `psim/devtools.py` (`psim-devtools` in the installed application). To use a package on
+another computer: `psim-devtools trust-key <public key>` there once (the key from `show-public-key`), then
+`psim-devtools install <file.psimproc>`, which verifies the signature before copying the package into the
+process folder (`psim-devtools paths` shows it); the application loads it at the next start. Signed packages are verified against the public keys in the user's trusted-key
 folder, and in `psim/processes/trusted_keys/` when a distribution ships one (optional; the folder
 is packaged automatically if present). Local installations cannot be
 made tamper-proof; signing protects integrity and provenance, not secrecy.

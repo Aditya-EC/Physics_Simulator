@@ -3,8 +3,8 @@
 #   python packaging/build_dist.py            # builds the native core, then runs this spec
 #   pyinstaller packaging/psim_studio.spec --distpath packaging/dist --workpath packaging/build
 #
-# Produces dist/PSimStudio/ containing `psim-studio` (GUI, no console on Windows), `psim-batch`
-# (console) and a shared `_internal/` folder; build_dist.py adds the examples and documentation.
+# Produces dist/PSimStudio/ containing `psim-studio` (GUI, no console on Windows), `psim-batch` and
+# `psim-devtools` (console) and a shared `_internal/` folder; build_dist.py adds the examples and documentation.
 import os
 import sys
 
@@ -38,13 +38,17 @@ def analysis(script):
 
 gui = analysis("entry_gui.py")
 cli = analysis("entry_batch.py")
+dev = analysis("entry_devtools.py")
 gui_pyz = PYZ(gui.pure)   # noqa: F821
 cli_pyz = PYZ(cli.pure)   # noqa: F821
+dev_pyz = PYZ(dev.pure)   # noqa: F821
 icon = os.path.join(ROOT, "packaging", "build", "psim.ico")    # rendered by build_dist.py
 gui_exe = EXE(gui_pyz, gui.scripts, [], exclude_binaries=True, name="psim-studio", console=False,  # noqa: F821
               icon=icon if os.path.exists(icon) else None)
 cli_exe = EXE(cli_pyz, cli.scripts, [], exclude_binaries=True, name="psim-batch", console=True)   # noqa: F821
-coll = COLLECT(gui_exe, cli_exe, gui.binaries, gui.datas, cli.binaries, cli.datas, name="PSimStudio")   # noqa: F821
+dev_exe = EXE(dev_pyz, dev.scripts, [], exclude_binaries=True, name="psim-devtools", console=True)   # noqa: F821
+coll = COLLECT(gui_exe, cli_exe, dev_exe, gui.binaries, gui.datas, cli.binaries, cli.datas,   # noqa: F821
+               dev.binaries, dev.datas, name="PSimStudio")
 
 if sys.platform == "darwin":
     # macOS: an application bundle (what codesign, notarization and Gatekeeper work with); psim-batch is in

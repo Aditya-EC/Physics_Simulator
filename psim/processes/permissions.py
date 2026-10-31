@@ -73,6 +73,14 @@ def key_id_for(public_raw: bytes) -> str:
     return hashlib.sha256(public_raw).hexdigest()[:16]
 
 
+def devtools_command() -> str:
+    """How to start the developer tool: the bundled executable in the installed application, else the module."""
+    import sys
+    if getattr(sys, "frozen", False):
+        return "psim-devtools"
+    return "python -m psim.devtools"
+
+
 def _default_base() -> str:
     from ..project.autosave import data_dir
     return data_dir()
@@ -115,7 +123,7 @@ class AccessController:
     def unlock(self, passphrase: str) -> DeveloperToken:
         if not self.has_credentials():
             raise PermissionDenied("No developer credentials are installed on this computer. "
-                                   "Create them with: python -m psim.devtools init-developer")
+                                   f"Create them with: {devtools_command()} init-developer")
         with open(self.credentials_path, encoding="utf-8") as fh:
             cred = json.load(fh)
         derived = hashlib.pbkdf2_hmac("sha256", passphrase.encode(), _unb64(cred["salt"]), int(cred["iterations"]))

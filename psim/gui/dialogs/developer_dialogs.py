@@ -34,9 +34,14 @@ class DeveloperModeDialog(QDialog):
         self.token: DeveloperToken | None = None
         lay = QVBoxLayout(self)
         if not access.has_credentials():
+            from ...processes.permissions import devtools_command
+            where = ("<br><br>The <code>psim-devtools</code> program is in the PSim Studio installation folder "
+                     "(macOS: <code>PSim Studio.app/Contents/MacOS</code>)." if devtools_command() == "psim-devtools"
+                     else "")
             msg = QLabel("Developer mode lets an authorized developer create, validate, test and publish formula "
                          "processes. No developer credentials are installed on this computer.<br><br>"
-                         "Create them from a terminal with:<br><code>python -m psim.devtools init-developer</code>")
+                         f"Create them from a terminal with:<br><code>{devtools_command()} init-developer</code>"
+                         + where)
             msg.setWordWrap(True)
             lay.addWidget(msg)
             b = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)

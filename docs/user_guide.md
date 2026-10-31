@@ -118,7 +118,11 @@ update processes run. *Processes ▸ Global Parameters* defines project-wide con
 that formulas use as `global.<name>`.
 
 New formula processes are written by developers only. *Tools ▸ Developer Mode* asks for the
-developer passphrase, and ordinary users cannot create or change processes.
+developer passphrase, and ordinary users cannot create or change processes. The developer
+credentials are created once per computer with the `psim-devtools` program installed next to
+PSim Studio (`psim-devtools init-developer`; see the developer guide). Process packages received
+from a developer are installed with `psim-devtools install <file.psimproc>` after trusting the
+developer's key with `psim-devtools trust-key`.
 
 ## 5. Running a simulation
 

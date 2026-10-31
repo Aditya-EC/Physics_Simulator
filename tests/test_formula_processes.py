@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -361,3 +362,49 @@ def test_project_files_cannot_define_formulas(scene, tmp_path):
     d["processes"][0]["script"] = "force = vec3(1e9, 0, 0)"
     with pytest.raises(ser.ProjectError):
         ser.load_project_dict(d, Scene(), UnitRegistry())
+
+
+def test_devtools_install_and_paths(tmp_path, monkeypatch, capsys):
+    """psim-devtools install copies a package into the process folder only when a trusted key signed it."""
+    from psim import devtools
+    from psim.processes.packages import packages_dir, write_package
+    from psim.processes.permissions import devtools_command
+    author = AccessController(str(tmp_path / "author"))
+    author.create_credentials("author passphrase!", "Author")
+    pkg = str(tmp_path / "drag.psimproc")
+    write_package(pkg, FormulaProcessSpec.from_dict(GOOD), author, author.unlock("author passphrase!"))
+    user = AccessController(str(tmp_path / "user"))
+    monkeypatch.setattr(devtools, "_controller", lambda: user)
+    installed = os.path.join(packages_dir(user.base), "lab.spring_anchor-1.0.0.psimproc")
+
+    assert devtools.main(["install", pkg]) == 2                         # signer not trusted: refused
+    assert not os.path.exists(installed) and "untrusted" in capsys.readouterr().out
+    user.trust_public_key(author.public_key_text(), "author")
+    assert devtools.main(["install", pkg]) == 0 and os.path.exists(installed)
+    reg = ProcessRegistry()
+    reg.load_packages(packages_dir(user.base), user)
+    assert reg.has("lab.spring_anchor")                                 # what the application loads at start
+    assert devtools.main(["install", pkg]) == 1                         # already installed
+
+    with open(pkg, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    payload["process"]["version"] = "1.0.1"
+    payload["process"]["script"] = "force = 1e9 * self.position"
+    with open(pkg, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+    assert devtools.main(["install", pkg]) == 2                         # tampered: refused
+    assert not os.path.exists(os.path.join(packages_dir(user.base), "lab.spring_anchor-1.0.1.psimproc"))
+    with open(pkg, "w", encoding="utf-8") as fh:
+        fh.write("not a package")
+    assert devtools.main(["install", pkg]) == 2
+
+    capsys.readouterr()
+    assert devtools.main(["paths"]) == 0
+    out = capsys.readouterr().out
+    assert user.credentials_path in out and "(none)" in out and packages_dir(user.base) in out
+
+    assert devtools_command() == "python -m psim.devtools"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)              # the installed application
+    assert devtools_command() == "psim-devtools"
+    with pytest.raises(PermissionDenied, match="psim-devtools init-developer"):
+        user.unlock("anything")
